@@ -140,6 +140,8 @@ export const ProviderAnnounce = z.object({
    * `agentSessionId`.
    */
   activeSessions: z.array(z.string()).default([]),
+  /** Whether this daemon accepts `workspace.create` requests. */
+  canCreateWorkspace: z.boolean().optional(),
   /**
    * A newer pew2 has been published and this machine is not running it yet.
    *
@@ -384,6 +386,33 @@ export const Workspaces = z.object({
    * a caller holding a stolen token what exists on the disk.
    */
   refused: z.boolean().default(false),
+});
+
+/** App -> daemon. Create one project directory without replacing an existing path. */
+export const WorkspaceCreateRequest = z.object({
+  t: z.literal("workspace.create"),
+  requestId: z.string().min(1),
+  name: z.string().trim().min(1).max(255),
+  /** Absolute browsable parent. Absent means `~/gg-projects`. */
+  parent: z.string().min(1).max(4096).optional(),
+});
+
+export const WorkspaceCreateError = z.enum([
+  "invalid_name",
+  "invalid_parent",
+  "already_exists",
+  "create_failed",
+  "registration_failed",
+]);
+
+/** Daemon -> app. Correlated, bounded result of `workspace.create`. */
+export const WorkspaceCreateResult = z.object({
+  t: z.literal("workspace.created"),
+  requestId: z.string().min(1),
+  result: z.discriminatedUnion("ok", [
+    z.object({ ok: z.literal(true), project: AgentProject }),
+    z.object({ ok: z.literal(false), error: WorkspaceCreateError }),
+  ]),
 });
 
 /** App -> daemon. Start a new session with a provider. */
@@ -727,6 +756,7 @@ export const ClientMessage = z.discriminatedUnion("t", [
   ImageRequest,
   WorkspaceRequest,
   WorkspacesRequest,
+  WorkspaceCreateRequest,
   PushRegister,
 ]);
 
@@ -743,6 +773,7 @@ export const ServerMessage = z.discriminatedUnion("t", [
   ImageData,
   Workspace,
   Workspaces,
+  WorkspaceCreateResult,
   DeviceJoined,
   ErrorMessage,
 ]);
@@ -777,5 +808,8 @@ export type PushRegister = z.output<typeof PushRegister>;
 export type DeviceJoined = z.output<typeof DeviceJoined>;
 export type WorkspaceEntry = z.output<typeof WorkspaceEntry>;
 export type Workspaces = z.output<typeof Workspaces>;
+export type WorkspaceCreateRequest = z.output<typeof WorkspaceCreateRequest>;
+export type WorkspaceCreateError = z.output<typeof WorkspaceCreateError>;
+export type WorkspaceCreateResult = z.output<typeof WorkspaceCreateResult>;
 export type ClientMessage = z.output<typeof ClientMessage>;
 export type ServerMessage = z.output<typeof ServerMessage>;

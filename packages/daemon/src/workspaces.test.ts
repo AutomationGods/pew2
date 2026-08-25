@@ -9,10 +9,24 @@
  * enumerate someone's disk.
  */
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, realpath, symlink, utimes, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { discoverRepos, listDirectory, resolveBrowsePath } from "./workspaces.js";
+import {
+  createWorkspaceDirectory,
+  discoverRepos,
+  listDirectory,
+  resolveBrowsePath,
+} from "./workspaces.js";
 
 /**
  * A home directory with a few projects in it.
@@ -38,6 +52,56 @@ async function fixture() {
 
   return { home, roots: [home] };
 }
+
+test("a project is created exclusively in the private default root", async () => {
+  const { home, roots } = await fixture();
+  const created = await createWorkspaceDirectory("mobile-app", undefined, { home, roots });
+
+  expect(created).toEqual({
+    ok: true,
+    path: join(home, "gg-projects", "mobile-app"),
+    name: "mobile-app",
+  });
+  expect((await stat(join(home, "gg-projects"))).mode & 0o077).toBe(0);
+  expect((await stat(join(home, "gg-projects", "mobile-app"))).isDirectory()).toBe(true);
+  const sentinel = join(home, "gg-projects", "mobile-app", "keep.txt");
+  await writeFile(sentinel, Buffer.from([0, 1, 2, 255]));
+  expect(await createWorkspaceDirectory("mobile-app", undefined, { home, roots })).toEqual({
+    ok: false,
+    error: "already_exists",
+  });
+  expect(await readFile(sentinel)).toEqual(Buffer.from([0, 1, 2, 255]));
+});
+
+test("a project can be created only under an existing browsable parent", async () => {
+  const { home, roots } = await fixture();
+  expect(await createWorkspaceDirectory("new-api", join(home, "code"), { home, roots })).toEqual({
+    ok: true,
+    path: join(home, "code", "new-api"),
+    name: "new-api",
+  });
+
+  const outside = await realpath(await mkdtemp(join(tmpdir(), "pew2-create-outside-")));
+  expect(await createWorkspaceDirectory("nope", outside, { home, roots })).toEqual({
+    ok: false,
+    error: "invalid_parent",
+  });
+  expect(await createWorkspaceDirectory("nope", join(home, "missing"), { home, roots })).toEqual({
+    ok: false,
+    error: "invalid_parent",
+  });
+});
+
+test("project names cannot traverse or smuggle another path segment", async () => {
+  const { home, roots } = await fixture();
+  const invalid = ["", "   ", ".", "..", "../escape", "a/b", "a\\b", "line\nbreak", "x".repeat(256)];
+  for (const name of invalid) {
+    expect(await createWorkspaceDirectory(name, undefined, { home, roots })).toEqual({
+      ok: false,
+      error: "invalid_name",
+    });
+  }
+});
 
 test("repositories are found without walking into their contents", async () => {
   const { home, roots } = await fixture();

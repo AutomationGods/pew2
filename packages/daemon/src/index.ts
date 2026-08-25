@@ -8,6 +8,7 @@
  * so the daemon — not the agent — is what lets a phone and a desktop observe the
  * same session at the same time.
  */
+import { rmdir } from "node:fs/promises";
 import { loadProviders, isAvailable, unavailableReason, type LoadedProvider } from "./providers/registry.js";
 import {
   connectProvider,
@@ -27,7 +28,12 @@ import { PushRegistry } from "./push.js";
 import { readProbeCache, writeProbeCache } from "./probe-cache.js";
 import { readKnownProjects, rememberKnownProject } from "./known-projects.js";
 import { hydrateMessageCounts } from "./acp/messageCounts.js";
-import { sessionsInProject, type AgentProject } from "./projects.js";
+import {
+  sessionsInProject,
+  withRememberedProjects,
+  type AgentProject,
+} from "./projects.js";
+import { createWorkspaceDirectory } from "./workspaces.js";
 import { SESSION_HISTORY_LIMIT } from "./session-history.js";
 import { readConfigPrefs, writeConfigPref, type ConfigPrefs } from "./config-prefs.js";
 import { readSessionPrefs, writeSessionPrefs } from "./session-prefs.js";
@@ -1190,6 +1196,7 @@ export class Daemon {
       // the daemon, so this is how it learns that an id it still shows died
       // with the previous process and must be resumed, not prompted.
       activeSessions: [...this.sessions.keys()],
+      canCreateWorkspace: true,
       // Omitted entirely when there is nothing to say, so an app that has been
       // told once does not keep a stale banner when the update lands.
       update: this.updateStatus,
@@ -1449,6 +1456,38 @@ export class Daemon {
       );
     await this.chosenWrites;
     return cwd;
+  }
+
+  /** Create and durably register a project as one logical operation. */
+  async createWorkspace(name: string, parent?: string): Promise<wire.WorkspaceCreateResult["result"]> {
+    const created = await createWorkspaceDirectory(name, parent, {
+      env: this.env,
+      home: this.env.HOME,
+    });
+    if (!created.ok) return created;
+
+    try {
+      const chosen = await this.chosenProjects();
+      const write = this.chosenWrites.then(() => rememberKnownProject(created.path, this.env));
+      this.chosenWrites = write.then(
+        (stored) => {
+          chosen.clear();
+          stored.forEach((path) => chosen.add(path));
+        },
+        () => {},
+      );
+      await write;
+    } catch {
+      // `rmdir` removes only an empty directory. If anything reached it during
+      // registration, preserving those files is safer than recursive rollback.
+      await rmdir(created.path).catch(() => {});
+      return { ok: false, error: "registration_failed" };
+    }
+
+    return {
+      ok: true,
+      project: { path: created.path, name: created.name, sessions: 0 },
+    };
   }
 
   /**
@@ -1721,6 +1760,10 @@ export class Daemon {
       // at construction for the probe cache's sake, and prefs are written
       // through the ambient one.
       configOptions: withStoredPrefs(probed.configOptions, await readConfigPrefs(providerId)),
+      projects: withRememberedProjects(
+        probed.projects ?? [],
+        [...(await this.chosenProjects())],
+      ),
     };
   }
 

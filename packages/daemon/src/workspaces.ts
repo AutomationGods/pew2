@@ -21,7 +21,7 @@
  * pairing token is a bearer secret over a public relay: a stolen one must not
  * become "enumerate this person's entire filesystem".
  */
-import { readdir, realpath, stat } from "node:fs/promises";
+import { mkdir, readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
@@ -33,6 +33,66 @@ export interface WorkspaceEntry {
   repo: boolean;
   /** Last modification, ISO. Used to rank; may be absent if unreadable. */
   updatedAt?: string;
+}
+
+export type CreateWorkspaceResult =
+  | { ok: true; path: string; name: string }
+  | {
+      ok: false;
+      error: "invalid_name" | "invalid_parent" | "already_exists" | "create_failed";
+    };
+
+/** Create one private project directory under a confined parent. */
+export async function createWorkspaceDirectory(
+  rawName: string,
+  parent?: string,
+  options: { roots?: string[]; home?: string; env?: NodeJS.ProcessEnv } = {},
+): Promise<CreateWorkspaceResult> {
+  const name = rawName.trim();
+  if (
+    !name ||
+    name === "." ||
+    name === ".." ||
+    name.includes("/") ||
+    name.includes("\\") ||
+    /[\u0000-\u001f\u007f]/u.test(name) ||
+    Buffer.byteLength(name, "utf8") > 255
+  ) {
+    return { ok: false, error: "invalid_name" };
+  }
+
+  const home = resolve(options.home || homedir());
+  const roots = options.roots ?? browsableRoots(options.env, home);
+  let resolvedParent: string;
+  if (parent === undefined) {
+    const defaultParent = join(home, "gg-projects");
+    try {
+      await mkdir(defaultParent, { recursive: true, mode: 0o700 });
+      resolvedParent = resolve(await realpath(defaultParent));
+    } catch {
+      return { ok: false, error: "create_failed" };
+    }
+  } else {
+    const confined = await resolveBrowsePath(parent, roots, home);
+    if (!confined || !(await isDirectory(confined))) {
+      return { ok: false, error: "invalid_parent" };
+    }
+    resolvedParent = confined;
+  }
+
+  const path = join(resolvedParent, name);
+  try {
+    await mkdir(path, { mode: 0o700 });
+    return { ok: true, path, name };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST"
+          ? "already_exists"
+          : "create_failed",
+    };
+  }
 }
 
 /**

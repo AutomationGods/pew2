@@ -3,7 +3,8 @@
  *
  * Renders it over a stand-in conversation so the card, the scrim and all three
  * steps can be checked against the same bottom edge the real sheet uses. Not
- * reachable from the app; point index.ts here and run `npx expo start --web`.
+ * reachable from the app; point index.ts here and run `npx expo run:ios`.
+ * `Sheet` is native-only and intentionally renders blank in the web harness.
  *
  * The cold-start toggle is the case worth looking at: an agent with no history
  * has no projects, so the sheet has to lead with browsing or it is a dead end.
@@ -11,11 +12,12 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import { theme } from "../theme";
 import { NewChatSheet } from "./NewChatSheet";
 import type { Project } from "../projects";
-import type { WorkspaceBrowse } from "../useDaemon";
+import { WorkspaceCreateError, type WorkspaceBrowse } from "../useDaemon";
 
 const PROJECTS: Project[] = [
   { path: "/Users/k/gg-projects/pew2", name: "pew2", sessions: 24 },
@@ -66,9 +68,14 @@ export default function NewChatSheetHarness() {
   // The whole reason browsing exists: no projects means no way in without it.
   const [cold, setCold] = useState(false);
   const [browse, setBrowse] = useState<WorkspaceBrowse | undefined>(undefined);
+  const [oldDaemon, setOldDaemon] = useState(false);
+  const [createFixture, setCreateFixture] = useState<
+    "success" | "duplicate" | "error" | "loading"
+  >("success");
 
   return (
-    <SafeAreaProvider>
+    <GestureHandlerRootView style={styles.root}>
+      <SafeAreaProvider>
       <StatusBar style="light" />
       <View style={styles.screen}>
         <Text style={styles.heading}>Conversation behind the sheet</Text>
@@ -84,6 +91,25 @@ export default function NewChatSheetHarness() {
             {cold ? "Agent with 6 projects" : "Agent with no history (cold start)"}
           </Text>
         </Pressable>
+        <Pressable style={styles.button} onPress={() => setOldDaemon((value) => !value)}>
+          <Text style={styles.buttonText}>{oldDaemon ? "New daemon" : "Old daemon"}</Text>
+        </Pressable>
+        <Pressable
+          style={styles.button}
+          onPress={() =>
+            setCreateFixture((value) =>
+              value === "success"
+                ? "duplicate"
+                : value === "duplicate"
+                  ? "error"
+                  : value === "error"
+                    ? "loading"
+                    : "success",
+            )
+          }
+        >
+          <Text style={styles.buttonText}>Create fixture: {createFixture}</Text>
+        </Pressable>
       </View>
 
       <NewChatSheet
@@ -97,6 +123,17 @@ export default function NewChatSheetHarness() {
         }}
         onClose={() => setVisible(false)}
         browse={browse}
+        canCreateWorkspace={!oldDaemon}
+        onCreate={async (parent, name) => {
+          if (createFixture === "loading") {
+            await new Promise(() => {});
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          if (createFixture === "duplicate") throw new WorkspaceCreateError("already_exists");
+          if (createFixture === "error") throw new WorkspaceCreateError("create_failed");
+          const path = `${parent ?? "/Users/k/gg-projects"}/${name}`;
+          return { path, name, sessions: 0 };
+        }}
         onBrowse={(path) => {
           // Latency is deliberate: the loading state is otherwise never seen,
           // and it is what the pane looks like on a cold scan of a real disk.
@@ -126,11 +163,13 @@ export default function NewChatSheetHarness() {
           }, 350);
         }}
       />
-    </SafeAreaProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   screen: { flex: 1, backgroundColor: theme.color.bg, padding: theme.space(6), gap: theme.space(3) },
   heading: { color: theme.color.text, fontSize: theme.font.title, fontWeight: "600" },
   body: { color: theme.color.textDim, fontSize: theme.font.body },

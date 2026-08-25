@@ -32,7 +32,15 @@
  * what the platform spends too.
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Dimensions, Keyboard, Pressable, StyleSheet, View } from "react-native";
+import {
+  Dimensions,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   Easing,
@@ -71,6 +79,8 @@ interface SheetProps {
   onBack?: () => void;
   /** Accessible name for the scrim and close button. */
   dismissLabel?: string;
+  /** Keep a sheet containing a text field above the software keyboard. */
+  avoidKeyboard?: boolean;
   children: ReactNode;
 }
 
@@ -128,7 +138,15 @@ const INSTANT = { duration: 0 } as const;
  */
 const OFF_SCREEN = Dimensions.get("window").height;
 
-function SheetView({ visible, title, onClose, onBack, dismissLabel, children }: SheetProps) {
+function SheetView({
+  visible,
+  title,
+  onClose,
+  onBack,
+  dismissLabel,
+  avoidKeyboard = false,
+  children,
+}: SheetProps) {
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
 
@@ -170,11 +188,8 @@ function SheetView({ visible, title, onClose, onBack, dismissLabel, children }: 
 
   useEffect(() => {
     if (!visible) return;
-    // A sheet rests against the bottom edge, which is exactly where the keyboard
-    // is. Opening one from the composer put the whole card behind it — invisible,
-    // and its rows unreachable. Every sheet in this app is a list or a set of
-    // buttons, none of them holds a text field, so there is never a reason for
-    // the keyboard to stay up over one.
+    // Sheets open from the composer, so dismiss its keyboard before arrival.
+    // A sheet with its own field can opt back in after the push settles.
     Keyboard.dismiss();
   }, [visible]);
 
@@ -264,7 +279,12 @@ function SheetView({ visible, title, onClose, onBack, dismissLabel, children }: 
     // Inert while leaving: the card is still on screen for the length of its
     // exit, and a scrim that kept taking touches for that quarter second would
     // eat the first tap of whatever the user turned to next.
-    <View style={styles.host} pointerEvents={visible ? "box-none" : "none"}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      enabled={avoidKeyboard}
+      style={styles.host}
+      pointerEvents={visible ? "box-none" : "none"}
+    >
       {/* Tapping away is the primary dismissal, so the scrim is a control —
           except on a blocking sheet, where it is only a dimming layer that
           still absorbs touches meant for the conversation. */}
@@ -336,7 +356,7 @@ function SheetView({ visible, title, onClose, onBack, dismissLabel, children }: 
 
         {children}
       </Animated.View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

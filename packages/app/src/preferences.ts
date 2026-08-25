@@ -8,10 +8,16 @@
  */
 import * as SecureStore from "expo-secure-store";
 import { fromCachedProviders, toCachedProviders } from "./providerCache";
+import {
+  parseProjectPreferences,
+  serializeProjectPreferences,
+  type ProjectPreferences,
+} from "./projectPreferences";
 import type { Provider } from "./useDaemon";
 
 const LAST_PROVIDER_KEY = "pew2.lastProviderId";
 const PROVIDERS_KEY = "pew2.providers";
+const PROJECTS_KEY = "pew2.selectedProjects";
 
 /** The agent last targeted on this device, or null if never chosen. */
 export async function loadLastProvider(): Promise<string | null> {
@@ -60,6 +66,23 @@ export async function saveCachedProviders(providers: readonly Provider[]): Promi
   }
 }
 
+/** The selected project on this machine for each provider. */
+export async function loadProjectPreferences(): Promise<ProjectPreferences> {
+  try {
+    return parseProjectPreferences(await SecureStore.getItemAsync(PROJECTS_KEY));
+  } catch {
+    return {};
+  }
+}
+
+export async function saveProjectPreferences(preferences: ProjectPreferences): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(PROJECTS_KEY, serializeProjectPreferences(preferences));
+  } catch {
+    // A locked keychain costs the preference, never the live selection.
+  }
+}
+
 /**
  * Forget the remembered agents.
  *
@@ -68,7 +91,10 @@ export async function saveCachedProviders(providers: readonly Provider[]): Promi
  */
 export async function clearCachedProviders(): Promise<void> {
   try {
-    await SecureStore.deleteItemAsync(PROVIDERS_KEY);
+    await Promise.all([
+      SecureStore.deleteItemAsync(PROVIDERS_KEY),
+      SecureStore.deleteItemAsync(PROJECTS_KEY),
+    ]);
   } catch {
     // Nothing to do — the next machine to answer overwrites it anyway.
   }

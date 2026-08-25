@@ -27,8 +27,18 @@
  * inert. A cut between two cards of different heights reads as the sheet
  * flinching; this reads as one object with somewhere to go.
  */
-import { memo, useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { memo, useEffect, useRef, useState } from "react";
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  Keyboard,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import Animated, {
   interpolate,
   useAnimatedStyle,
@@ -42,7 +52,7 @@ import { Sheet, SHEET_ROW_HEIGHT, SHEET_VISIBLE_ROWS, sheetCardStyle } from "./S
 import { haptics } from "./haptics";
 import { useReducedMotion } from "./useReducedMotion";
 import type { Project } from "../projects";
-import type { WorkspaceBrowse } from "../useDaemon";
+import type { WorkspaceBrowse, WorkspaceCreateErrorCode } from "../useDaemon";
 
 /**
  * The push, tuned to sit just inside `Sheet`'s own arrival.
@@ -79,6 +89,8 @@ interface NewChatSheetProps {
   browse?: WorkspaceBrowse;
   /** Ask the desktop for a listing. No path means "suggest repositories". */
   onBrowse?: (path?: string) => void;
+  canCreateWorkspace?: boolean;
+  onCreate?: (parent: string | undefined, name: string) => Promise<Project>;
 }
 
 function NewChatSheetView({
@@ -90,9 +102,18 @@ function NewChatSheetView({
   onClose,
   browse,
   onBrowse,
+  canCreateWorkspace = false,
+  onCreate,
 }: NewChatSheetProps) {
   const [step, setStep] = useState(STEP_CHOICES);
-  const [listMode, setListMode] = useState<"projects" | "browse">("projects");
+  const [listMode, setListMode] = useState<
+    "projects" | "browse" | "create" | "location"
+  >("projects");
+  const [projectName, setProjectName] = useState("");
+  const [parent, setParent] = useState<string>();
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [createError, setCreateError] = useState<string>();
+  const nameInput = useRef<TextInput>(null);
   const reduceMotion = useReducedMotion();
 
   // Nothing to switch between, so there is no list step to offer: one project
@@ -101,6 +122,7 @@ function NewChatSheetView({
   // Offered whenever the daemon can answer — including, especially, when there
   // are no projects at all. That is the cold start this exists for.
   const canBrowse = onBrowse !== undefined;
+  const canCreate = canCreateWorkspace && onCreate !== undefined;
 
   // One value for one movement. This used to be two — a native-driven spring
   // for the slide and a JS-driven one for the height, because legacy `Animated`
@@ -153,7 +175,10 @@ function NewChatSheetView({
   // The refusal notice occupies a row of its own, above a list that is still
   // showing where the user was.
   const browseRows =
-    browseEntries.length + (browse?.parent ? 1 : 0) + (browse?.refused ? 1 : 0);
+    browseEntries.length +
+    (browse?.parent ? 1 : 0) +
+    (listMode === "location" && browse?.path ? 1 : 0) +
+    (browse?.refused ? 1 : 0);
   const browseHeight = Math.max(1, Math.min(browseRows, SHEET_VISIBLE_ROWS)) * SHEET_ROW_HEIGHT;
   const browseScrolls = browseRows > SHEET_VISIBLE_ROWS;
 
@@ -201,21 +226,62 @@ function NewChatSheetView({
     setStep(next);
   };
 
+  useEffect(() => {
+    if (step !== STEP_LIST || listMode !== "create") return;
+    const timer = setTimeout(() => nameInput.current?.focus(), reduceMotion ? 0 : 220);
+    return () => clearTimeout(timer);
+  }, [step, listMode, reduceMotion]);
+
+  const openCreate = () => {
+    setListMode("create");
+    goTo(STEP_LIST);
+  };
+
   const openProjects = () => {
     setListMode("projects");
     goTo(STEP_LIST);
   };
 
-  const openBrowser = () => {
+  const openBrowser = (intent: "browse" | "location" = "browse") => {
+    Keyboard.dismiss();
     // Asked on the way in, every time. A listing goes stale the moment a
     // directory is made at the desk, and it is cheap — the daemon answered a
     // full scan of a real home directory in about 250ms.
-    onBrowse?.(browse?.path);
-    setListMode("browse");
+    onBrowse?.(intent === "location" ? parent : browse?.path);
+    setListMode(intent);
     goTo(STEP_LIST);
   };
 
-  const browsing = listMode === "browse";
+  const chooseLocation = (path: string) => {
+    haptics.tap();
+    setParent(path);
+    setListMode("create");
+  };
+
+  const submitCreate = async () => {
+    const name = projectName.trim();
+    if (!canCreate || !name || creatingProject) return;
+    setCreateError(undefined);
+    setCreatingProject(true);
+    try {
+      const project = await onCreate(parent, name);
+      AccessibilityInfo.announceForAccessibility(`Created project ${project.name}`);
+      setProjectName("");
+      setParent(undefined);
+      onStart(project.path);
+    } catch (error) {
+      const code = (error as { code?: WorkspaceCreateErrorCode }).code ?? "create_failed";
+      const message = createErrorMessage(code);
+      setCreateError(message);
+      AccessibilityInfo.announceForAccessibility(message);
+    } finally {
+      setCreatingProject(false);
+    }
+  };
+
+  const browsing = listMode === "browse" || listMode === "location";
+  const choosingLocation = listMode === "location";
+  const creating = listMode === "create";
 
   return (
     <Sheet
@@ -223,17 +289,31 @@ function NewChatSheetView({
       title={
         step === STEP_CHOICES
           ? "New chat"
-          : browsing
-            ? // Named while browsing: several levels down, "Browse" alone gives
-              // no clue where you are, and the path is too long for a title.
-              browse?.path
-              ? folderOf(browse.path)
-              : "Browse"
-            : "Choose project"
+          : creating
+            ? "Create project"
+            : browsing
+              ? choosingLocation
+                ? "Choose location"
+                : // Named while browsing: several levels down, "Browse" alone gives
+                  // no clue where you are, and the path is too long for a title.
+                  browse?.path
+                  ? folderOf(browse.path)
+                  : "Browse"
+              : "Choose project"
       }
       onClose={onClose}
-      onBack={step === STEP_CHOICES ? undefined : () => goTo(STEP_CHOICES)}
+      onBack={
+        step === STEP_CHOICES
+          ? undefined
+          : choosingLocation
+            ? () => {
+                haptics.tap();
+                setListMode("create");
+              }
+            : () => goTo(STEP_CHOICES)
+      }
       dismissLabel="Close new chat"
+      avoidKeyboard
     >
       <Animated.View
         style={[styles.card, cardStyle]}
@@ -252,6 +332,16 @@ function NewChatSheetView({
             firstHeight.value = event.nativeEvent.layout.height;
           }}
         >
+          {canCreate && (
+            <Row
+              icon="folder-outline"
+              title="Create project"
+              detail="New folder on your computer"
+              chevron
+              divided={Boolean(currentCwd || !canBrowse || canPick || canBrowse)}
+              onPress={openCreate}
+            />
+          )}
           {/* Absent when the agent has never run: there is no "here" to
               continue in, and a row offering one would start a chat in the
               daemon's fallback directory rather than a project. */}
@@ -287,7 +377,7 @@ function NewChatSheetView({
                 projects.length === 0 ? "Find a project on your computer" : "On your computer"
               }
               chevron
-              onPress={openBrowser}
+              onPress={() => openBrowser("browse")}
             />
           )}
         </Animated.View>
@@ -295,7 +385,7 @@ function NewChatSheetView({
         {/* Step two: whichever list was asked for. Mounted from the start so
             the push has something real to move; without it the first frame of
             the travel is an empty pane. */}
-        {(canPick || canBrowse) && (
+        {(canPick || canBrowse || canCreate) && (
           <Animated.View
             style={[styles.pane, incomingStyle]}
             pointerEvents={step === STEP_LIST ? "auto" : "none"}
@@ -303,7 +393,74 @@ function NewChatSheetView({
               secondHeight.value = event.nativeEvent.layout.height;
             }}
           >
-            {!browsing && (
+            {creating && (
+              <View style={styles.createForm}>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>Project name</Text>
+                  <TextInput
+                    ref={nameInput}
+                    style={[styles.nameInput, createError && styles.nameInputError]}
+                    value={projectName}
+                    onChangeText={(value) => {
+                      setProjectName(value);
+                      if (createError) setCreateError(undefined);
+                    }}
+                    placeholder="my-project"
+                    placeholderTextColor={theme.color.placeholder}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="off"
+                    spellCheck={false}
+                    maxLength={255}
+                    returnKeyType="done"
+                    onSubmitEditing={() => void submitCreate()}
+                    editable={!creatingProject}
+                    accessibilityLabel="Project name"
+                    accessibilityHint="Enter one folder name without slashes"
+                  />
+                </View>
+
+                <View style={styles.locationShell}>
+                  <Row
+                    icon="folder-open-outline"
+                    title="Location"
+                    detail={parent ?? "gg-projects in your home folder"}
+                    chevron
+                    onPress={() => openBrowser("location")}
+                  />
+                </View>
+
+                {createError ? (
+                  <Text style={styles.createError} accessibilityLiveRegion="polite">
+                    {createError}
+                  </Text>
+                ) : null}
+
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Create project"
+                  accessibilityState={{
+                    disabled: creatingProject || !projectName.trim(),
+                    busy: creatingProject,
+                  }}
+                  disabled={creatingProject || !projectName.trim()}
+                  onPress={() => void submitCreate()}
+                  style={({ pressed }) => [
+                    styles.createButton,
+                    (creatingProject || !projectName.trim()) && styles.createButtonDisabled,
+                    pressed && styles.createButtonPressed,
+                  ]}
+                >
+                  {creatingProject ? (
+                    <ActivityIndicator color={theme.color.bg} />
+                  ) : (
+                    <Text style={styles.createButtonText}>Create project</Text>
+                  )}
+                </Pressable>
+              </View>
+            )}
+
+            {!browsing && !creating && (
               <ScrollView
                 style={{ height: listHeight }}
                 showsVerticalScrollIndicator={scrolls}
@@ -334,6 +491,15 @@ function NewChatSheetView({
                 showsVerticalScrollIndicator={browseScrolls}
                 bounces={browseScrolls}
               >
+                {choosingLocation && browse?.path !== undefined && (
+                  <Row
+                    icon="checkmark-circle-outline"
+                    title="Use this folder"
+                    detail={browse.path}
+                    divided={browse?.parent !== undefined || browseEntries.length > 0}
+                    onPress={() => chooseLocation(browse.path!)}
+                  />
+                )}
                 {browse?.parent !== undefined && (
                   <Row
                     icon="arrow-up-outline"
@@ -356,7 +522,9 @@ function NewChatSheetView({
                     // because a folder is both a destination and a container, and
                     // making one gesture mean both would pick the wrong one about
                     // half the time.
-                    onPress={() => onStart(entry.path)}
+                    onPress={() =>
+                      choosingLocation ? onBrowse?.(entry.path) : onStart(entry.path)
+                    }
                     onDescend={() => onBrowse?.(entry.path)}
                     descendLabel={`Open ${entry.name}`}
                   />
@@ -384,6 +552,27 @@ function NewChatSheetView({
       </Animated.View>
     </Sheet>
   );
+}
+
+function createErrorMessage(code: WorkspaceCreateErrorCode): string {
+  switch (code) {
+    case "invalid_name":
+      return "Use one folder name without slashes.";
+    case "invalid_parent":
+      return "Choose another location you can open.";
+    case "already_exists":
+      return "A folder with this name already exists.";
+    case "registration_failed":
+      return "The folder could not be saved. Nothing was overwritten.";
+    case "offline":
+      return "Reconnect to your computer and try again.";
+    case "timeout":
+      return "Your computer did not answer. Try again.";
+    case "unsupported":
+      return "Update the desktop daemon to create projects.";
+    default:
+      return "Your computer could not create this folder.";
+  }
 }
 
 /** Last path segment: the folder as a person says it. */
@@ -501,6 +690,52 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   rowPressed: { backgroundColor: theme.glass.fillPressed },
+  createForm: {
+    padding: theme.space(4),
+    gap: theme.space(3),
+  },
+  fieldGroup: { gap: theme.space(2) },
+  fieldLabel: {
+    color: theme.color.textDim,
+    fontSize: theme.font.small,
+  },
+  nameInput: {
+    minHeight: 48,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.color.border,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.color.surface,
+    color: theme.color.text,
+    fontSize: theme.font.body,
+    paddingHorizontal: theme.space(3),
+  },
+  nameInputError: { borderColor: theme.color.danger },
+  locationShell: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.color.border,
+    borderRadius: theme.radius.md,
+    overflow: "hidden",
+  },
+  createError: {
+    color: theme.color.danger,
+    fontSize: theme.font.small,
+    lineHeight: 18,
+  },
+  createButton: {
+    minHeight: 48,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.color.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: theme.space(4),
+  },
+  createButtonDisabled: { opacity: 0.45 },
+  createButtonPressed: { opacity: 0.82 },
+  createButtonText: {
+    color: theme.color.bg,
+    fontSize: theme.font.body,
+    fontWeight: "600",
+  },
   // Yields to the chevron rather than pushing it off the row.
   rowText: { flex: 1 },
   rowTitle: { color: theme.color.text, fontSize: theme.font.body },

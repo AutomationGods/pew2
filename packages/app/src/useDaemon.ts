@@ -53,8 +53,10 @@ import { defaultProviderId } from "./lastProvider";
 import {
   loadCachedProviders,
   loadLastProvider,
+  loadProjectPreferences,
   saveCachedProviders,
   saveLastProvider,
+  saveProjectPreferences,
 } from "./preferences";
 import {
   offeredCommands,
@@ -76,6 +78,23 @@ import {
 import { readPermissionRequest } from "./permissions";
 
 export type Status = "connecting" | "online" | "offline";
+
+export type WorkspaceCreateErrorCode =
+  | "invalid_name"
+  | "invalid_parent"
+  | "already_exists"
+  | "create_failed"
+  | "registration_failed"
+  | "offline"
+  | "timeout"
+  | "unsupported";
+
+export class WorkspaceCreateError extends Error {
+  constructor(readonly code: WorkspaceCreateErrorCode) {
+    super(code);
+    this.name = "WorkspaceCreateError";
+  }
+}
 
 export interface Provider {
   id: string;
@@ -284,6 +303,7 @@ const LOADING_SESSION_TIMEOUT = 20_000;
  * where the user has already decided the app is broken.
  */
 const CONNECT_TIMEOUT = 10_000;
+const WORKSPACE_CREATE_TIMEOUT = 15_000;
 
 /**
  * `WebSocket.CONNECTING`, by value.
@@ -412,6 +432,8 @@ interface State {
    * opened — and must not silently forget the one you just picked either.
    */
   projectPath: Record<string, string>;
+  /** Offered only when the connected daemon explicitly supports creation. */
+  canCreateWorkspace: boolean;
   /**
    * `providerId:cwd` of the project whose conversations are being fetched.
    *
@@ -589,6 +611,7 @@ export function useDaemon(
     loadingSession: false,
     projects: {},
     projectPath: {},
+    canCreateWorkspace: false,
     workspaceNonce: 0,
   });
 
@@ -643,6 +666,20 @@ export function useDaemon(
   // `providerRef` exists: `start` must read the choice made moments ago, not
   // the one captured when its callback was memoized.
   const projectRef = useRef<Record<string, string>>({});
+  const projectSelectionTouched = useRef(new Set<string>());
+  const canCreateWorkspaceRef = useRef(false);
+  const createCounter = useRef(0);
+  const pendingWorkspaceCreates = useRef(
+    new Map<
+      string,
+      {
+        providerId: string;
+        resolve: (project: WireProject) => void;
+        reject: (error: WorkspaceCreateError) => void;
+        timer: ReturnType<typeof setTimeout>;
+      }
+    >(),
+  );
   // The message entered before a session existed — text and any files with it.
   // Sent as soon as the daemon confirms one, so the composer works straight
   // from the empty state.
@@ -811,6 +848,24 @@ export function useDaemon(
     };
   }, []);
 
+  // Restore project choices once, without replacing an explicit choice made
+  // while SecureStore was still answering.
+  useEffect(() => {
+    let cancelled = false;
+    void loadProjectPreferences().then((stored) => {
+      if (cancelled) return;
+      const hydrated = Object.fromEntries(
+        Object.entries(stored).filter(([providerId]) => !projectSelectionTouched.current.has(providerId)),
+      );
+      if (Object.keys(hydrated).length === 0) return;
+      projectRef.current = { ...hydrated, ...projectRef.current };
+      setState((s) => ({ ...s, projectPath: { ...hydrated, ...s.projectPath } }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // The agents this machine last reported, restored for a launch with no
   // signal. Without it a cold start offline knew of no agent at all, so a new
   // conversation had nothing to address — the composer took the words and the
@@ -864,6 +919,14 @@ export function useDaemon(
   useEffect(() => {
     alive.current = true;
 
+    const rejectPendingCreates = (code: WorkspaceCreateErrorCode) => {
+      for (const pending of pendingWorkspaceCreates.current.values()) {
+        clearTimeout(pending.timer);
+        pending.reject(new WorkspaceCreateError(code));
+      }
+      pendingWorkspaceCreates.current.clear();
+    };
+
     // A different pairing deserves a fresh attempt: this effect re-runs when the
     // url changes, which is exactly when someone has scanned a new code.
     fatal.current = false;
@@ -876,7 +939,8 @@ export function useDaemon(
 
     const connect = () => {
       if (!alive.current) return;
-      setState((s) => ({ ...s, status: "connecting" }));
+      canCreateWorkspaceRef.current = false;
+      setState((s) => ({ ...s, status: "connecting", canCreateWorkspace: false }));
 
       const ws = new WebSocket(url);
       socket.current = ws;
@@ -1457,6 +1521,7 @@ export function useDaemon(
         // from the agent, so an app that updates its model line-up is reflected
         // without changing anything here.
         if (message.t === "providers") {
+          canCreateWorkspaceRef.current = message.canCreateWorkspace === true;
           // Hand the daemon somewhere to push, once per connection.
           //
           // Here rather than beside `hello` because `hello` is cleartext and
@@ -1557,6 +1622,39 @@ export function useDaemon(
           optionsRef.current.onPushRegistered?.(false);
         }
 
+        if (message.t === "workspace.created" && typeof message.requestId === "string") {
+          const pending = pendingWorkspaceCreates.current.get(message.requestId);
+          if (!pending) return;
+          pendingWorkspaceCreates.current.delete(message.requestId);
+          clearTimeout(pending.timer);
+          if (!message.result.ok) {
+            pending.reject(new WorkspaceCreateError(message.result.error));
+            return;
+          }
+
+          const project = message.result.project as WireProject;
+          projectSelectionTouched.current.add(pending.providerId);
+          projectRef.current = { ...projectRef.current, [pending.providerId]: project.path };
+          void saveProjectPreferences(projectRef.current);
+          setState((s) => ({
+            ...s,
+            projects: {
+              ...s.projects,
+              [pending.providerId]: [
+                project,
+                ...(s.projects[pending.providerId] ?? []).filter(
+                  (existing) => existing.path !== project.path,
+                ),
+              ],
+            },
+            projectPath: { ...s.projectPath, [pending.providerId]: project.path },
+            workspace: undefined,
+            workspaceNonce: s.workspaceNonce + 1,
+          }));
+          pending.resolve(project);
+          return;
+        }
+
         // Project and git state, answered per request. An answer for a
         // conversation the user has already left describes the wrong project,
         // so it is dropped rather than shown for a second.
@@ -1638,6 +1736,7 @@ export function useDaemon(
               return {
                 ...prev,
                 providers: message.providers ?? [],
+                canCreateWorkspace: message.canCreateWorkspace === true,
                 // Absent means "nothing to report" *or* "a daemon too old to
                 // have the field", and both have to clear the notice — a
                 // banner the daemon can no longer take back would outlive the
@@ -2007,6 +2106,7 @@ export function useDaemon(
 
       ws.onclose = () => {
         clearTimeout(deadline);
+        rejectPendingCreates("offline");
         scheduleReconnect();
       };
       ws.onerror = () => ws.close();
@@ -2048,6 +2148,7 @@ export function useDaemon(
 
     return () => {
       alive.current = false;
+      rejectPendingCreates("offline");
       resume.current = undefined;
       if (retry.current) clearTimeout(retry.current);
       const ws = socket.current;
@@ -2089,6 +2190,30 @@ export function useDaemon(
 
   // Sent outside any state updater: React may invoke an updater twice, and a
   // socket write in one would ask the daemon for the same picture twice.
+  const createWorkspace = useCallback(
+    (parent: string | undefined, name: string): Promise<WireProject> => {
+      if (!canCreateWorkspaceRef.current) {
+        return Promise.reject(new WorkspaceCreateError("unsupported"));
+      }
+      const providerId = targetProviderRef.current;
+      if (!providerId) return Promise.reject(new WorkspaceCreateError("create_failed"));
+
+      const requestId = `create_${deviceId}_${++createCounter.current}`;
+      return new Promise<WireProject>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          pendingWorkspaceCreates.current.delete(requestId);
+          reject(new WorkspaceCreateError("timeout"));
+        }, WORKSPACE_CREATE_TIMEOUT);
+        pendingWorkspaceCreates.current.set(requestId, { providerId, resolve, reject, timer });
+        if (post({ t: "workspace.create", requestId, name, parent })) return;
+        clearTimeout(timer);
+        pendingWorkspaceCreates.current.delete(requestId);
+        reject(new WorkspaceCreateError("offline"));
+      });
+    },
+    [deviceId, post],
+  );
+
   const sendImageRequest = useCallback(
     (uri: string) => {
       const sent = post({
@@ -2549,11 +2674,13 @@ export function useDaemon(
        * of its own rows in it.
        */
       selectProject: (providerId: string, path?: string) => {
+        projectSelectionTouched.current.add(providerId);
         if (path) projectRef.current = { ...projectRef.current, [providerId]: path };
         else {
           const { [providerId]: _dropped, ...rest } = projectRef.current;
           projectRef.current = rest;
         }
+        void saveProjectPreferences(projectRef.current);
         setState((s) => ({
           ...s,
           projectPath: path
@@ -2570,6 +2697,8 @@ export function useDaemon(
         // The request itself is an effect below, so a project chosen while
         // offline is still asked for the moment the socket comes back.
       },
+
+      createWorkspace,
 
       /**
        * Look on the desktop for somewhere to work.
@@ -2691,7 +2820,7 @@ export function useDaemon(
     }),
     // `deviceId` identifies this phone in the ids `start` mints. It does not
     // change in practice, and listing it costs nothing if it ever does.
-    [post, deliverPrompt, sendImageRequest, clearImages, deviceId],
+    [post, deliverPrompt, sendImageRequest, clearImages, createWorkspace, deviceId],
   );
 
   // Give up on a conversation that is taking impossibly long to open.

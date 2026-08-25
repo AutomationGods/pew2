@@ -1531,6 +1531,8 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
         onClose={closeNewChat}
         browse={daemon.browse}
         onBrowse={daemon.browseWorkspaces}
+        canCreateWorkspace={daemon.canCreateWorkspace}
+        onCreate={daemon.createWorkspace}
       />
 
       <AttachmentSheet visible={attachOpen} onSelect={pickAttachment} onClose={closeAttach} />

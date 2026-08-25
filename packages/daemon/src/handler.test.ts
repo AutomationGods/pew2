@@ -8,7 +8,7 @@
  * anyone holding the pairing token can send.
  */
 import { expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { handleMessage } from "./handler.js";
@@ -88,6 +88,59 @@ async function send(daemon: Daemon, message: unknown, deviceId?: string) {
   });
   return out;
 }
+
+test("workspace.create replies with the matching request and survives a daemon restart", async () => {
+  const root = mkdtempSync(join(tmpdir(), "pew2-create-handler-"));
+  const home = join(root, "home");
+  mkdirSync(home);
+  const env = { ...process.env, HOME: home, PEW2_HOME: join(root, "state") };
+
+  const projectPath = join(realpathSync(home), "gg-projects", "mobile-app");
+  const first = stubbed(env);
+  const out = await send(first.daemon, {
+    t: "workspace.create",
+    requestId: "create-7",
+    name: "mobile-app",
+  });
+  expect(out).toEqual([
+    {
+      t: "workspace.created",
+      requestId: "create-7",
+      result: {
+        ok: true,
+        project: {
+          path: projectPath,
+          name: "mobile-app",
+          sessions: 0,
+        },
+      },
+    },
+  ]);
+  expect(existsSync(projectPath)).toBe(true);
+
+  const restarted = stubbed(env);
+  expect(await restarted.daemon.knownProject("echo", projectPath)).toBe(projectPath);
+});
+
+test("workspace creation removes only its empty directory when registration fails", async () => {
+  const root = mkdtempSync(join(tmpdir(), "pew2-create-rollback-"));
+  const home = join(root, "home");
+  const blockedState = join(root, "state-is-a-file");
+  mkdirSync(home);
+  writeFileSync(blockedState, "not a directory");
+  const daemon = new Daemon(
+    { id: "test", name: "test" },
+    true,
+    { ...process.env, HOME: home, PEW2_HOME: blockedState },
+  );
+
+  expect(await daemon.createWorkspace("rolled-back")).toEqual({
+    ok: false,
+    error: "registration_failed",
+  });
+  expect(existsSync(join(home, "gg-projects", "rolled-back"))).toBe(false);
+  expect(existsSync(join(home, "gg-projects"))).toBe(true);
+});
 
 test("a session cannot be started in a directory the daemon never offered", async () => {
   const { daemon, started } = stubbed();

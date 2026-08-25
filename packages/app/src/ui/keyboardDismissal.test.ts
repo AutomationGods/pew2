@@ -20,21 +20,25 @@ function source(file: string): string {
   return readFileSync(join(import.meta.dir, file), "utf8");
 }
 
-test("every sheet takes the keyboard down, from the one place they share", () => {
+test("every sheet clears the composer keyboard; text sheets opt into avoidance", () => {
   // Sheets rest on the bottom edge. Opening one from the composer put the whole
   // card behind the keyboard: invisible, with its rows unreachable.
   //
-  // Asserted on `Sheet` rather than on its five callers because that is the
-  // point of the shared primitive — a sixth sheet added later inherits this
-  // instead of having to remember it.
-  expect(source("Sheet.tsx")).toContain("Keyboard.dismiss()");
+  // Asserted on `Sheet` rather than on its callers because that is the point of
+  // the shared primitive: every sheet clears the composer's keyboard first.
+  const sheet = source("Sheet.tsx");
+  expect(sheet).toContain("Keyboard.dismiss()");
+  expect(sheet).toContain("avoidKeyboard");
+  expect(sheet).toContain("KeyboardAvoidingView");
 
-  // No sheet holds a text field, which is what makes dismissing unconditionally
-  // safe. If one ever does, this fails and the rule needs revisiting rather than
-  // the input quietly losing focus every time the sheet opens.
+  // New chat deliberately owns a project-name field. It must opt into keyboard
+  // avoidance so the replacement keyboard cannot cover its primary action.
+  const newChat = source("NewChatSheet.tsx");
+  expect(newChat).toContain("<TextInput");
+  expect(newChat).toContain("avoidKeyboard");
+
+  // The remaining sheets still have no text field and inherit dismissal only.
   for (const file of [
-    "Sheet.tsx",
-    "NewChatSheet.tsx",
     "CommandSheet.tsx",
     "AttachmentSheet.tsx",
     "ApprovalSheet.tsx",

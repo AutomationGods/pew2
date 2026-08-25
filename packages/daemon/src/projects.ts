@@ -64,6 +64,22 @@ export function foldProjects(sessions: readonly SessionLike[]): AgentProject[] {
   return [...byPath.values()].sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
 }
 
+/** Add remembered projects that have no agent sessions yet. */
+export function withRememberedProjects(
+  projects: readonly AgentProject[],
+  rememberedOldestFirst: readonly string[],
+): AgentProject[] {
+  const seen = new Set(projects.map((project) => project.path));
+  const remembered = rememberedOldestFirst
+    .filter((path) => path.trim() && !seen.has(path))
+    .reverse()
+    .flatMap((path) => {
+      const name = folderName(path);
+      return name ? [{ path, name, sessions: 0 }] : [];
+    });
+  return [...projects, ...remembered];
+}
+
 /** The agent's own conversations in one project, newest first. */
 export function sessionsInProject<T extends SessionLike>(
   sessions: readonly T[],

@@ -402,6 +402,15 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         break;
       }
 
+      case "workspace.create": {
+        reply({
+          t: "workspace.created",
+          requestId: message.requestId,
+          result: await daemon.createWorkspace(message.name, message.parent),
+        });
+        break;
+      }
+
       case "workspace.status": {
         // The project the session is in, plus how dirty it is. Replied rather
         // than logged as a session event: it describes the machine right now,
