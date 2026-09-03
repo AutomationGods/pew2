@@ -8,9 +8,10 @@
  * That includes touch feedback: because every button routes through here, a tap
  * feels the same app-wide without a single call site opting in.
  */
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { Glass } from "./Glass";
 import { haptics } from "./haptics";
 
@@ -28,8 +29,8 @@ function withHaptic(onPress: () => void, feel: () => void = haptics.tap) {
 }
 
 /** Expands a sub-44pt control to the platform minimum touch target. */
-export function touchSlop(size: number) {
-  const slop = Math.max(0, (theme.size.touch - size) / 2);
+export function touchSlop(size: number, touchMin = 44) {
+  const slop = Math.max(0, (touchMin - size) / 2);
   return { top: slop, bottom: slop, left: slop, right: slop };
 }
 
@@ -50,12 +51,15 @@ export function CircleButton({
   onPress,
   label,
   children,
-  size = theme.size.control,
+  size,
   disabled = false,
   tint,
   style,
   feel,
 }: CircleButtonProps) {
+  const { theme } = useAppTheme();
+  const themed = useMemo(() => makeStyles(theme), [theme]);
+  const resolvedSize = size ?? theme.size.control;
   const press = withHaptic(onPress, feel);
 
   // A solid tint opts out of glass: used where a control must read as filled.
@@ -67,12 +71,12 @@ export function CircleButton({
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityState={{ disabled }}
-        hitSlop={touchSlop(size)}
+        hitSlop={touchSlop(resolvedSize, theme.size.touch)}
         style={({ pressed }) => [
-          styles.circle,
-          { width: size, height: size, borderRadius: size / 2, backgroundColor: tint },
-          pressed && !disabled && styles.pressed,
-          disabled && styles.disabled,
+          themed.circle,
+          { width: resolvedSize, height: resolvedSize, borderRadius: resolvedSize / 2, backgroundColor: tint },
+          pressed && !disabled && themed.pressed,
+          disabled && themed.disabled,
           style,
         ]}
       >
@@ -82,19 +86,19 @@ export function CircleButton({
   }
 
   return (
-    <Glass radius={size / 2} interactive style={[{ width: size, height: size }, style]}>
+    <Glass radius={resolvedSize / 2} interactive style={[{ width: resolvedSize, height: resolvedSize }, style]}>
       <Pressable
         onPress={press}
         disabled={disabled}
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityState={{ disabled }}
-        hitSlop={touchSlop(size)}
+        hitSlop={touchSlop(resolvedSize, theme.size.touch)}
         style={({ pressed }) => [
-          styles.circle,
-          { width: size, height: size },
-          pressed && !disabled && styles.pressedOverlay,
-          disabled && styles.disabled,
+          themed.circle,
+          { width: resolvedSize, height: resolvedSize },
+          pressed && !disabled && themed.pressedOverlay,
+          disabled && themed.disabled,
         ]}
       >
         {children}
@@ -114,6 +118,8 @@ interface PillProps {
 
 /** Horizontal pill: the provider selector and the quick-action chips. */
 export function Pill({ onPress, label, children, disabled = false, feel }: PillProps) {
+  const { theme } = useAppTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const content = <View style={styles.pillRow}>{children}</View>;
 
   if (!onPress) {
@@ -148,10 +154,12 @@ export function Pill({ onPress, label, children, disabled = false, feel }: PillP
 
 /** Small muted caption used inside pills and rows. */
 export function Caption({ children }: { children: ReactNode }) {
+  const styles = useThemeStyles(makeStyles);
   return <Text style={styles.caption}>{children}</Text>;
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   circle: { alignItems: "center", justifyContent: "center" },
   // A pill in a crowded row must be able to give up width, and every layer down
   // to the label needs to say so — one rigid ancestor and the text below it can
@@ -176,4 +184,5 @@ const styles = StyleSheet.create({
   pressedOverlay: { backgroundColor: theme.glass.fillPressed },
   disabled: { opacity: 0.4 },
   caption: { color: theme.color.textDim, fontSize: theme.font.small },
-});
+  });
+}

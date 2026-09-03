@@ -16,7 +16,7 @@
  * Metrics and colours are sampled from the reference build: 36pt buttons inset
  * 11pt from the pill edge, #e0e0e0 glyphs, #828282 placeholder.
  */
-import { forwardRef, memo, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -32,7 +32,8 @@ import Reanimated, {
   withTiming,
 } from "react-native-reanimated";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { composerHeight, type ComposerBounds } from "./composerHeight";
 import { touchSlop } from "./controls";
 import { haptics } from "./haptics";
@@ -47,15 +48,8 @@ import type { Dictation } from "./useDictation";
 /** Stable identity, so the default never re-renders a memoized child. */
 const EMPTY_ATTACHMENTS: readonly PendingAttachment[] = [];
 
-const COLLAPSED = theme.size.composerCollapsed;
-const INSET = theme.size.composerInset;
-const BUTTON = theme.size.composerButton;
-/** Clearance the inline text needs to avoid the two buttons. */
-const INLINE_SIDE = INSET + BUTTON + theme.space(2);
 /** One fixed curve for expand/collapse, independent of the keyboard's own. */
 const EXPAND_DURATION = 140;
-/** How far the text sits below its expanded position while the pill is closed. */
-const TEXT_DROP = (COLLAPSED - theme.line.body) / 2 - theme.space(3);
 
 /**
  * Lines the box can grow to before the text scrolls internally.
@@ -77,42 +71,24 @@ const MAX_LINES = 8;
  * because the height worklet below closes over it, and `theme.space` is a
  * function — a worklet cannot reach back into JS to call it.
  */
-const CHROME = COLLAPSED - theme.space(2) + theme.space(3);
-
-/** Total control height that shows `lines` of text above the action row. */
-const heightForLines = (lines: number) => lines * theme.line.body + CHROME;
-
-/** Floor: one line of text above the action row. */
-const MIN_HEIGHT = heightForLines(1);
-const MAX_HEIGHT = heightForLines(MAX_LINES);
-/** Text height at which the box stops growing and the input starts scrolling. */
-const MAX_TEXT_HEIGHT = MAX_LINES * theme.line.body;
-
-/**
- * The theme's metrics, resolved once for the height worklet below.
- *
- * Sampled here rather than read inside the worklet because `theme.space` is a
- * function and a worklet cannot reach back into JS to call one. See
- * `composerHeight.ts` for the arithmetic itself, which lives there so it can be
- * tested without importing this file — the runner cannot parse `react-native`.
- */
-const BOUNDS: ComposerBounds = {
-  collapsed: COLLAPSED,
-  chrome: CHROME,
-  min: MIN_HEIGHT,
-  max: MAX_HEIGHT,
-};
-
-/**
- * iOS adds the whole leading (lineHeight minus the font's own height) above the
- * glyphs in a multiline TextInput instead of splitting it top and bottom. A line
- * box centred by pure geometry therefore renders about half a leading too low —
- * measured at 2pt here, which is subtle but visible against the round buttons
- * beside it. Subtract that half back so the text is optically centred.
- *
- * 1.2em is the system font's ascent + descent.
- */
-const HALF_LEADING = Math.max(0, (theme.line.body - theme.font.body * 1.2) / 2);
+function composerMetrics(theme: AppTheme) {
+  const COLLAPSED = theme.size.composerCollapsed;
+  const INSET = theme.size.composerInset;
+  const BUTTON = theme.size.composerButton;
+  const INLINE_SIDE = INSET + BUTTON + theme.space(2);
+  const TEXT_DROP = (COLLAPSED - theme.line.body) / 2 - theme.space(3);
+  const CHROME = COLLAPSED - theme.space(2) + theme.space(3);
+  const heightForLines = (lines: number) => lines * theme.line.body + CHROME;
+  const MIN_HEIGHT = heightForLines(1);
+  const MAX_HEIGHT = heightForLines(MAX_LINES);
+  const MAX_TEXT_HEIGHT = MAX_LINES * theme.line.body;
+  const HALF_LEADING = Math.max(0, (theme.line.body - theme.font.body * 1.2) / 2);
+  return {
+    COLLAPSED, INSET, BUTTON, INLINE_SIDE, TEXT_DROP, CHROME,
+    MIN_HEIGHT, MAX_HEIGHT, MAX_TEXT_HEIGHT, HALF_LEADING,
+    BOUNDS: { collapsed: COLLAPSED, chrome: CHROME, min: MIN_HEIGHT, max: MAX_HEIGHT } as ComposerBounds,
+  };
+}
 
 /** Imperative surface: the command sheet hands focus back after a pick. */
 export interface ComposerHandle {
@@ -150,6 +126,12 @@ function ComposerView({
   onRemoveAttachment,
   dictation,
 }: ComposerProps, ref: React.Ref<ComposerHandle>) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+  const { COLLAPSED, INSET, BUTTON, INLINE_SIDE, TEXT_DROP, CHROME, MIN_HEIGHT, MAX_HEIGHT, MAX_TEXT_HEIGHT, HALF_LEADING, BOUNDS } = useMemo(
+    () => composerMetrics(theme),
+    [theme],
+  );
   const hasText = value.trim().length > 0;
   // A photo with no words is a real message — "look at this" is implied by the
   // act of attaching it — so attachments arm send on their own.
@@ -512,7 +494,8 @@ function ComposerView({
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   stack: { gap: theme.space(2) },
   inputWrap: { position: "absolute", top: 0 },
   leading: { flexDirection: "row", alignItems: "center", flexShrink: 1 },
@@ -520,13 +503,13 @@ const styles = StyleSheet.create({
   // as one set of controls. Sized by its content, since a command name's length
   // is the agent's business, not ours.
   badge: {
-    height: BUTTON,
+    height: theme.size.composerButton,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.space(1),
     paddingHorizontal: theme.space(2),
     marginLeft: theme.space(1),
-    borderRadius: BUTTON / 2,
+    borderRadius: theme.size.composerButton / 2,
     backgroundColor: theme.glass.control.fill,
   },
   badgePressed: { opacity: 0.6 },
@@ -546,23 +529,23 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: COLLAPSED,
+    height: theme.size.composerCollapsed,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: INSET,
+    paddingHorizontal: theme.size.composerInset,
   },
   actionButton: {
-    width: BUTTON,
-    height: BUTTON,
-    borderRadius: BUTTON / 2,
+    width: theme.size.composerButton,
+    height: theme.size.composerButton,
+    borderRadius: theme.size.composerButton / 2,
     alignItems: "center",
     justifyContent: "center",
     // Nested inside the composer's own glass, so it takes the fill only. A
     // second rim this close in would read as a seam rather than a highlight.
     backgroundColor: theme.glass.control.fill,
   },
-  trailing: { width: BUTTON, height: BUTTON },
+  trailing: { width: theme.size.composerButton, height: theme.size.composerButton },
   trailingLayer: {
     position: "absolute",
     top: 0,
@@ -575,7 +558,9 @@ const styles = StyleSheet.create({
   sendButton: { backgroundColor: theme.color.text },
   sendPressed: { backgroundColor: theme.color.textDim },
   notImplemented: { opacity: 0.4 },
-});
+  });
+}
+;
 
 // Memoized: a streamed chunk re-renders the screen many times a second, and
 // none of those chunks change anything here.

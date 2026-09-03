@@ -14,7 +14,8 @@
 import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { touchSlop } from "./controls";
 import { Sheet, SHEET_ROW_HEIGHT, sheetCardStyle } from "./Sheet";
 
@@ -38,6 +39,9 @@ const SOURCES: {
 ];
 
 function AttachmentSheetView({ visible, onSelect, onClose }: AttachmentSheetProps) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+
   return (
     <Sheet visible={visible} title="Attach" onClose={onClose} dismissLabel="Close attachments">
       <View style={styles.card}>
@@ -72,8 +76,9 @@ function AttachmentSheetView({ visible, onSelect, onClose }: AttachmentSheetProp
   );
 }
 
-const styles = StyleSheet.create({
-  card: sheetCardStyle,
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  card: sheetCardStyle(theme),
   row: {
     height: SHEET_ROW_HEIGHT,
     flexDirection: "row",
@@ -96,6 +101,8 @@ const styles = StyleSheet.create({
     color: theme.color.textDim,
     fontSize: theme.font.small,
   },
-});
+  });
+}
+;
 
 export const AttachmentSheet = memo(AttachmentSheetView);

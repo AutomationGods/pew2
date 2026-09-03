@@ -24,7 +24,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { AgentChip } from "./AgentChip";
 import { touchSlop } from "./controls";
 import { Glass } from "./Glass";
@@ -35,9 +36,11 @@ import { formatHistoryMetadata } from "../historyMetadata";
 import { recentSessionsForProvider } from "../sessionHistory";
 import { useReducedMotion } from "./useReducedMotion";
 import { useAppActive } from "./useAppActive";
+import { AppearanceSheet } from "./AppearanceSheet";
 import { ProjectSelect } from "./ProjectSelect";
 import { ProjectMenu } from "./ProjectMenu";
 import { sessionsInProject, type Project } from "../projects";
+import { activitySummary, groupActivitySessions } from "../activitySessions";
 import type { Provider, Session, Status } from "../useDaemon";
 
 export const DRAWER_WIDTH = Math.min(Dimensions.get("window").width * 0.88, 380);
@@ -50,6 +53,7 @@ interface SidebarProps {
   activeSessionId?: string;
   onSelectProvider: (id: string) => void;
   onOpenSession: (id: string) => void;
+  onOpenActivity: () => void;
   /**
    * Starts a conversation in `cwd`.
    *
@@ -126,6 +130,7 @@ function SessionStatus({
    */
   paused: boolean;
 }) {
+  const styles = useThemeStyles(makeStyles);
   const pulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -195,6 +200,7 @@ const SessionRow = memo(function SessionRow({
   paused,
   onOpen,
 }: SessionRowProps) {
+  const styles = useThemeStyles(makeStyles);
   // Only the initial viewport cascades. Rows virtualized in later should appear
   // immediately, rather than fading under the user's finger while they scroll.
   //
@@ -304,6 +310,7 @@ function SidebarView({
   activeSessionId,
   onSelectProvider,
   onOpenSession,
+  onOpenActivity,
   onNewConversation,
   projects,
   selectedProjectPath,
@@ -316,12 +323,15 @@ function SidebarView({
   historyLoading = false,
   reduceMotion = false,
 }: SidebarProps) {
+  const { preference, theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const appActive = useAppActive();
   // Nothing in a row should be animating when the drawer is shut behind the
   // conversation, or when the app is not on screen at all. Resolved once here
   // rather than per row, so the whole list shares one subscription.
   const rowsStill = !open || !appActive;
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   // Measured rather than computed: the chip row above scrolls horizontally and
   // the select row's own height comes from the type inside it, so the only
@@ -365,6 +375,9 @@ function SidebarView({
     () => providers.filter((provider) => provider.available).length,
     [providers],
   );
+  const activityGroups = useMemo(() => groupActivitySessions(sessions), [sessions]);
+  const activityCount =
+    activityGroups.needsYou.length + activityGroups.working.length + activityGroups.ready.length;
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.path === selectedProjectPath),
@@ -413,7 +426,15 @@ function SidebarView({
       accessibilityElementsHidden={!open}
       importantForAccessibility={open ? "auto" : "no-hide-descendants"}
     >
-      <View style={[styles.panelInner, { paddingTop: insets.top + theme.headerInset }]}>
+      <View
+        style={[
+          styles.panelInner,
+          {
+            paddingTop: insets.top + theme.headerInset,
+            paddingBottom: insets.bottom + theme.space(4),
+          },
+        ]}
+      >
           <View style={styles.header}>
             {/* The dot rides with the title rather than sitting in the footer:
                 connection state is the first thing to check when the drawer is
@@ -449,6 +470,15 @@ function SidebarView({
                 </View>
               )}
             </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Appearance settings. Currently ${preference.mode} mode, ${preference.accent} accent.`}
+              hitSlop={touchSlop(32, theme.size.touch)}
+              onPress={() => { haptics.tap(); setAppearanceOpen(true); }}
+              style={({ pressed }) => [styles.headerAction, pressed && { opacity: 0.6 }]}
+            >
+              <Ionicons name="color-palette-outline" size={20} color={theme.color.textDim} />
+            </Pressable>
             {/* No button here. A "new chat" in the drawer header sits above the
                 app chips and the project selector both, so it could only mean
                 "somewhere" — it started one wherever the agent last was, which
@@ -473,6 +503,47 @@ function SidebarView({
               />
             ))}
           </ScrollView>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Open activity. ${activitySummary(activityGroups)}.`}
+            onPress={() => {
+              haptics.tap();
+              onOpenActivity();
+            }}
+            style={({ pressed }) => [
+              styles.activityShortcut,
+              pressed && styles.activityShortcutPressed,
+            ]}
+          >
+            <View style={styles.activityIcon}>
+              <Ionicons name="pulse" size={20} color={theme.color.accent} />
+            </View>
+            <View style={styles.activityCopy}>
+              <Text style={styles.activityTitle}>Activity</Text>
+              <Text style={styles.activityMeta} numberOfLines={1}>
+                {activitySummary(activityGroups)}
+              </Text>
+            </View>
+            {activityCount > 0 ? (
+              <View
+                style={[
+                  styles.activityCount,
+                  activityGroups.needsYou.length > 0 && styles.activityCountAttention,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.activityCountText,
+                    activityGroups.needsYou.length > 0 && styles.activityCountTextAttention,
+                  ]}
+                >
+                  {activityCount}
+                </Text>
+              </View>
+            ) : null}
+            <Ionicons name="chevron-forward" size={18} color={theme.color.textFaint} />
+          </Pressable>
 
           {/* Under the apps, above the history: it belongs to the app chosen
               above and it governs the list below. */}
@@ -624,6 +695,10 @@ function SidebarView({
             }}
             onClose={() => setMenuOpen(false)}
           />
+          <AppearanceSheet
+            visible={appearanceOpen}
+            onClose={() => setAppearanceOpen(false)}
+          />
       </View>
     </View>
   );
@@ -641,6 +716,9 @@ function SidebarView({
  * mean holding a button that no longer applies to what the list is showing.
  */
 function NewChatChip({ project, onPress }: { project: Project; onPress: () => void }) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+
   const reduceMotion = useReducedMotion();
   const enter = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
 
@@ -691,7 +769,8 @@ function NewChatChip({ project, onPress }: { project: Project; onPress: () => vo
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   machine: {
     flexDirection: "row",
     alignItems: "center",
@@ -772,6 +851,13 @@ const styles = StyleSheet.create({
     fontSize: theme.font.tiny,
     textAlign: "center",
   },
+  headerAction: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   // Colour is the whole message, so it needs no glyph and no label beside it.
   connectionDot: { width: 8, height: 8, borderRadius: 4 },
   headerTitle: {
@@ -787,6 +873,48 @@ const styles = StyleSheet.create({
     gap: theme.space(2),
     alignItems: "center",
   },
+  activityShortcut: {
+    minHeight: 64,
+    marginHorizontal: theme.gutter,
+    marginTop: theme.sectionGap,
+    paddingHorizontal: theme.space(3),
+    borderRadius: theme.radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.color.border,
+    backgroundColor: theme.color.surface,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.space(3),
+  },
+  activityShortcutPressed: { backgroundColor: theme.color.surfacePressed },
+  activityIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.color.border,
+  },
+  activityCopy: { flex: 1, minWidth: 0, gap: 2 },
+  activityTitle: { color: theme.color.text, fontSize: theme.font.body, fontWeight: "600" },
+  activityMeta: { color: theme.color.textDim, fontSize: theme.font.tiny },
+  activityCount: {
+    minWidth: 24,
+    height: 24,
+    paddingHorizontal: theme.space(1.5),
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.surfaceRaised,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  activityCountAttention: { backgroundColor: theme.color.accent },
+  activityCountText: {
+    color: theme.color.text,
+    fontFamily: theme.display.semibold,
+    fontSize: theme.font.tiny,
+  },
+  activityCountTextAttention: { color: theme.approval.allowText },
   pressed: { opacity: 0.6 },
 
   // A heading, not a caption: the drawer has two sections and they are peers,
@@ -860,7 +988,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space(2),
     paddingTop: theme.space(2),
   },
-});
+  });
+}
+;
 
 // Memoized: a streamed chunk re-renders the screen many times a second, and
 // none of those chunks change anything here.

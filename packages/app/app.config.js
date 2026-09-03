@@ -41,6 +41,12 @@ module.exports = () => {
 
   return {
     ...expo,
+    plugins: [
+      ...(expo.plugins ?? []),
+      // Pairing uses a device-local ws:// URL; Android 9+ blocks it unless the
+      // native manifest opts in. Session payloads remain encrypted by pew2.
+      ["expo-build-properties", { android: { usesCleartextTraffic: true } }],
+    ],
     ...(owner ? { owner } : {}),
     ...(projectId
       ? { extra: { ...expo.extra, eas: { ...expo.extra?.eas, projectId } } }

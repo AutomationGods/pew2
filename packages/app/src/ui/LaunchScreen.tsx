@@ -10,7 +10,8 @@
  */
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { haptics } from "./haptics";
 import { Logo } from "./Logo";
 import { Glass } from "./Glass";
@@ -20,6 +21,9 @@ interface Props {
 }
 
 export function LaunchScreen({ onConnect }: Props) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+
   const insets = useSafeAreaInsets();
 
   return (
@@ -54,7 +58,8 @@ export function LaunchScreen({ onConnect }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.color.bg },
   centre: {
     position: "absolute",
@@ -77,4 +82,6 @@ const styles = StyleSheet.create({
   },
   buttonPressed: { backgroundColor: theme.glass.fillPressed },
   buttonText: { color: theme.color.text, fontSize: theme.font.title, fontWeight: "600" },
-});
+  });
+}
+;

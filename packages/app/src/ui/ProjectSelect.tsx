@@ -21,7 +21,8 @@
 import { memo } from "react";
 import { Pressable, StyleSheet, Text, View, type LayoutChangeEvent } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { Glass } from "./Glass";
 import { haptics } from "./haptics";
 import { projectLabel, type Project } from "../projects";
@@ -38,6 +39,9 @@ interface ProjectSelectProps {
 }
 
 function ProjectSelectView({ selected, count, open, onToggle, onLayout }: ProjectSelectProps) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+
   // An agent that has never been used has nothing to choose between, and an
   // empty dropdown is a control that can only disappoint. One project still
   // earns the row: it says where the next conversation will open.
@@ -89,7 +93,8 @@ function ProjectSelectView({ selected, count, open, onToggle, onLayout }: Projec
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   // Same gutter as the chips above and the list below: this is a rail the whole
   // drawer shares, and stepping it in would read as a nested panel.
   host: { marginHorizontal: theme.gutter, marginTop: theme.sectionGap },
@@ -114,6 +119,8 @@ const styles = StyleSheet.create({
   // weight as the "Latest chats" label below it.
   labelAll: { color: theme.color.textDim },
   pressed: { opacity: 0.6 },
-});
+  });
+}
+;
 
 export const ProjectSelect = memo(ProjectSelectView);

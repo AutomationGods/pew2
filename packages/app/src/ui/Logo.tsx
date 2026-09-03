@@ -10,7 +10,8 @@
  */
 import { StyleSheet, Text, View } from "react-native";
 import { Orb } from "./Orb";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 
 interface LogoProps {
   /** Diameter of the orb. The wordmark scales with it. */
@@ -18,6 +19,8 @@ interface LogoProps {
 }
 
 export function Logo({ size = 72 }: LogoProps) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
   return (
     <View
       style={styles.root}
@@ -52,12 +55,12 @@ export function Logo({ size = 72 }: LogoProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { alignItems: "center", gap: theme.space(5) },
-  word: {
-    color: theme.color.text,
-    // The wordmark is the purest expression of the display face, so it uses the
-    // same family as every other title rather than a bespoke treatment.
-    fontFamily: theme.display.semibold,
-  },
-});
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    root: { alignItems: "center", gap: theme.space(5) },
+    word: {
+      color: theme.color.text,
+      fontFamily: theme.display.semibold,
+    },
+  });
+}

@@ -23,7 +23,8 @@
  */
 import { Component, type ReactNode } from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { theme } from "../theme";
+import { useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 
 interface Props {
   children: ReactNode;
@@ -33,7 +34,7 @@ interface State {
   error?: Error;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
+class ErrorBoundaryInner extends Component<Props & { styles: ReturnType<typeof makeStyles> }, State> {
   state: State = {};
 
   static getDerivedStateFromError(error: Error): State {
@@ -41,8 +42,6 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error) {
-    // Also to the console, so `expo start` shows it during development. The
-    // on-screen copy is for everyone who has no console attached.
     console.error("[pew2] render crashed:", error);
   }
 
@@ -50,6 +49,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     const { error } = this.state;
+    const { styles } = this.props;
     if (!error) return this.props.children;
 
     return (
@@ -59,16 +59,12 @@ export class ErrorBoundary extends Component<Props, State> {
           Something in the app failed to draw. Trying again usually works; if it keeps
           happening, this message is worth reporting.
         </Text>
-
-        {/* Scrollable: a stack is long, and truncating it removes the only part
-            that makes the report useful. */}
         <ScrollView style={styles.detail} contentContainerStyle={styles.detailContent}>
           <Text style={styles.detailText} selectable>
             {error.message}
             {error.stack ? `\n\n${error.stack}` : ""}
           </Text>
         </ScrollView>
-
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Try again"
@@ -82,7 +78,13 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 }
 
-const styles = StyleSheet.create({
+export function ErrorBoundary({ children }: Props) {
+  const styles = useThemeStyles(makeStyles);
+  return <ErrorBoundaryInner styles={styles}>{children}</ErrorBoundaryInner>;
+}
+
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: theme.color.bg,
@@ -114,4 +116,6 @@ const styles = StyleSheet.create({
   },
   buttonPressed: { opacity: 0.85 },
   buttonText: { color: "#ffffff", fontSize: theme.font.body, fontWeight: "600" },
-});
+  });
+}
+;

@@ -150,6 +150,7 @@ function Conversation({ drawerOpen }: { drawerOpen: boolean }) {
         activeSessionId="s0"
         onSelectProvider={() => {}}
         onOpenSession={() => {}}
+        onOpenActivity={() => {}}
         onNewConversation={() => {}}
         projects={PROJECTS}
         selectedProjectPath="/Users/k/code/storefront"

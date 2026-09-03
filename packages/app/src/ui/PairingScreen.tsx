@@ -19,7 +19,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { haptics } from "./haptics";
 import { parsePairing, type Pairing } from "../pairingLink";
 import { deviceId } from "../pairing";
@@ -37,6 +38,9 @@ interface Props {
 }
 
 export function PairingScreen({ onPaired, onBack, notice }: Props) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -236,7 +240,8 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.color.bg },
   scroll: { flex: 1 },
   content: { paddingHorizontal: theme.gutter, paddingTop: theme.space(4) },
@@ -337,4 +342,6 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginTop: theme.space(8),
   },
-});
+  });
+}
+;

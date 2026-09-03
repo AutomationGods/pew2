@@ -28,7 +28,8 @@ import {
   type NativeSyntheticEvent,
 } from "react-native";
 import { FlashList, type FlashListRef, type ListRenderItemInfo } from "@shopify/flash-list";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { Turn } from "./Turn";
 import { ActivityLine } from "./ActivityLine";
 import { TurnReceipt } from "./TurnReceipt";
@@ -82,6 +83,8 @@ function ChatThreadView(
   }: Props,
   ref: React.Ref<ChatThreadRef>,
 ) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
   // Never while the agent is working: a turn in flight is not a turn that
   // failed, and the tail is a system line for as long as the next prompt takes
   // to produce anything.
@@ -353,12 +356,15 @@ const getItemType = (turn: TurnData) => turn.role;
  * scrolled rather than bottom-aligned, so the growth goes below the fold where
  * nobody sees it.
  */
-const SpacerOnly = () => (
-  <View style={[styles.footerSpacer, { height: useStatusRowHeight() }]} />
-);
+function SpacerOnly() {
+  const styles = useThemeStyles(makeStyles);
+  return <View style={[styles.footerSpacer, { height: useStatusRowHeight() }]} />;
+}
 
 /** Three dots that fade in sequence. Calm, and it costs no layout. */
 function Working() {
+  const styles = useThemeStyles(makeStyles);
+
   const one = useRef(new Animated.Value(0.25)).current;
   const two = useRef(new Animated.Value(0.25)).current;
   const three = useRef(new Animated.Value(0.25)).current;
@@ -397,7 +403,8 @@ function Working() {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   row: { paddingTop: theme.space(5), paddingHorizontal: theme.gutter },
   firstRow: { paddingTop: 0, paddingHorizontal: theme.gutter },
   // Sits on the same left rail as the agent text that replaces it, so the reply
@@ -421,6 +428,8 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: theme.color.textDim,
   },
-});
+  });
+}
+;
 
 export const ChatThread = memo(forwardRef<ChatThreadRef, Props>(ChatThreadView));

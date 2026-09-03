@@ -15,7 +15,8 @@
 import { memo, useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { currentTool, queuedTools, type Activity, type ToolKind } from "../activity";
 import { ShimmerText } from "./ShimmerText";
 import { useReducedMotion } from "./useReducedMotion";
@@ -48,6 +49,9 @@ const SWAP_DURATION = 160;
 const SWAP_FROM = 0.35;
 
 function ActivityLineView({ activity }: { activity: Activity }) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+
   const tool = currentTool(activity);
   const queued = queuedTools(activity);
   const reduceMotion = useReducedMotion();
@@ -108,7 +112,8 @@ function ActivityLineView({ activity }: { activity: Activity }) {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   // Mirrors `ChatThread`'s dot row so replacing one with the other never moves
   // the transcript, horizontally or vertically.
   row: {
@@ -128,6 +133,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: theme.color.textFaint,
   },
-});
+  });
+}
+;
 
 export const ActivityLine = memo(ActivityLineView);

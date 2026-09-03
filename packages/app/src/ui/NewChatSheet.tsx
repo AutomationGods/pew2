@@ -46,7 +46,8 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { touchSlop } from "./controls";
 import { Sheet, SHEET_ROW_HEIGHT, SHEET_VISIBLE_ROWS, sheetCardStyle } from "./Sheet";
 import { haptics } from "./haptics";
@@ -105,6 +106,8 @@ function NewChatSheetView({
   canCreateWorkspace = false,
   onCreate,
 }: NewChatSheetProps) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
   const [step, setStep] = useState(STEP_CHOICES);
   const [listMode, setListMode] = useState<
     "projects" | "browse" | "create" | "location"
@@ -608,6 +611,8 @@ function Row({
   onDescend?: () => void;
   descendLabel?: string;
 }) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
   return (
     <View style={[styles.rowShell, divided && styles.rowDivided]}>
       <Pressable
@@ -648,8 +653,9 @@ function Row({
   );
 }
 
-const styles = StyleSheet.create({
-  card: sheetCardStyle,
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  card: sheetCardStyle(theme),
   // The first pane stays in normal flow so the card has a natural height on the
   // frame it first appears, before any measurement has come back. Everything
   // after it is measured and driven by the card's animated height instead.
@@ -740,6 +746,8 @@ const styles = StyleSheet.create({
   rowText: { flex: 1 },
   rowTitle: { color: theme.color.text, fontSize: theme.font.body },
   rowDetail: { color: theme.color.textDim, fontSize: theme.font.tiny },
-});
+  });
+}
+;
 
 export const NewChatSheet = memo(NewChatSheetView);

@@ -9,6 +9,12 @@
 import * as SecureStore from "expo-secure-store";
 import { fromCachedProviders, toCachedProviders } from "./providerCache";
 import {
+  DEFAULT_APPEARANCE,
+  parseAppearancePreference,
+  serializeAppearancePreference,
+  type AppearancePreference,
+} from "./appearancePreference";
+import {
   parseProjectPreferences,
   serializeProjectPreferences,
   type ProjectPreferences,
@@ -18,6 +24,7 @@ import type { Provider } from "./useDaemon";
 const LAST_PROVIDER_KEY = "pew2.lastProviderId";
 const PROVIDERS_KEY = "pew2.providers";
 const PROJECTS_KEY = "pew2.selectedProjects";
+const APPEARANCE_KEY = "pew2.appearance";
 
 /** The agent last targeted on this device, or null if never chosen. */
 export async function loadLastProvider(): Promise<string | null> {
@@ -80,6 +87,24 @@ export async function saveProjectPreferences(preferences: ProjectPreferences): P
     await SecureStore.setItemAsync(PROJECTS_KEY, serializeProjectPreferences(preferences));
   } catch {
     // A locked keychain costs the preference, never the live selection.
+  }
+}
+
+export async function loadAppearancePreference(): Promise<AppearancePreference> {
+  try {
+    return parseAppearancePreference(await SecureStore.getItemAsync(APPEARANCE_KEY));
+  } catch {
+    return DEFAULT_APPEARANCE;
+  }
+}
+
+export async function saveAppearancePreference(
+  preference: AppearancePreference,
+): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(APPEARANCE_KEY, serializeAppearancePreference(preference));
+  } catch {
+    // Appearance applies immediately; persistence failure never blocks the app.
   }
 }
 

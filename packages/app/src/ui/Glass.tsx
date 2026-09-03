@@ -17,7 +17,7 @@ import {
 import { BlurView } from "expo-blur";
 import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
-import { theme } from "../theme";
+import { useAppTheme } from "../appearance";
 import { useReduceTransparency } from "./accessibilityState";
 
 interface GlassProps {
@@ -76,10 +76,10 @@ const BLUR_HIGHLIGHT: Record<"control" | "raised", readonly [string, string, str
   raised: ["rgba(255,255,255,0.22)", "rgba(255,255,255,0.035)", "rgba(255,255,255,0)"],
   control: ["rgba(255,255,255,0.14)", "rgba(255,255,255,0.035)", "rgba(255,255,255,0)"],
 };
-const ACCESSIBLE_FILL: Record<"control" | "raised", string> = {
-  raised: "rgba(47,47,52,0.98)",
-  control: "rgba(35,35,39,0.96)",
-};
+const ACCESSIBLE_FILL = {
+  light: { raised: "rgba(255,255,255,0.98)", control: "rgba(255,255,255,0.96)" },
+  dark: { raised: "rgba(47,47,52,0.98)", control: "rgba(35,35,39,0.96)" },
+} as const;
 const HIGHLIGHT_LOCATIONS = [0, 0.42, 1] as const;
 const HIGHLIGHT_START = { x: 0, y: 0 } as const;
 const HIGHLIGHT_END = { x: 0.9, y: 1 } as const;
@@ -88,12 +88,14 @@ export function Glass({
   children,
   radius,
   style,
-  intensity = theme.glass.intensity,
+  intensity,
   interactive = false,
   tier = "control",
 }: GlassProps) {
+  const { theme } = useAppTheme();
   const reduceTransparency = useReduceTransparency();
   const { fill, rim } = theme.glass[tier];
+  const resolvedIntensity = intensity ?? theme.glass.intensity;
 
   if (hasNativeLiquidGlass() && !reduceTransparency) {
     // Nothing is layered over the material, deliberately. `regular` is Apple's
@@ -107,7 +109,7 @@ export function Glass({
     return (
       <GlassView
         glassEffectStyle="regular"
-        colorScheme="dark"
+        colorScheme={theme.mode}
         // Every pew2 control keeps its semantic Pressable as a child. Let that
         // child own hit-testing; otherwise UIVisualEffectView can swallow taps.
         isInteractive={interactive}
@@ -123,8 +125,8 @@ export function Glass({
     <View style={[styles.material, { borderRadius: radius, borderColor: rim }, style]}>
       {!reduceTransparency && (
         <BlurView
-          intensity={intensity}
-          tint="dark"
+          intensity={resolvedIntensity}
+          tint={theme.mode}
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
         />
@@ -132,7 +134,7 @@ export function Glass({
       <View
         style={[
           StyleSheet.absoluteFill,
-          { backgroundColor: reduceTransparency ? ACCESSIBLE_FILL[tier] : fill },
+          { backgroundColor: reduceTransparency ? ACCESSIBLE_FILL[theme.mode][tier] : fill },
         ]}
         pointerEvents="none"
       />

@@ -13,7 +13,8 @@
  */
 import { memo, useRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { touchSlop } from "./controls";
 import { Sheet, SHEET_ROW_HEIGHT, sheetCardStyle } from "./Sheet";
 import { isDenyApprovalOption, selectApprovalOptions } from "../approvalOptions";
@@ -26,6 +27,9 @@ interface ApprovalSheetProps {
 }
 
 function ApprovalSheetView({ permission, onAnswer }: ApprovalSheetProps) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+
   // Held after the answer so the sheet can animate out with its content intact
   // — clearing on the same frame would empty the card mid-travel.
   const shown = useLastDefined(permission);
@@ -74,7 +78,8 @@ function useLastDefined<T>(value: T | undefined): T | undefined {
   return held.current;
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   body: { gap: theme.space(3), paddingBottom: theme.space(1) },
   // Full text, not an ellipsis: what is being approved is the whole decision,
   // and a truncated path is exactly the detail that makes it a safe one.
@@ -84,7 +89,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     paddingHorizontal: theme.space(1),
   },
-  card: sheetCardStyle,
+  card: sheetCardStyle(theme),
   row: {
     minHeight: SHEET_ROW_HEIGHT,
     justifyContent: "center",
@@ -102,6 +107,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   denyName: { color: theme.color.danger },
-});
+  });
+}
+;
 
 export const ApprovalSheet = memo(ApprovalSheetView);

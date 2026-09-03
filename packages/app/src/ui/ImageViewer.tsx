@@ -18,7 +18,8 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "rea
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { haptics } from "./haptics";
 import { saveImageToDevice, shareImage, type SaveResult } from "./imageSaver";
 import type { ChatImage as ChatImageModel } from "../images";
@@ -52,6 +53,8 @@ export function ImageViewer({
   visible: boolean;
   onClose: () => void;
 }) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState<"save" | "share" | undefined>(undefined);
   const [feedback, setFeedback] = useState<Feedback | undefined>(undefined);
@@ -188,7 +191,8 @@ export function ImageViewer({
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   backdrop: {
     flex: 1,
     // Nearly opaque rather than a tint: a picture judged against the
@@ -230,4 +234,6 @@ const styles = StyleSheet.create({
   },
   primaryButton: { backgroundColor: theme.color.surfaceRaised },
   buttonText: { color: theme.color.text, fontSize: theme.font.body, fontWeight: "600" },
-});
+  });
+}
+;

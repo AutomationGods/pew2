@@ -10,7 +10,8 @@
 import { memo, useRef } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { MarkdownText } from "./MarkdownText";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { Sheet, SHEET_CARD_HEIGHT, sheetCardStyle } from "./Sheet";
 
 interface ThoughtSheetProps {
@@ -20,6 +21,8 @@ interface ThoughtSheetProps {
 }
 
 function ThoughtSheetView({ visible, text, onClose }: ThoughtSheetProps) {
+  const styles = useThemeStyles(makeStyles);
+
   // The closed state carries no text, so the card would empty on the first
   // frame of the exit and the sheet would slide away blank. Keep the last
   // thought until another one replaces it.
@@ -44,12 +47,15 @@ function ThoughtSheetView({ visible, text, onClose }: ThoughtSheetProps) {
   );
 }
 
-const styles = StyleSheet.create({
-  card: sheetCardStyle,
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  card: sheetCardStyle(theme),
   // Fixed rather than hugging: a two-line thought and a two-page one should
   // open the same object, or the sheet's size becomes a surprise every time.
   scroll: { height: SHEET_CARD_HEIGHT },
   content: { padding: theme.space(4) },
-});
+  });
+}
+;
 
 export const ThoughtSheet = memo(ThoughtSheetView);

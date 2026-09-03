@@ -27,7 +27,8 @@ import { useEffect, useState } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Clipboard from "expo-clipboard";
 import { Pressable, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { writeToClipboard } from "./clipboard";
 import { touchSlop } from "./controls";
 import { haptics } from "./haptics";
@@ -75,6 +76,8 @@ export function CopyButton({
   /** Placement only. The button's own shape is not a call-site decision. */
   style?: StyleProp<ViewStyle>;
 }) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
   const [state, setState] = useState<CopyState>("idle");
 
   useEffect(() => {
@@ -133,7 +136,8 @@ export function CopyButton({
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   button: {
     width: ACTION_SIZE,
     height: ACTION_SIZE,
@@ -142,4 +146,6 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.sm,
   },
   pressed: { backgroundColor: theme.color.surfacePressed },
-});
+  });
+}
+;

@@ -54,7 +54,8 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { CircleButton } from "./controls";
 import { haptics } from "./haptics";
 import { useReducedMotion } from "./useReducedMotion";
@@ -147,6 +148,8 @@ function SheetView({
   avoidKeyboard = false,
   children,
 }: SheetProps) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
 
@@ -369,6 +372,8 @@ function SheetView({
  * carries the sense of direction.
  */
 function CrossfadeTitle({ title }: { title: string }) {
+  const styles = useThemeStyles(makeStyles);
+
   const reduceMotion = useReducedMotion();
   const shown = useRef(title);
   const fade = useSharedValue(1);
@@ -411,6 +416,8 @@ function CrossfadeTitle({ title }: { title: string }) {
  * arrival — the half that matters when close becomes back.
  */
 function CrossfadeIcon({ name }: { name: keyof typeof Ionicons.glyphMap }) {
+  const { theme } = useAppTheme();
+
   return (
     <Animated.View entering={FadeIn.duration(160)}>
       <Ionicons name={name} size={18} color={theme.color.text} />
@@ -418,7 +425,8 @@ function CrossfadeIcon({ name }: { name: keyof typeof Ionicons.glyphMap }) {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   host: { ...StyleSheet.absoluteFillObject, zIndex: 20, justifyContent: "flex-end" },
   scrim: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)" },
   // Inset left and right so the thread stays visible down both sides, but sat
@@ -453,13 +461,17 @@ const styles = StyleSheet.create({
     fontSize: theme.font.title,
     fontWeight: "600",
   },
-});
+  });
+}
+;
 
 /** The card the sheet's content sits in: one rounded, clipped raised surface. */
-export const sheetCardStyle = {
-  backgroundColor: theme.color.surfaceRaised,
-  borderRadius: theme.radius.lg,
-  overflow: "hidden",
-} as const;
+export function sheetCardStyle(theme: AppTheme) {
+  return {
+    backgroundColor: theme.color.surfaceRaised,
+    borderRadius: theme.radius.lg,
+    overflow: "hidden" as const,
+  };
+}
 
 export const Sheet = memo(SheetView);

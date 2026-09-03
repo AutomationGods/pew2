@@ -29,7 +29,8 @@
 import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { touchSlop } from "./controls";
 import { changesAccessibilityLabel, changesLabel } from "../workspaceLabel";
 import {
@@ -57,6 +58,8 @@ function ContextBarView({
   showCommands,
   onCommands,
 }: ContextBarProps) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
   // Uncommitted work is the state worth noticing, so it takes the warm accent;
   // a clean tree is confirmation, not a warning, and stays green.
   const dirty = (workspace?.uncommitted ?? 0) > 0;
@@ -187,7 +190,8 @@ function ContextBarView({
  */
 export const ContextBar = memo(ContextBarView);
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   // Left-aligned with the thread's text rail, so the row reads as belonging to
   // the conversation rather than to the input below it.
   row: {
@@ -237,4 +241,6 @@ const styles = StyleSheet.create({
   // The project name is the row's subject, so it is the one item in full text
   // colour; the ceiling keeps it from crowding out everything to its right.
   folder: { color: theme.color.text, maxWidth: 120, flexShrink: 1 },
-});
+  });
+}
+;

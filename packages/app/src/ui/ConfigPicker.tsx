@@ -31,15 +31,15 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { haptics } from "./haptics";
 import type { ConfigOption } from "../useDaemon";
 import { useReducedMotion } from "./useReducedMotion";
 import { fitPickerToViewport } from "./pickerLayout";
 import { Glass } from "./Glass";
 
-/** Height of the top bar the picker hangs from: inset, control, inset. */
-const TOP_BAR = theme.headerInset * 2 + theme.size.control;
+
 
 /**
  * Ceiling for the menu. Short lists shrink to fit; an agent advertising a dozen
@@ -75,6 +75,9 @@ function ConfigPickerView({
   onSelect,
   anchorX,
 }: ConfigPickerProps) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+  const TOP_BAR = theme.headerInset * 2 + theme.size.control;
   const progress = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
@@ -231,7 +234,8 @@ function ConfigPickerView({
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   host: {
     ...StyleSheet.absoluteFillObject,
     // Above the conversation pane (1), its nav (2) and the composer dock (3),
@@ -285,7 +289,9 @@ const styles = StyleSheet.create({
     fontSize: theme.font.small,
     padding: theme.space(4),
   },
-});
+  });
+}
+;
 
 // Memoized: a streamed chunk re-renders the screen many times a second, and
 // none of those chunks change anything here.

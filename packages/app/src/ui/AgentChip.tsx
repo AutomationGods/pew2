@@ -21,7 +21,8 @@
 import { memo } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { providerFill } from "./providerGradient";
 import { Glass } from "./Glass";
 import { haptics } from "./haptics";
@@ -55,6 +56,9 @@ interface AgentChipProps {
 }
 
 function AgentChipView({ provider, selected, onPress }: AgentChipProps) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+
   const fill = providerFill(provider.color ?? theme.color.orb);
   const enabled = provider.available;
 
@@ -112,7 +116,8 @@ function AgentChipView({ provider, selected, onPress }: AgentChipProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   /**
    * Clips the fill to the pill. `Glass` rounds its own corners, but the
    * gradient is an absolutely-positioned child and would square them off again.
@@ -144,7 +149,9 @@ const styles = StyleSheet.create({
     lineHeight: theme.font.small + 4,
     maxWidth: 160,
   },
-});
+  });
+}
+;
 
 /**
  * The drawer re-renders whenever any conversation changes, and none of that

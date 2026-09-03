@@ -19,7 +19,8 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 // drops frames over images and one that does not.
 import { Image, type ImageErrorEventData, type ImageLoadEventData } from "expo-image";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { haptics } from "./haptics";
 import { ImageViewer } from "./ImageViewer";
 import { imageSourceKind, isDisplayableImage, type ChatImage as ChatImageModel } from "../images";
@@ -94,10 +95,14 @@ function Placeholder({
   ratio: number;
   children: React.ReactNode;
 }) {
+  const styles = useThemeStyles(makeStyles);
   return <View style={[styles.frame, styles.placeholder, { aspectRatio: ratio }]}>{children}</View>;
 }
 
 function ChatImageView({ image }: { image: ChatImageModel }) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+
   const resolved = useResolvedSource(image.src, image.origin);
   // Sized from the picture itself once it decodes; until then a stable box, so
   // the transcript does not jump as each image lands.
@@ -214,6 +219,8 @@ export const ChatImage = memo(
 
 /** The image strip under a message's text. */
 export function ChatImages({ images }: { images: readonly ChatImageModel[] }) {
+  const styles = useThemeStyles(makeStyles);
+
   if (images.length === 0) return null;
   return (
     <View style={styles.stack}>
@@ -227,7 +234,8 @@ export function ChatImages({ images }: { images: readonly ChatImageModel[] }) {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   // The markdown block above ends on a negative margin, so the strip provides
   // its own separation from text rather than relying on the paragraph's.
   stack: { width: "100%", gap: theme.space(2), marginTop: theme.space(1) },
@@ -250,4 +258,6 @@ const styles = StyleSheet.create({
   },
   errorText: { flex: 1, color: theme.color.textDim, fontSize: theme.font.small },
   retryText: { color: theme.color.accent, fontSize: theme.font.tiny, fontWeight: "600" },
-});
+  });
+}
+;

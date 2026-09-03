@@ -34,7 +34,8 @@ import Reanimated, {
 } from "react-native-reanimated";
 import { StatusBar } from "expo-status-bar";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "./src/theme";
+import type { AppTheme } from "./src/theme";
+import { AppearanceProvider, useAppTheme, useThemeStyles } from "./src/appearance";
 import { useDaemon, type Provider, type TurnFinished } from "./src/useDaemon";
 import { currentTool } from "./src/activity";
 import { dockHeightFor, recordDockHeight, type DockHeights } from "./src/dockHeight";
@@ -53,6 +54,7 @@ import { ChatThread, type ChatThreadRef } from "./src/ui/ChatThread";
 import { ImageResolverProvider } from "./src/ui/ChatImage";
 import { CommandSheet } from "./src/ui/CommandSheet";
 import { NewChatSheet } from "./src/ui/NewChatSheet";
+import { ActivityScreen } from "./src/ui/ActivityScreen";
 import { ErrorBoundary } from "./src/ui/ErrorBoundary";
 import { AttachmentSheet, type AttachmentSource } from "./src/ui/AttachmentSheet";
 import { addAttachments, MAX_ATTACHMENTS, type PendingAttachment } from "./src/attachments";
@@ -93,6 +95,15 @@ import { BitcountPropSingle_600SemiBold } from "@expo-google-fonts/bitcount-prop
 import { BitcountPropSingle_700Bold } from "@expo-google-fonts/bitcount-prop-single/700Bold";
 
 export default function App() {
+  return (
+    <AppearanceProvider>
+      <AppWithAppearance />
+    </AppearanceProvider>
+  );
+}
+
+function AppWithAppearance() {
+  const { ready: appearanceReady, theme: appTheme } = useAppTheme();
   const [fontsLoaded, fontError] = useFonts({
     BitcountPropSingle_400Regular,
     BitcountPropSingle_600SemiBold,
@@ -131,10 +142,10 @@ export default function App() {
   // the two have different metrics, so titles would visibly reflow the moment
   // the display font arrives. The native splash is still up over this, so what
   // the user sees is the splash rather than an empty rectangle.
-  if (!fontsSettled) {
+  if (!fontsSettled || !appearanceReady) {
     return (
       <SafeAreaProvider>
-        <View style={{ flex: 1, backgroundColor: theme.color.bg }} />
+        <View style={{ flex: 1, backgroundColor: appTheme.color.bg }} />
       </SafeAreaProvider>
     );
   }
@@ -173,6 +184,7 @@ export default function App() {
  * takes, and shows the pairing screen when nothing is stored.
  */
 function Root() {
+  const { theme: appTheme } = useAppTheme();
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [checked, setChecked] = useState(false);
   // Whether the user has moved past the launch screen. Not persisted: it only
@@ -246,7 +258,7 @@ function Root() {
       });
   }, []);
 
-  if (!checked) return <View style={{ flex: 1, backgroundColor: theme.color.bg }} />;
+  if (!checked) return <View style={{ flex: 1, backgroundColor: appTheme.color.bg }} />;
   // A paired device never sees the launch screen: it has a machine already, and
   // an extra tap on every cold start would be pure friction.
   if (pairing) return <Pew2 pairing={pairing} onUnpair={unpair} />;
@@ -418,6 +430,8 @@ function useKeyboardLift(bottomInset: number) {
 }
 
 function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void }) {
+  const { resolvedMode, theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
   // Whether the app is the thing on screen. A ref, not state: it is read when a
   // turn finishes, and re-rendering the whole screen because the app was
   // backgrounded would be work nobody can see.
@@ -526,6 +540,7 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
   attachmentsRef.current = attachments;
   const [attachOpen, setAttachOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
   // Which pill's menu is open, and where that pill sits, so the menu opens
   // under it instead of always at the gutter.
   const [picker, setPicker] = useState<"model" | "mode" | null>(null);
@@ -970,6 +985,24 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
     [openDaemonSession],
   );
 
+  const openActivity = useCallback(() => {
+    Keyboard.dismiss();
+    setMenuOpen(false);
+    setActivityOpen(true);
+  }, []);
+
+  const openActivitySession = useCallback(
+    (id: string) => {
+      setActivityOpen(false);
+      openSession(id);
+    },
+    [openSession],
+  );
+
+  const newConversationFromActivity = useCallback(() => {
+    setActivityOpen(false);
+    setNewChatOpen(true);
+  }, []);
   // Deferred until the conversation the banner named is in the list: a banner
   // can launch the app cold, before the daemon has said what sessions exist,
   // and addressing an unknown id is a no-op that would silently lose it.
@@ -1176,9 +1209,18 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
 
   const answerPermission = useCallback(
     (requestId: string, optionId: string, deny: boolean) => {
+      if (!answerDaemon(requestId, optionId)) return;
       if (deny) haptics.warned();
       else haptics.sent();
-      answerDaemon(requestId, optionId);
+    },
+    [answerDaemon],
+  );
+
+  const answerActivityPermission = useCallback(
+    (sessionId: string, requestId: string, optionId: string, deny: boolean) => {
+      if (!answerDaemon(requestId, optionId, sessionId)) return;
+      if (deny) haptics.warned();
+      else haptics.sent();
     },
     [answerDaemon],
   );
@@ -1202,7 +1244,7 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
   return (
     <ImageResolverProvider value={imageResolver}>
     <View style={styles.root}>
-      <StatusBar style="light" />
+      <StatusBar style={resolvedMode === "dark" ? "light" : "dark"} />
 
       <Sidebar
         open={menuOpen}
@@ -1215,6 +1257,7 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
         // closing here would make choosing an app cost two trips.
         onSelectProvider={daemon.select}
         onOpenSession={openSession}
+        onOpenActivity={openActivity}
         onNewConversation={newConversation}
         // Which project the history is narrowed to, and where the next
         // conversation will open.
@@ -1513,6 +1556,19 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
         </View>
       </Reanimated.View>
 
+      {activityOpen ? (
+        <ActivityScreen
+          sessions={daemon.sessions}
+          providers={daemon.providers}
+          status={daemon.status}
+          reduceMotion={reduceMotion}
+          onClose={() => setActivityOpen(false)}
+          onNewConversation={newConversationFromActivity}
+          onOpenSession={openActivitySession}
+          onAnswerPermission={answerActivityPermission}
+        />
+      ) : null}
+
       {/* Outside the lifted pane: a sheet belongs to the screen's bottom edge,
           not to the composer, so it must not ride up with the keyboard. */}
       <CommandSheet
@@ -1558,7 +1614,10 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
       {/* Last of every overlay on purpose. All the sheets share one zIndex, so
           paint order is sibling order — and an approval the agent is blocked on
           must sit above anything the user happened to have open. */}
-      <ApprovalSheet permission={daemon.permission} onAnswer={answerPermission} />
+      <ApprovalSheet
+        permission={activityOpen ? undefined : daemon.permission}
+        onAnswer={answerPermission}
+      />
 
       {/* While the drawer is open the pane itself is the way back: tapping
           anywhere on it closes, which matches the push metaphor better than a
@@ -1590,7 +1649,8 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
 }
 
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   // The drawer paints its own panel. Matching the conversation canvas here
   // removes the stray drawer-coloured band beneath the closed pane/home area.
   root: { flex: 1, backgroundColor: theme.color.bg },
@@ -1715,4 +1775,5 @@ const styles = StyleSheet.create({
     width: theme.space(5),
     zIndex: 4,
   },
-});
+  });
+}

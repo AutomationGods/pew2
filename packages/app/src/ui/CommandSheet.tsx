@@ -15,7 +15,8 @@
  */
 import { memo } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { touchSlop } from "./controls";
 import { Sheet, SHEET_ROW_HEIGHT, SHEET_VISIBLE_ROWS, sheetCardStyle } from "./Sheet";
 import type { SlashCommand } from "../slashCommands";
@@ -28,6 +29,9 @@ interface CommandSheetProps {
 }
 
 function CommandSheetView({ visible, commands, onSelect, onClose }: CommandSheetProps) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+
   // Only as tall as it needs to be, up to five rows. A short project should not
   // get a half-empty sheet.
   const listHeight = Math.min(commands.length, SHEET_VISIBLE_ROWS) * SHEET_ROW_HEIGHT;
@@ -72,8 +76,9 @@ function CommandSheetView({ visible, commands, onSelect, onClose }: CommandSheet
   );
 }
 
-const styles = StyleSheet.create({
-  card: sheetCardStyle,
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
+  card: sheetCardStyle(theme),
   row: {
     height: SHEET_ROW_HEIGHT,
     justifyContent: "center",
@@ -94,6 +99,8 @@ const styles = StyleSheet.create({
     color: theme.color.textDim,
     fontSize: theme.font.small,
   },
-});
+  });
+}
+;
 
 export const CommandSheet = memo(CommandSheetView);

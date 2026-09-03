@@ -17,7 +17,9 @@
  */
 import { memo, useEffect, useMemo, useRef } from "react";
 import { Animated, Easing, StyleSheet, View } from "react-native";
-import { theme, shade } from "../theme";
+import { shade } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { useReducedMotion } from "./useReducedMotion";
 import { useAppActive } from "./useAppActive";
 import {
@@ -70,19 +72,22 @@ const SWEEP_STEPS = 24;
  */
 const DECAY = 0.72;
 
-function OrbView({ color, size = theme.size.orb, busy = false }: OrbProps) {
+function OrbView({ color, size, busy = false }: OrbProps) {
+  const { theme } = useAppTheme();
+  const resolvedSize = size ?? theme.size.orb;
+
   const base = color ?? theme.color.orb;
   const reduceMotion = useReducedMotion();
-  const matrix = size >= MATRIX_MIN_SIZE;
+  const matrix = resolvedSize >= MATRIX_MIN_SIZE;
 
   return (
     // Purely decorative, and it sits inside tappable chips, so it must never
     // intercept a touch meant for the row behind it.
-    <View style={{ width: size, height: size }} pointerEvents="none">
+    <View style={{ width: resolvedSize, height: resolvedSize }} pointerEvents="none">
       {matrix ? (
-        <Matrix base={base} size={size} busy={busy} reduceMotion={reduceMotion} />
+        <Matrix base={base} size={resolvedSize} busy={busy} reduceMotion={reduceMotion} />
       ) : (
-        <Silhouette base={base} size={size} />
+        <Silhouette base={base} size={resolvedSize} />
       )}
     </View>
   );
@@ -96,6 +101,8 @@ function OrbView({ color, size = theme.size.orb, busy = false }: OrbProps) {
  * from the same corner: two views instead of forty, which matters in a list.
  */
 function Silhouette({ base, size }: { base: string; size: number }) {
+  const styles = useThemeStyles(makeStyles);
+
   return (
     <View
       style={{
@@ -133,6 +140,7 @@ function Matrix({
   busy: boolean;
   reduceMotion: boolean;
 }) {
+  const styles = useThemeStyles(makeStyles);
   const grid = gridForSize(size);
   const pitch = size / grid;
   const drift = useRef(new Animated.Value(0)).current;
@@ -320,10 +328,13 @@ function Cell({
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   panel: { flex: 1 },
   silhouetteLight: { position: "absolute", opacity: 0.9 },
-});
+  });
+}
+;
 
 // The mark re-renders only when its provider, size or working state changes —
 // not on every streamed chunk of the conversation behind it.

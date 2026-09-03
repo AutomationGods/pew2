@@ -14,7 +14,8 @@ import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { haptics } from "./haptics";
 import { CircleButton } from "./controls";
 import { Glass } from "./Glass";
@@ -37,6 +38,9 @@ interface Props {
 }
 
 export function QrScanner({ visible, onClose, onScan, error, busy }: Props) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   // The camera fires continuously while a code is in frame. Without a latch the
@@ -191,7 +195,8 @@ export function QrScanner({ visible, onClose, onScan, error, busy }: Props) {
 
 const RETICLE = 240;
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
   overlay: {
     position: "absolute",
@@ -248,4 +253,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space(8),
   },
   secondaryText: { color: theme.color.text, fontSize: 15, fontWeight: "600" },
-});
+  });
+}
+;

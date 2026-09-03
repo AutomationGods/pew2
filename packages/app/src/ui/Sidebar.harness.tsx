@@ -77,6 +77,7 @@ function Drawer({
       activeSessionId="s1"
       onSelectProvider={() => {}}
       onOpenSession={() => {}}
+      onOpenActivity={() => {}}
       // Only rendered with a project chosen, so the right-hand mount is the one
       // that exercises the "+ New chat" chip.
       onNewConversation={() => {}}

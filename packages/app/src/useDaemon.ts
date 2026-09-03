@@ -2494,22 +2494,29 @@ export function useDaemon(
         }));
       },
 
-      answer: (requestId: string, optionId: string) => {
-        const sessionId = sessionRef.current;
-        if (sessionId) post({ t: "session.permission", sessionId, requestId, optionId });
-        setState((s) => ({
-          ...s,
-          permission: undefined,
-          busy: true,
-          // Cleared on the conversation too, or reopening it would offer the
-          // same approval again and the second answer would land on a request
-          // the agent has already been let past.
-          sessions: s.sessions.map((session) =>
-            session.id === sessionId && session.permission
-              ? { ...session, permission: undefined }
-              : session,
-          ),
-        }));
+      /** Answer an approval in the visible conversation, or one named by the activity screen. */
+      answer: (requestId: string, optionId: string, to?: string): boolean => {
+        const sessionId = to ?? sessionRef.current;
+        if (!sessionId) return false;
+        if (!post({ t: "session.permission", sessionId, requestId, optionId })) return false;
+        const answeringVisible = sessionId === sessionRef.current;
+        setState((s) => {
+          const answeredVisible =
+            answeringVisible && s.permission?.requestId === requestId;
+          return {
+            ...s,
+            ...(answeredVisible ? { permission: undefined, busy: true } : {}),
+            // Cleared on the conversation too, or reopening it would offer the
+            // same approval again and the second answer would land on a request
+            // the agent has already been let past.
+            sessions: s.sessions.map((session) =>
+              session.id === sessionId && session.permission?.requestId === requestId
+                ? { ...session, permission: undefined, busy: true }
+                : session,
+            ),
+          };
+        });
+        return true;
       },
 
       /** Change a model, thinking level or mode on the open session. */

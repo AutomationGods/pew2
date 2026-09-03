@@ -16,7 +16,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 // main-thread decode there lands on the composer's own animation.
 import { Image } from "expo-image";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { touchSlop } from "./controls";
 import { haptics } from "./haptics";
 import { formatSize, isImageAttachment, type PendingAttachment } from "../attachments";
@@ -37,6 +38,9 @@ function glyphFor(mimeType: string): keyof typeof Ionicons.glyphMap {
 }
 
 function AttachmentChipsView({ attachments, onRemove }: AttachmentChipsProps) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+
   return (
     <ScrollView
       horizontal
@@ -90,7 +94,8 @@ function AttachmentChipsView({ attachments, onRemove }: AttachmentChipsProps) {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   row: { gap: theme.space(2), paddingHorizontal: theme.space(1) },
   chip: {
     flexDirection: "row",
@@ -132,6 +137,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.color.surfacePressed,
   },
   removePressed: { opacity: 0.6 },
-});
+  });
+}
+;
 
 export const AttachmentChips = memo(AttachmentChipsView);

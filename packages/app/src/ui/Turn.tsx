@@ -13,7 +13,8 @@
 import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { MarkdownText } from "./MarkdownText";
 import { ChatImages } from "./ChatImage";
 import { CommandToken } from "./CommandToken";
@@ -37,7 +38,7 @@ import type { Turn as TurnModel } from "../useDaemon";
  * only thing to do about a turn that failed, and it sits under an error rather
  * than under an answer.
  */
-const RETRY_SIZE = ACTION_SIZE + theme.space(1.5);
+
 
 interface TurnProps {
   turn: TurnModel;
@@ -86,6 +87,10 @@ interface TurnProps {
  * a button, not a hold, so it takes nothing away from the gesture above it.
  */
 function TurnView({ turn, onOpenThought, retryPrompt, onRetry }: TurnProps) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+  const RETRY_SIZE = ACTION_SIZE + theme.space(1.5);
+
   const images = turn.images ?? [];
   // A turn with pictures and no words is normal: an image generation tool's
   // result arrives as content alone. Only a turn with neither renders nothing.
@@ -254,7 +259,8 @@ export const Turn = memo(
     before.turn.images === after.turn.images,
 );
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   userRow: { width: "100%", minWidth: 0, alignItems: "flex-end" },
   userBubble: {
     ...adaptiveUserBubbleStyle,
@@ -295,11 +301,11 @@ const styles = StyleSheet.create({
   // the app talking, and this is the one thing to do about it.
   retryButton: {
     alignSelf: "flex-start",
-    width: RETRY_SIZE,
-    height: RETRY_SIZE,
+    width: ACTION_SIZE + theme.space(1.5),
+    height: ACTION_SIZE + theme.space(1.5),
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: RETRY_SIZE / 2,
+    borderRadius: (ACTION_SIZE + theme.space(1.5)) / 2,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: theme.color.border,
     backgroundColor: theme.color.surfaceRaised,
@@ -319,4 +325,6 @@ const styles = StyleSheet.create({
     marginLeft: -ACTION_INSET,
     marginTop: theme.space(1.5),
   },
-});
+  });
+}
+;

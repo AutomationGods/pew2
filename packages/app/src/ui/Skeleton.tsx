@@ -7,12 +7,15 @@
  */
 import { useEffect, useRef } from "react";
 import { Animated, StyleSheet, View, type ViewStyle } from "react-native";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { useReducedMotion } from "./useReducedMotion";
 import { useAppActive } from "./useAppActive";
 
 /** One pulsing block. Compose these into the shape of the coming content. */
 export function Skeleton({ style }: { style?: ViewStyle | ViewStyle[] }) {
+  const styles = useThemeStyles(makeStyles);
+
   const reduceMotion = useReducedMotion();
   const appActive = useAppActive();
   const opacity = useRef(new Animated.Value(0.4)).current;
@@ -40,6 +43,9 @@ export function Skeleton({ style }: { style?: ViewStyle | ViewStyle[] }) {
 
 /** The drawer's history list while agents answer what they have on disk. */
 export function HistorySkeleton() {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
+
   return (
     <View accessibilityLabel="Loading chat history">
       {[0, 1, 2].map((row) => (
@@ -52,7 +58,8 @@ export function HistorySkeleton() {
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   block: {
     backgroundColor: theme.color.surfacePressed,
     borderRadius: theme.radius.sm,
@@ -61,4 +68,6 @@ const styles = StyleSheet.create({
     paddingVertical: theme.space(3),
     paddingHorizontal: theme.space(1),
   },
-});
+  });
+}
+;

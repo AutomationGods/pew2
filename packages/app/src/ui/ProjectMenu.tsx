@@ -24,7 +24,8 @@ import {
   View,
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { Glass } from "./Glass";
 import { haptics } from "./haptics";
 import { useReducedMotion } from "./useReducedMotion";
@@ -57,6 +58,8 @@ function ProjectMenuView({
   onSelect,
   onClose,
 }: ProjectMenuProps) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
   const progress = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReducedMotion();
 
@@ -169,6 +172,8 @@ function ProjectRow({
   selected: boolean;
   onPress: () => void;
 }) {
+  const { theme } = useAppTheme();
+  const styles = useThemeStyles(makeStyles);
   return (
     <Pressable
       accessibilityRole="button"
@@ -197,7 +202,8 @@ function ProjectRow({
   );
 }
 
-const styles = StyleSheet.create({
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
   // Fills the drawer panel, which clips it: the menu can drop over the history
   // list but never past the panel's own rounded edge.
   host: { ...StyleSheet.absoluteFillObject, zIndex: 5 },
@@ -251,6 +257,8 @@ const styles = StyleSheet.create({
     lineHeight: theme.line.body,
   },
   rowDetail: { color: theme.color.textDim, fontSize: theme.font.tiny },
-});
+  });
+}
+;
 
 export const ProjectMenu = memo(ProjectMenuView);

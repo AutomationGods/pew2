@@ -7,7 +7,8 @@ import Markdown, {
   type RenderFunction,
   type RenderRules,
 } from "react-native-markdown-renderer";
-import { theme } from "../theme";
+import { useAppTheme, useThemeStyles } from "../appearance";
+import type { AppTheme } from "../theme";
 import { ChatImage } from "./ChatImage";
 import { isDisplayableImage } from "../images";
 import { writeToClipboard } from "./clipboard";
@@ -19,13 +20,27 @@ import { splitMarkdownBlocks } from "./markdownBlocks";
 
 export type MarkdownTone = "body" | "thought" | "system";
 
-const BLOCK_GAP = theme.space(2.5);
+
 // Read once so markdown style maps remain stable plain objects.
 const StyleSheetHairline = StyleSheet.hairlineWidth;
 const monospace = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
 
 function trimTrailingNewline(text: string): string {
   return text.endsWith("\n") ? text.slice(0, -1) : text;
+}
+
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    codeBlockChromeHeader: {
+      minHeight: 36,
+      alignItems: "flex-end" as const,
+      justifyContent: "center" as const,
+      paddingHorizontal: theme.space(1.5),
+      borderBottomWidth: StyleSheetHairline,
+      borderBottomColor: theme.color.border,
+      backgroundColor: theme.color.surfaceRaised,
+    },
+  });
 }
 
 function CodeBlock({
@@ -39,9 +54,10 @@ function CodeBlock({
   contentStyle: object;
   textStyle: object;
 }) {
+  const styles = useThemeStyles(makeStyles);
   return (
     <View style={containerStyle}>
-      <View style={codeBlockChrome.header}>
+      <View style={styles.codeBlockChromeHeader}>
         {/* The same control the whole reply carries under it. A code block gets
             its own because a fence is the thing most often wanted on its own —
             and because holding it selects, but cannot reach past its own
@@ -57,17 +73,7 @@ function CodeBlock({
   );
 }
 
-const codeBlockChrome = StyleSheet.create({
-  header: {
-    minHeight: 36,
-    alignItems: "flex-end",
-    justifyContent: "center",
-    paddingHorizontal: theme.space(1.5),
-    borderBottomWidth: StyleSheetHairline,
-    borderBottomColor: theme.color.border,
-    backgroundColor: theme.color.surfaceRaised,
-  },
-});
+
 
 const renderCodeBlock: RenderFunction = (node, _children, _parents, styles) => {
   const content = trimTrailingNewline(node.content);
@@ -151,13 +157,15 @@ const markdownRules: Partial<RenderRules> = {
 };
 
 function stylesFor(
+  theme: AppTheme,
   color: string,
   fontSize: number,
   lineHeight: number,
+  blockGap: number,
 ): Partial<MarkdownStyles> {
   return {
     // No negative margin here, unlike the single-render version this replaced.
-    // Each block now carries its own trailing `BLOCK_GAP`, and the cancellation
+    // Each block now carries its own trailing `blockGap`, and the cancellation
     // that keeps a message from ending in dead space belongs once, on the
     // wrapper around all of them — applied per block it would instead collapse
     // the gap between every pair of paragraphs.
@@ -169,7 +177,7 @@ function stylesFor(
       lineHeight,
       ...boundedMarkdownParagraphStyle,
       marginTop: 0,
-      marginBottom: BLOCK_GAP,
+      marginBottom: blockGap,
     },
     strong: { color, fontWeight: "700" },
     em: { color, fontStyle: "italic" },
@@ -178,7 +186,7 @@ function stylesFor(
     headingContainer: {
       flexDirection: "row",
       marginTop: theme.space(1),
-      marginBottom: BLOCK_GAP,
+      marginBottom: blockGap,
     },
     heading: { color, fontWeight: "700" },
     heading1: { color, fontSize: fontSize + 7, lineHeight: lineHeight + 7 },
@@ -208,7 +216,7 @@ function stylesFor(
     },
     codeBlockContainer: {
       ...fencedCodeContainerStyle,
-      marginBottom: BLOCK_GAP,
+      marginBottom: blockGap,
       backgroundColor: theme.color.surface,
       borderWidth: StyleSheetHairline,
       borderColor: theme.color.border,
@@ -236,9 +244,9 @@ function stylesFor(
       borderLeftColor: theme.color.textDim,
       paddingLeft: theme.space(3),
       paddingRight: 0,
-      marginBottom: BLOCK_GAP,
+      marginBottom: blockGap,
     },
-    list: { marginBottom: BLOCK_GAP },
+    list: { marginBottom: blockGap },
     // minWidth: 0 is essential inside the marker row; without it, long list
     // paragraphs keep their intrinsic width and paint past the chat rail.
     listItem: { flex: 1, minWidth: 0 },
@@ -271,7 +279,7 @@ function stylesFor(
       borderColor: theme.color.border,
       borderRadius: theme.radius.sm,
       overflow: "hidden",
-      marginBottom: BLOCK_GAP,
+      marginBottom: blockGap,
     },
     tableHeader: { backgroundColor: theme.color.surfaceRaised },
     tableHeaderCell: {
@@ -301,19 +309,20 @@ function stylesFor(
       width: "100%",
       height: 220,
       resizeMode: "contain",
-      marginBottom: BLOCK_GAP,
+      marginBottom: blockGap,
       borderRadius: theme.radius.md,
     },
   };
 }
 
-// Kept outside render: the markdown renderer memoises its AST renderer by the
-// identity of these objects while streamed chunks update only the source text.
-const markdownStyles: Record<MarkdownTone, Partial<MarkdownStyles>> = {
-  body: stylesFor(theme.color.text, theme.font.body, theme.line.body),
-  thought: stylesFor(theme.color.textDim, theme.font.small, 20),
-  system: stylesFor(theme.color.danger, theme.font.small, 20),
-};
+function makeMarkdownStyles(theme: AppTheme): Record<MarkdownTone, Partial<MarkdownStyles>> {
+  const blockGap = theme.space(2.5);
+  return {
+    body: stylesFor(theme, theme.color.text, theme.font.body, theme.line.body, blockGap),
+    thought: stylesFor(theme, theme.color.textDim, theme.font.small, 20, blockGap),
+    system: stylesFor(theme, theme.color.danger, theme.font.small, 20, blockGap),
+  };
+}
 
 /**
  * Opening a link from a message.
@@ -342,8 +351,10 @@ function openLink(url: string): void {
         await WebBrowser.openBrowserAsync(url, {
           // The transcript's own surface, so the browser arrives as part of
           // this app rather than as a white flash out of it.
-          toolbarColor: theme.color.surface,
-          controlsColor: theme.color.accent,
+          // simplification: module-level callback cannot read the themed palette.
+          // Dark defaults are safe; the in-app browser chrome is brief.
+          toolbarColor: "#1c2027",
+          controlsColor: "#ffaa8a",
         });
         return;
       }
@@ -377,14 +388,16 @@ function openLink(url: string): void {
 const MarkdownBlock = memo(function MarkdownBlock({
   source,
   tone,
+  mdStyles,
 }: {
   source: string;
   tone: MarkdownTone;
+  mdStyles: Partial<MarkdownStyles>;
 }) {
   return (
     <Markdown
       rules={markdownRules as RenderRules}
-      style={markdownStyles[tone]}
+      style={mdStyles}
       onLinkPress={openLink}
       // No `allowedImageHandlers`: that list only gates the library's own image
       // rule, which is replaced above precisely because it cannot load a file
@@ -396,25 +409,19 @@ const MarkdownBlock = memo(function MarkdownBlock({
 });
 
 function MarkdownTextView({ text, tone = "body" }: { text: string; tone?: MarkdownTone }) {
-  // Splitting is a parse, so it is memoised too — but it is only the block
-  // tokeniser, not the inline pass or the element tree, and it is the one piece
-  // of work that unavoidably sees the whole message.
+  const { theme } = useAppTheme();
+  const mdStyles = useMemo(() => makeMarkdownStyles(theme), [theme]);
+  const blockGap = theme.space(2.5);
   const blocks = useMemo(() => splitMarkdownBlocks(text), [text]);
 
   return (
-    <View style={blockLayout.root}>
+    <View style={[blockLayout.root, { marginBottom: -blockGap }]}>
       {blocks.map((source, index) => (
         <MarkdownBlock
-          // Index, deliberately. Blocks are an ordered decomposition of one
-          // string: block 2 is always the third thing in this message, and
-          // during streaming it grows in place rather than being reordered or
-          // removed. Keying by content would instead throw away and remount the
-          // block being written on every single chunk — exactly the work this
-          // whole file is arranged to avoid — and would collapse the two
-          // identical paragraphs a message is perfectly entitled to contain.
-          key={index}
+          key={`${index}-${source.length}`}
           source={source}
           tone={tone}
+          mdStyles={mdStyles[tone]}
         />
       ))}
     </View>
@@ -423,14 +430,7 @@ function MarkdownTextView({ text, tone = "body" }: { text: string; tone?: Markdo
 
 const blockLayout = StyleSheet.create({
   root: {
-    // This wrapper now stands where the single Markdown root used to, so it has
-    // to keep that root's bounding. Without it a long code line has nothing to
-    // shrink against — a View defaults to `flexShrink: 0` — and would push the
-    // message wider than its rail.
     ...boundedMarkdownRootStyle,
-    // The message ends flush: the last block contributes a trailing `BLOCK_GAP`
-    // like every other, and this takes exactly that back.
-    marginBottom: -BLOCK_GAP,
   },
 });
 
