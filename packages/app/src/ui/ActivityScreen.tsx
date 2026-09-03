@@ -459,6 +459,9 @@ function makeStyles(theme: AppTheme) {
   return StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.color.bg },
   header: {
+    width: "100%",
+    maxWidth: 680,
+    alignSelf: "center",
     minHeight: 112,
     paddingBottom: theme.space(3),
     flexDirection: "row",
@@ -472,7 +475,13 @@ function makeStyles(theme: AppTheme) {
     fontSize: 29,
     letterSpacing: 1.2,
   },
-  content: { paddingHorizontal: theme.gutter, gap: theme.space(6) },
+  content: {
+    width: "100%",
+    maxWidth: 680,
+    alignSelf: "center",
+    paddingHorizontal: theme.gutter,
+    gap: theme.space(6),
+  },
   summary: { color: theme.color.textDim, fontSize: theme.font.body, lineHeight: 24 },
   offlineBanner: {
     minHeight: theme.size.touch,

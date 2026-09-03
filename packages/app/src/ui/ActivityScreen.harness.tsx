@@ -1,5 +1,8 @@
+import { useEffect } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
+import { AppearanceProvider } from "../appearance";
 import type { Provider, Session } from "../useDaemon";
 import { ActivityScreen } from "./ActivityScreen";
 
@@ -60,19 +63,27 @@ const sessions: Session[] = [
 ];
 
 export default function ActivityScreenHarness() {
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {
+      // Already hidden, or no splash on this platform.
+    });
+  }, []);
+
   return (
-    <SafeAreaProvider>
-      <StatusBar style="light" />
-      <ActivityScreen
-        sessions={sessions}
-        providers={providers}
-        status="online"
-        reduceMotion={false}
-        onClose={() => {}}
-        onNewConversation={() => {}}
-        onOpenSession={() => {}}
-        onAnswerPermission={() => {}}
-      />
-    </SafeAreaProvider>
+    <AppearanceProvider>
+      <SafeAreaProvider>
+        <StatusBar style="auto" />
+        <ActivityScreen
+          sessions={sessions}
+          providers={providers}
+          status="online"
+          reduceMotion={false}
+          onClose={() => {}}
+          onNewConversation={() => {}}
+          onOpenSession={() => {}}
+          onAnswerPermission={() => {}}
+        />
+      </SafeAreaProvider>
+    </AppearanceProvider>
   );
 }

@@ -21,6 +21,22 @@ async function echoProvider() {
   return provider;
 }
 
+async function waitForSpareDirs(
+  daemon: { spareDirs(providerId: string): string[] },
+  providerId: string,
+  expected: string[],
+): Promise<string[]> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const actual = daemon.spareDirs(providerId);
+    if (actual.length === expected.length && actual.every((dir, index) => dir === expected[index])) {
+      return actual;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return daemon.spareDirs(providerId);
+}
+
 test("streams incremental updates and records them in order", async () => {
   const log = new SessionLog("test-session");
   const handle = await connectProvider({
@@ -316,10 +332,9 @@ test("opening a project warms that project, evicting the last one", async () => 
 
     const elsewhere = await mkdtemp(join(tmpdir(), "pew2-second-"));
     await daemon.startSession("echo", elsewhere);
-    await new Promise((r) => setTimeout(r, 800));
 
     // The new project is the warm one, and it is the only one.
-    expect(daemon.spareDirs("echo")).toEqual([elsewhere]);
+    expect(await waitForSpareDirs(daemon, "echo", [elsewhere])).toEqual([elsewhere]);
     expect(daemon.spareDirs("echo")).not.toContain(first);
   } finally {
     daemon.closeAll();

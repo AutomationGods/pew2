@@ -80,19 +80,6 @@ import { clearCachedProviders } from "./src/preferences";
 import * as SplashScreen from "expo-splash-screen";
 import { clearCrash, readCrash } from "./src/crashLog";
 import * as Clipboard from "expo-clipboard";
-// `useFonts` from expo-font rather than the one the google-fonts package ships.
-// They look identical, but that one always starts at `false` and waits for an
-// effect, while this one seeds its state from `isLoaded` synchronously — so a
-// face already registered from an earlier mount is reported ready on the first
-// render instead of costing another frame.
-import { useFonts } from "expo-font";
-// The faces themselves come from their own subpaths rather than the package
-// root. The root barrel re-exports all nine weights, and because each one
-// `require`s its own .ttf, importing three through it bundled 3MB of font — six
-// faces the app never asks for. Deep imports bring in only what is named here.
-import { BitcountPropSingle_400Regular } from "@expo-google-fonts/bitcount-prop-single/400Regular";
-import { BitcountPropSingle_600SemiBold } from "@expo-google-fonts/bitcount-prop-single/600SemiBold";
-import { BitcountPropSingle_700Bold } from "@expo-google-fonts/bitcount-prop-single/700Bold";
 
 export default function App() {
   return (
@@ -104,17 +91,6 @@ export default function App() {
 
 function AppWithAppearance() {
   const { ready: appearanceReady, theme: appTheme } = useAppTheme();
-  const [fontsLoaded, fontError] = useFonts({
-    BitcountPropSingle_400Regular,
-    BitcountPropSingle_600SemiBold,
-    BitcountPropSingle_700Bold,
-  });
-
-  // An error counts as settled. The faces load from the app bundle rather than
-  // the network, so this is quick, but the display font is not worth never
-  // opening the app over and the fallback is only a metrics difference. Without
-  // this a failed load holds the tree forever behind a splash that never lifts.
-  const fontsSettled = fontsLoaded || fontError != null;
 
   // What killed the app last time, if anything did.
   //
@@ -138,11 +114,8 @@ function AppWithAppearance() {
     );
   }, []);
 
-  // Hold on the canvas colour rather than rendering with the fallback face:
-  // the two have different metrics, so titles would visibly reflow the moment
-  // the display font arrives. The native splash is still up over this, so what
-  // the user sees is the splash rather than an empty rectangle.
-  if (!fontsSettled || !appearanceReady) {
+  // Hold on the canvas colour until the stored appearance preference resolves.
+  if (!appearanceReady) {
     return (
       <SafeAreaProvider>
         <View style={{ flex: 1, backgroundColor: appTheme.color.bg }} />

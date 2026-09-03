@@ -8,17 +8,17 @@
 - **Audience:** developers supervising several coding agents away from their desk.
 - **Single job:** identify which session needs attention, then enter it in one tap.
 - **Risk:** approval mistakes can execute destructive tools; status and actions must be explicit.
-- **Constraints:** preserve the existing dark canvas, Bitcount display headings, provider orbs, drawer navigation, and four-point spacing grid.
+- **Constraints:** Android leads; use platform sans-serif type, compact geometry, clear navigation, restrained color, and the existing four-point grid.
 
 ### Direction
 
-Activity is a calm command center, not a metrics dashboard. On first glance it shows the number of active sessions and whether one needs approval. On second glance it separates **Needs you**, **Working**, **Ready**, and **Recent** in urgency order. The narrow orange permission rail is the memorable device; color never replaces text or icons.
+Activity is a compact Android command center, not a themed dashboard. Strong sans-serif hierarchy, flat neutral surfaces, and simple provider status marks keep approvals and active work immediately scannable. Color is reserved for actions and state; it never replaces text or icons.
 
 ### Theme system
 
-The app supports light/dark mode and four accent colors (coral, ocean, violet, mint).
+The app supports light/dark mode and four restrained accent choices. Existing coral preferences resolve to the new Android-blue primary so current installations receive the redesign immediately.
 
-- **`appearancePreference.ts`** — pure parse/serialize for the stored preference. Invalid fields fall back independently to defaults (system mode, coral accent).
+- **`appearancePreference.ts`** — pure parse/serialize for stored mode and accent preferences.
 - **`appearance.tsx`** — `AppearanceProvider` resolves system mode via `useColorScheme`, applies explicit mode via `Appearance.setColorScheme`, and exposes `useAppTheme()` / `useThemeStyles()` hooks.
 - **`theme.ts`** — `createTheme(mode, accent)` returns the full token set. The static `theme` export remains for module-level code that cannot use hooks.
 - **`preferences.ts`** — fail-soft SecureStore load/save for the appearance preference.
@@ -28,9 +28,9 @@ Every production UI component uses `useAppTheme()` for runtime values and `useTh
 
 ### Reused system
 
-- `theme.ts` remains the token source: `bg`, `surface`, `surfaceRaised`, `border`, `accent`, semantic colors, radii, spacing, and motion.
-- `Orb` identifies providers and carries real working state.
-- `CircleButton`, Ionicons, safe-area insets, haptics, and reduced-motion behavior match existing screens.
+- `theme.ts` remains the token source for neutral surfaces, Android sans-serif typography, compact radii, spacing, and motion.
+- `Orb` is now a simple solid provider mark with an explicit working-state ring, replacing the decorative dot matrix.
+- `CircleButton`, Ionicons, safe-area insets, haptics, and reduced-motion behavior remain shared across screens.
 - Session, permission, receipt, connection, and provider data come from `useDaemon`; the screen invents no progress values.
 
 ### Component and state contract
@@ -53,7 +53,7 @@ Every production UI component uses `useAppTheme()` for runtime values and `useTh
 
 ### Visual verification
 
-The representative 393x852 render is stored at `.gg/screenshots/activity-dashboard-web-final.png`. It was reviewed for hierarchy, alignment, realistic content, narrow-width fit, permission prominence, and bottom safe-area clearance.
+The representative Android-width render is verified from `ActivityScreen.harness.tsx` after each broad visual revision.
 
 ## Project creation
 

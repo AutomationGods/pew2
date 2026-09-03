@@ -51,7 +51,7 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   const resolvedMode = preference.mode === "system" ? systemMode : preference.mode;
 
   useEffect(() => {
-    Appearance.setColorScheme(preference.mode === "system" ? null : preference.mode);
+    Appearance.setColorScheme?.(preference.mode === "system" ? null : preference.mode);
   }, [preference.mode]);
 
   const update = useCallback((next: AppearancePreference) => {
