@@ -24,7 +24,7 @@ import { SessionLog } from "./session/log.js";
 import { readDisabled } from "./providers/enabled.js";
 import { discardAttachments, storeAttachments } from "./attachments.js";
 import { folderName, resolveWorkspace } from "./workspace.js";
-import { PushRegistry } from "./push.js";
+import { PushRegistry, pushAgentNotice } from "./push.js";
 import { readProbeCache, writeProbeCache } from "./probe-cache.js";
 import { readKnownProjects, rememberKnownProject } from "./known-projects.js";
 import { hydrateMessageCounts } from "./acp/messageCounts.js";
@@ -726,16 +726,16 @@ export class Daemon {
     const callbacks = {
       onUpdate: (payload: unknown) => this.record(session, payload),
       onPermissionRequest: ({ requestId, params }: { requestId: string; params: unknown }) => {
-        // Held before the event goes out, for the same reason the resolver is
-        // registered before the UI is notified: an answer can come back on the
-        // very next frame, and it must find this here to remove.
+        // Held before the event goes out: an immediate answer must find it here.
         (session.permissions ??= new Map()).set(requestId, params);
-        // The blocked clock starts at the question, not at the last thing the
-        // user did: `reapIdleSessions` measures the wait from here, and without
-        // this stamp a request raised late in a busy session would be measured
-        // from before it was even asked.
+        // The blocked clock starts at the question, not the preceding activity.
         session.lastUsedAt = Date.now();
         this.record(session, { kind: "permission_request", requestId, params });
+        void pushAgentNotice(this.pushTargets, {
+          sessionId: session.log.sessionId,
+          kind: "input",
+          ...this.sessionNotice(session.log.sessionId),
+        });
       },
       onConfigOptions: (configOptions: ConfigOption[]) =>
         this.publishConfigOptions(session, configOptions),

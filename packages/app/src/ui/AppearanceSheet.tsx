@@ -5,7 +5,6 @@ import { useAppTheme, useThemeStyles } from "../appearance";
 import type { AppTheme } from "../theme";
 import type { AccentName, AppearanceMode } from "../appearancePreference";
 import { ACCENT_NAMES, APPEARANCE_MODES } from "../appearancePreference";
-import { Glass } from "./Glass";
 import { Sheet } from "./Sheet";
 import { haptics } from "./haptics";
 
@@ -88,7 +87,7 @@ function AppearanceSheetView({ visible, onClose }: AppearanceSheetProps) {
 
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>Accent</Text>
-        <View style={styles.accentRow}>
+        <View style={styles.accentList}>
           {ACCENT_NAMES.map((accent) => {
             const selected = preference.accent === accent;
             const accentTheme = ACCENT_PREVIEW[accent][theme.mode];
@@ -100,15 +99,15 @@ function AppearanceSheetView({ visible, onClose }: AppearanceSheetProps) {
                 accessibilityState={{ selected }}
                 onPress={() => handleAccent(accent)}
                 style={({ pressed }) => [
-                  styles.swatch,
+                  styles.accentOption,
+                  selected && styles.accentOptionSelected,
                   pressed && styles.pressed,
                 ]}
               >
                 <View
                   style={[
-                    styles.swatchCircle,
+                    styles.accentMarker,
                     { backgroundColor: accentTheme.fill },
-                    selected && styles.swatchSelected,
                   ]}
                 >
                   {selected && (
@@ -116,10 +115,7 @@ function AppearanceSheetView({ visible, onClose }: AppearanceSheetProps) {
                   )}
                 </View>
                 <Text
-                  style={[
-                    styles.swatchLabel,
-                    selected && { color: theme.color.text },
-                  ]}
+                  style={[styles.accentLabel, selected && { color: theme.color.text }]}
                 >
                   {ACCENT_LABELS[accent]}
                 </Text>
@@ -194,30 +190,11 @@ function makeStyles(theme: AppTheme) {
     modeLabelSelected: {
       color: theme.color.text,
     },
-    accentRow: {
-      flexDirection: "row",
-      gap: theme.space(3),
-    },
-    swatch: {
-      alignItems: "center",
-      gap: theme.space(1),
-    },
-    swatchCircle: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      alignItems: "center",
-      justifyContent: "center",
-      borderWidth: 2,
-      borderColor: "transparent",
-    },
-    swatchSelected: {
-      borderColor: theme.color.text,
-    },
-    swatchLabel: {
-      color: theme.color.textFaint,
-      fontSize: theme.font.tiny,
-    },
+    accentList: { overflow: "hidden", borderRadius: theme.radius.md, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.color.separator, backgroundColor: theme.color.groupedSurface },
+    accentOption: { minHeight: theme.size.touch, flexDirection: "row", alignItems: "center", gap: theme.space(3), paddingHorizontal: theme.space(3), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.color.separator },
+    accentOptionSelected: { backgroundColor: theme.color.selectedRow },
+    accentMarker: { width: 18, height: 18, borderRadius: 5, alignItems: "center", justifyContent: "center" },
+    accentLabel: { flex: 1, color: theme.color.textDim, fontSize: theme.font.body },
     pressed: { opacity: 0.7 },
   });
 }

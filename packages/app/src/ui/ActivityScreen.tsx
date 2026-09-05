@@ -27,7 +27,6 @@ import {
 import type { Provider, Session, Status } from "../useDaemon";
 import { CircleButton, touchSlop } from "./controls";
 import { haptics } from "./haptics";
-import { Orb } from "./Orb";
 
 interface ActivityScreenProps {
   sessions: Session[];
@@ -63,7 +62,8 @@ function SessionIdentity({
   busy: boolean;
 }) {
   const { theme } = useAppTheme();
-  return <Orb color={provider?.color ?? theme.color.accent} size={52} busy={busy} />;
+  const styles = useThemeStyles(makeStyles);
+  return <View style={[styles.statusMarker, { backgroundColor: busy ? theme.color.warning : provider?.color ?? theme.color.textFaint }]} />;
 }
 
 function WorkingCard({
@@ -128,7 +128,7 @@ function ReadyCard({ session, provider, onOpen }: SessionCardProps) {
           {session.title || "Untitled conversation"}
         </Text>
         <Text style={styles.metadata} numberOfLines={1}>
-          {receiptSummary(session)} · {providerLabel(session, provider)}
+          Ready · {receiptSummary(session)} · {providerLabel(session, provider)}
         </Text>
       </View>
       <View style={styles.unreadDot} />
@@ -156,7 +156,7 @@ function RecentRow({ session, provider, onOpen }: SessionCardProps) {
           {session.title || "Untitled conversation"}
         </Text>
         <Text style={styles.metadata} numberOfLines={1}>
-          {providerLabel(session, provider)}
+          Recent · {providerLabel(session, provider)}
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={18} color={theme.color.textFaint} />
@@ -418,7 +418,6 @@ function ActivityScreenView({
 
           {!hasActiveWork(groups) ? (
             <View style={styles.empty}>
-              <Orb color={theme.color.accent} size={58} />
               <Text style={styles.emptyTitle}>Nothing running</Text>
               <Text style={styles.emptyBody}>Start a conversation and it will stay visible here.</Text>
               <Pressable
@@ -504,19 +503,17 @@ function makeStyles(theme: AppTheme) {
     letterSpacing: 0.9,
     textTransform: "uppercase",
   },
-  sectionBody: { gap: theme.space(3) },
+  sectionBody: { overflow: "hidden", borderRadius: theme.radius.md, backgroundColor: theme.color.groupedSurface, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.color.separator },
   card: {
-    minHeight: 126,
+    minHeight: 76,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.space(3.5),
-    padding: theme.space(4),
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.border,
-    borderRadius: theme.radius.lg,
-    backgroundColor: theme.color.surface,
+    padding: theme.space(3),
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.color.separator,
   },
-  workingCard: { backgroundColor: theme.color.surfaceRaised },
+  workingCard: { backgroundColor: theme.color.groupedSurface },
   cardPressed: { backgroundColor: theme.color.surfacePressed },
   cardCopy: { flex: 1, minWidth: 0, gap: theme.space(1) },
   cardTitle: { color: theme.color.text, fontSize: 17, lineHeight: 22, fontWeight: "700" },
@@ -539,7 +536,7 @@ function makeStyles(theme: AppTheme) {
     backgroundColor: theme.color.accent,
   },
   permissionHeader: {
-    minHeight: 126,
+    minHeight: 76,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.space(3.5),
@@ -588,15 +585,14 @@ function makeStyles(theme: AppTheme) {
     gap: theme.space(3),
     paddingHorizontal: theme.space(4),
     paddingVertical: theme.space(3),
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.border,
-    borderRadius: theme.radius.lg,
-    backgroundColor: theme.color.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.color.separator,
+    backgroundColor: theme.color.groupedSurface,
   },
   readyIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: StyleSheet.hairlineWidth,
@@ -614,7 +610,8 @@ function makeStyles(theme: AppTheme) {
     borderBottomColor: theme.color.border,
   },
   recentPressed: { opacity: 0.58 },
-  providerDot: { width: 9, height: 9, borderRadius: 5 },
+  providerDot: { width: 8, height: 8, borderRadius: 4 },
+  statusMarker: { width: 8, height: 32, borderRadius: 4 },
   recentTitle: { color: theme.color.text, fontSize: theme.font.body, lineHeight: 22 },
   empty: {
     minHeight: 260,

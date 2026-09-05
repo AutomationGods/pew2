@@ -39,10 +39,20 @@ module.exports = () => {
   const owner = process.env.EAS_OWNER ?? local.owner;
   const projectId = process.env.EAS_PROJECT_ID ?? local.projectId;
 
+  const notificationSounds = [
+    "./assets/notifications/complete.wav",
+    "./assets/notifications/input.wav",
+    "./assets/notifications/error.wav",
+  ];
+
   return {
     ...expo,
     plugins: [
-      ...(expo.plugins ?? []),
+      ...(expo.plugins ?? []).map((plugin) =>
+        plugin === "expo-notifications"
+          ? ["expo-notifications", { sounds: notificationSounds }]
+          : plugin,
+      ),
       // Pairing uses a device-local ws:// URL; Android 9+ blocks it unless the
       // native manifest opts in. Session payloads remain encrypted by pew2.
       ["expo-build-properties", { android: { usesCleartextTraffic: true } }],

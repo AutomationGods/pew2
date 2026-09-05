@@ -266,8 +266,11 @@ function makeStyles(theme: AppTheme) {
     ...adaptiveUserBubbleStyle,
     backgroundColor: theme.color.surfaceRaised,
     borderRadius: theme.radius.lg,
-    paddingHorizontal: theme.space(3.5),
-    paddingVertical: theme.space(2.75),
+    borderWidth: 2,
+    borderBottomWidth: 4,
+    borderColor: theme.color.border,
+    paddingHorizontal: theme.space(4),
+    paddingVertical: theme.space(3),
   },
   queuedRow: {
     flexDirection: "row",

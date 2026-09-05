@@ -435,8 +435,9 @@ function makeStyles(theme: AppTheme) {
   // Square where it meets that edge, for the same reason — rounding a corner
   // there implies a boundary the sheet does not actually have.
   sheet: {
-    marginHorizontal: theme.gutter,
-    backgroundColor: theme.color.surface,
+    backgroundColor: theme.color.canvas,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.color.separator,
     borderTopLeftRadius: theme.radius.pane,
     borderTopRightRadius: theme.radius.pane,
     paddingHorizontal: theme.space(3),
@@ -468,8 +469,10 @@ function makeStyles(theme: AppTheme) {
 /** The card the sheet's content sits in: one rounded, clipped raised surface. */
 export function sheetCardStyle(theme: AppTheme) {
   return {
-    backgroundColor: theme.color.surfaceRaised,
-    borderRadius: theme.radius.lg,
+    backgroundColor: theme.color.groupedSurface,
+    borderRadius: theme.radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.color.separator,
     overflow: "hidden" as const,
   };
 }

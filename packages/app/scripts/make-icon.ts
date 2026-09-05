@@ -3,10 +3,15 @@
  *
  * The icon is generated rather than drawn by hand because it is the same shape
  * as the rest of the brand and that relationship should be enforced, not
- * remembered. Every title in the app is set in Bitcount Prop Single, a
- * single-module dot-matrix face, and the agent mark is a sphere rendered as a
- * lit LED grid (`src/ui/orbMatrix.ts`). So the icon is the same panel showing
- * two characters instead of a ball.
+ * remembered. The mark is the aperture from `src/ui/Logo.tsx`: a broken ring
+ * around a lit core, a lens held open on a machine somewhere else. Keeping both
+ * in code means the icon cannot quietly drift away from the launch screen the
+ * user sees two seconds after tapping it.
+ *
+ * It replaced a dot-matrix `P2`. Two characters is a wordmark, and at the size
+ * an icon is actually looked at they fused into a bright textured bar; a single
+ * closed shape is legible at 40pt, which is the only size that decides whether
+ * an icon works.
  *
  * Run it with `bun packages/app/scripts/make-icon.ts`. Committing the output is
  * deliberate: an app icon must not depend on a build step that could fail on
@@ -21,61 +26,38 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const APP = join(HERE, "..");
 const REPO = join(APP, "..", "..");
 
-/** Straight from `src/theme.ts`. Duplicated because a PNG cannot import it. */
-const ACCENT = "#d97757";
-const BACKGROUND = "#111111";
+/**
+ * Straight from `src/theme.ts` — the dark default accent, the violet it
+ * gradients into, and the page base. Duplicated because a PNG cannot import a
+ * module that pulls in React Native.
+ */
+const ACCENT = "#5ce1ff";
+const ACCENT_DEEP = "#8b3dff";
+const BACKGROUND = "#05070e";
 
 /**
- * `P2` on a 7-row dot matrix.
+ * The aperture, as fractions of the canvas.
  *
- * Seven rows is the classic LED character height, and both glyphs are drawn
- * seven-segment style: full-width bars and square corners, no diagonals. A
- * conventional 5x7 `P` leaves its top-right cell dark, which with round dots
- * this large reads as a broken bowl rather than as a letter.
- *
- * Written as strings because the shape has to be *readable in the source*. An
- * icon nobody can adjust without a design tool is one that never gets adjusted.
+ * Written as ratios rather than pixels so every output size — 1024 store asset,
+ * 512 favicon, the hard-cropped Android foreground — draws the identical shape
+ * instead of one that thickens as it shrinks.
  */
-const GLYPHS = [
-  "#####",
-  "#   #",
-  "#   #",
-  "#####",
-  "#    ",
-  "#    ",
-  "#    ",
-].map((row, index) =>
-  [
-    row,
-    // The 2 beside it, drawn seven-segment style: two full bars and two half
-    // stems. It carries the same weight as the P, which a curved numeral would
-    // not, and it is what an LED panel would actually light.
-    ["#####", "    #", "    #", "#####", "#    ", "#    ", "#####"][index]!,
-    // Two dark columns between them, not one. Both glyphs carry a full-width
-    // top bar, and a single gap lets those bars read as one continuous rule at
-    // home-screen size instead of as two characters.
-  ].join("  "),
-);
-
-const COLUMNS = GLYPHS[0]!.length;
-const ROWS = GLYPHS.length;
+const RING_RADIUS = 0.33;
+const RING_WIDTH = 0.055;
+/** The faint second ring, which is what makes it read as an instrument. */
+const INNER_RADIUS = 0.255;
+const INNER_OPACITY = 0.4;
+const CORE_RADIUS = 0.21;
 
 /**
- * How much of a cell a lit dot fills.
+ * How much of the ring is cut away, as a fraction of its circumference.
  *
- * Under 1 so the grid reads as separate lamps rather than a solid block, which
- * is the entire point of a matrix panel.
+ * Two gaps, not four: at four the remaining segments are shorter than the gaps
+ * and the ring stops reading as a circle. Cut on the diagonal so neither gap
+ * lands on the vertical or horizontal axis, where the eye is most sensitive to
+ * a shape being not-quite-round.
  */
-const DOT_FILL = 0.82;
-
-/**
- * Unlit cells, drawn faintly.
- *
- * A real panel has all its lamps whether or not they are on, and showing them
- * is what makes this read as a *display* rather than as pixel art. Faint enough
- * to disappear at small sizes, where the icon should just be the letters.
- */
-const OFF_OPACITY = 0.045;
+const GAP_FRACTION = 0.11;
 
 /**
  * The iOS squircle, as the superellipse Apple actually uses.
@@ -105,36 +87,27 @@ function squirclePath(size: number, n = 5): string {
 }
 
 /**
- * The matrix, as SVG.
+ * The mark, as SVG.
  *
  * @param size      Canvas edge in pixels.
  * @param squircle  Clip to the superellipse. Off for store assets, which iOS
  *                  masks itself and which must be full-bleed square.
- * @param margin    Fraction of the canvas left clear around the glyphs.
+ * @param scale     Shrinks the mark within its canvas. Android crops adaptive
+ *                  icons hard, so the foreground draws smaller than the plate.
  */
-function icon(size: number, { squircle = true, margin = 0.11 } = {}): string {
-  // The panel is sized to whichever axis is tighter, so the glyphs keep square
-  // cells rather than stretching to fill a non-square grid.
-  const usable = size * (1 - margin * 2);
-  const pitch = Math.min(usable / COLUMNS, usable / ROWS);
-  const panelWidth = pitch * COLUMNS;
-  const panelHeight = pitch * ROWS;
-  const originX = (size - panelWidth) / 2;
-  const originY = (size - panelHeight) / 2;
-  const radius = (pitch * DOT_FILL) / 2;
+function icon(size: number, { squircle = true, scale = 1 } = {}): string {
+  const c = size / 2;
+  const ringR = size * RING_RADIUS * scale;
+  const ringW = size * RING_WIDTH * scale;
+  const innerR = size * INNER_RADIUS * scale;
+  const coreR = size * CORE_RADIUS * scale;
 
-  const dots: string[] = [];
-  for (let row = 0; row < ROWS; row += 1) {
-    for (let column = 0; column < COLUMNS; column += 1) {
-      const lit = GLYPHS[row]![column] === "#";
-      const cx = originX + (column + 0.5) * pitch;
-      const cy = originY + (row + 0.5) * pitch;
-      dots.push(
-        `<circle cx="${cx.toFixed(2)}" cy="${cy.toFixed(2)}" r="${radius.toFixed(2)}" ` +
-          `fill="${ACCENT}" opacity="${lit ? 1 : OFF_OPACITY}"/>`,
-      );
-    }
-  }
+  // Stroke dashes rather than four drawn arcs: the dash pattern is measured
+  // along the path itself, so the two segments and two gaps stay exactly equal
+  // without any trigonometry that could round differently per size.
+  const circumference = 2 * Math.PI * ringR;
+  const gap = circumference * GAP_FRACTION;
+  const segment = circumference / 2 - gap;
 
   const clip = squircle
     ? `<clipPath id="s"><path d="${squirclePath(size)}"/></clipPath>`
@@ -144,26 +117,49 @@ function icon(size: number, { squircle = true, margin = 0.11 } = {}): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
   <defs>
     ${clip}
-    <radialGradient id="glow" cx="50%" cy="42%" r="62%">
-      <stop offset="0%" stop-color="${ACCENT}" stop-opacity="0.16"/>
+    <radialGradient id="halo" cx="50%" cy="50%" r="58%">
+      <stop offset="0%" stop-color="${ACCENT}" stop-opacity="0.26"/>
       <stop offset="100%" stop-color="${ACCENT}" stop-opacity="0"/>
     </radialGradient>
+    <linearGradient id="core" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="${ACCENT}"/>
+      <stop offset="100%" stop-color="${ACCENT_DEEP}"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.34"/>
+      <stop offset="45%" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
   </defs>
   ${group}
     <rect width="${size}" height="${size}" fill="${BACKGROUND}"/>
-    <rect width="${size}" height="${size}" fill="url(#glow)"/>
-    ${dots.join("\n    ")}
+    <rect width="${size}" height="${size}" fill="url(#halo)"/>
+    <circle cx="${c}" cy="${c}" r="${innerR.toFixed(2)}" fill="none"
+            stroke="${ACCENT}" stroke-opacity="${INNER_OPACITY}" stroke-width="${(ringW / 2).toFixed(2)}"/>
+    <circle cx="${c}" cy="${c}" r="${ringR.toFixed(2)}" fill="none"
+            stroke="${ACCENT}" stroke-width="${ringW.toFixed(2)}" stroke-linecap="round"
+            stroke-dasharray="${segment.toFixed(2)} ${gap.toFixed(2)}"
+            transform="rotate(-45 ${c} ${c})"/>
+    <circle cx="${c}" cy="${c}" r="${coreR.toFixed(2)}" fill="url(#core)"/>
+    <circle cx="${c}" cy="${c}" r="${coreR.toFixed(2)}" fill="url(#sheen)"/>
   </g>
 </svg>`;
 }
 
-/** Just the glyphs, for the Android adaptive foreground and the splash. */
+/** Just the mark, for the Android adaptive foreground and the splash. */
 function foreground(size: number): string {
   // Android crops adaptive icons hard: the outer third can be masked away on
   // some launchers, so the mark sits well inside its own canvas.
-  return icon(size, { squircle: false, margin: 0.28 }).replace(
-    /<rect width="\d+" height="\d+" fill="#111111"\/>/,
-    "",
+  return (
+    icon(size, { squircle: false, scale: 0.62 })
+      .replace(new RegExp(`<rect width="\\d+" height="\\d+" fill="${BACKGROUND}"/>`), "")
+      // The halo goes with it. It is a full-bleed gradient tuned to sit on the
+      // plate, and these two outputs have no plate: over transparency it
+      // composites to a grey square the size of the canvas, which on the splash
+      // reads as a smudge behind the mark and on an Android launcher is exactly
+      // the soft-edged fill that adaptive cropping smears. The glow belongs to
+      // the icon, which owns its own background.
+      .replace(/<rect width="\d+" height="\d+" fill="url\(#halo\)"\/>/, "")
   );
 }
 
@@ -198,11 +194,12 @@ await png(
 );
 
 // Monochrome is used by Android as a mask and tinted by the system wallpaper,
-// so it ships as a flat silhouette. The glow is dropped rather than recoloured:
-// a soft-edged gradient in a mask becomes a smear once themed.
+// so it ships as a flat silhouette. The halo and the sheen are dropped rather
+// than recoloured: a soft-edged gradient in a mask becomes a smear once themed.
 await png(
   foreground(1024)
-    .replace(/<rect width="\d+" height="\d+" fill="url\(#glow\)"\/>/, "")
+    .replace(/<circle[^>]*fill="url\(#sheen\)"\/>/, "")
+    .replace(/fill="url\(#core\)"/, `fill="#ffffff"`)
     .replaceAll(ACCENT, "#ffffff"),
   1024,
   join(APP, "assets/android-icon-monochrome.png"),

@@ -444,8 +444,31 @@ test("reconnecting with a rotated token replaces the old one", async () => {
   // Otherwise every app restart costs another copy of every banner.
   const { daemon } = stubbed();
 
-  await send(daemon, { t: "app.push", token: "ExponentPushToken[old]", platform: "ios" }, "phone-1");
-  await send(daemon, { t: "app.push", token: "ExponentPushToken[new]", platform: "ios" }, "phone-1");
+  await send(daemon, { t: "app.push", token: "ExponentPushToken[first]", platform: "ios" }, "phone-1");
+  await send(daemon, { t: "app.push", token: "ExponentPushToken[second]", platform: "ios" }, "phone-1");
 
-  expect(daemon.pushTargets.list()).toEqual([{ token: "ExponentPushToken[new]", platform: "ios" }]);
+  expect(daemon.pushTargets.list()).toEqual([{ token: "ExponentPushToken[second]", platform: "ios" }]);
+});
+
+test("push delivery never delays the idle signal", async () => {
+  const { daemon } = stubbed();
+  daemon.pushTargets.register("phone", "ExponentPushToken[phone]", "ios");
+  Object.assign(daemon, {
+    prompt: async () => {},
+    sessionNotice: () => ({ folder: "pew2", agentName: "test" }),
+    sessionOrigin: () => ({}),
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    (..._args: Parameters<typeof fetch>) => new Promise<Response>(() => {}),
+    { preconnect: originalFetch.preconnect },
+  );
+  try {
+    const out = await send(daemon, { t: "session.prompt", sessionId: "session-1", text: "go" });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(out).toContainEqual({ t: "session.idle", sessionId: "session-1" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

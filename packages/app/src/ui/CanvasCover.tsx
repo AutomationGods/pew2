@@ -1,7 +1,7 @@
 /**
  * Canvas-coloured cover for the nav and composer rails.
  *
- * The overlay always uses the conversation's #111111 RGB. Its transparency lets
+ * The overlay always uses the conversation's #05070e RGB. Its transparency lets
  * passing text remain faintly visible underneath without introducing a separate
  * grey material or a gradient that makes either rail read as another panel.
  *
@@ -17,7 +17,7 @@ import { StyleSheet, View } from "react-native";
 
 // The exact canvas RGB. Translucency softens content passing beneath the rails
 // without the nav or dock introducing a separate material colour.
-const CANVAS_OVERLAY = "rgba(17,17,17,0.92)";
+const CANVAS_OVERLAY = "rgba(5,7,14,0.92)";
 
 interface CanvasCoverProps {
   /** Exactly the zone to cover. Nothing beyond it is touched. */

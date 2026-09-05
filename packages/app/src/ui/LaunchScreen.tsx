@@ -40,6 +40,18 @@ export function LaunchScreen({ onConnect }: Props) {
           { paddingBottom: insets.bottom + theme.space(8) },
         ]}
       >
+        {/*
+          The only glowing element on the screen, because it is the only
+          action. A second halo would leave neither reading as primary, which
+          is how a glow treatment stops meaning anything at all.
+        */}
+        {/*
+          The halo lives on a wrapper, not on the glass itself. Every glass
+          surface sets `overflow: hidden` so its rim and its clip are one
+          rounded path, and a clipped view cannot cast a shadow — put `glow` on
+          the Glass and it silently renders nothing at all.
+        */}
+        <View style={styles.glow}>
         <Glass radius={theme.radius.lg} tier="raised" interactive>
           <Pressable
             style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
@@ -53,6 +65,7 @@ export function LaunchScreen({ onConnect }: Props) {
             <Text style={styles.buttonText}>Connect your device</Text>
           </Pressable>
         </Glass>
+        </View>
       </View>
     </View>
   );
@@ -80,8 +93,10 @@ function makeStyles(theme: AppTheme) {
     // Comfortably above the 44pt minimum target.
     minHeight: 56,
   },
+  // The wrapper must carry the same radius, or the shadow is cast by a square.
+  glow: { borderRadius: theme.radius.lg },
   buttonPressed: { backgroundColor: theme.glass.fillPressed },
-  buttonText: { color: theme.color.text, fontSize: theme.font.title, fontWeight: "600" },
+  buttonText: { color: theme.color.accent, fontSize: theme.font.title, fontWeight: "600" },
   });
 }
 ;

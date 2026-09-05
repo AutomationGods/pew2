@@ -48,7 +48,6 @@ import {
   type NotificationChoice,
 } from "./src/ui/notifier";
 import { pushAddress } from "./src/ui/push";
-import { Orb } from "./src/ui/Orb";
 import { ComposerDock, type ComposerDockHandle } from "./src/ui/ComposerDock";
 import { ChatThread, type ChatThreadRef } from "./src/ui/ChatThread";
 import { ImageResolverProvider } from "./src/ui/ChatImage";
@@ -628,6 +627,7 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
     [daemon.projects, projectKey, activeId],
   );
   const selectedProjectPath = activeId ? daemon.projectPath[activeId] : undefined;
+  const selectedProject = projects.find((project) => project.path === selectedProjectPath);
   const selectProject = useCallback(
     (path?: string) => {
       if (activeId) selectDaemonProject(activeId, path);
@@ -1402,14 +1402,17 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
               accessibilityLabel="Dismiss keyboard"
               onPress={Keyboard.dismiss}
             >
-              <Reanimated.View style={keyboard.settled}>
-                <Orb
-                  color={active?.color}
-                  size={ORB_REST_SIZE}
-                  busy={daemon.busy}
-                />
+              <Reanimated.View style={[styles.workspaceContext, keyboard.settled]}>
+                <View style={[styles.workspaceMarker, { backgroundColor: active?.color ?? theme.color.textFaint }]} />
+                <View style={styles.workspaceCopy}>
+                  <Text style={styles.workspaceProvider} numberOfLines={1}>{active?.name ?? "No agent available"}</Text>
+                  <Text style={styles.workspaceProject} numberOfLines={1}>{selectedProject?.name ?? pairing.label}</Text>
+                </View>
+                <Text style={[styles.workspaceStatus, { color: daemon.status === "online" ? theme.color.success : theme.color.textFaint }]}>
+                  {daemon.status === "online" ? "Connected" : "Offline"}
+                </Text>
               </Reanimated.View>
-              <Text style={styles.greetingText}>
+              <Text style={[styles.greetingText, daemon.status === "online" && active && styles.greetingHeadline]}>
                 {/* A refusal the daemon explained outranks the connecting
                     state: reconnecting cannot fix a rotated key or a version
                     mismatch, so "Connecting..." would loop forever while
@@ -1657,6 +1660,9 @@ function makeStyles(theme: AppTheme) {
     // one baseline.
     paddingHorizontal: theme.gutter,
     paddingVertical: theme.headerInset,
+    backgroundColor: theme.color.surface,
+    borderBottomWidth: 2,
+    borderBottomColor: theme.color.separator,
   },
   topBarOverlay: {
     position: "absolute",
@@ -1694,18 +1700,41 @@ function makeStyles(theme: AppTheme) {
   greetingLift: { flex: 1 },
   greeting: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: theme.space(5),
-    paddingHorizontal: theme.space(10),
+    alignItems: "stretch",
+    justifyContent: "flex-end",
+    gap: theme.space(3),
+    paddingHorizontal: theme.gutter,
+    paddingBottom: theme.size.composerCollapsed + theme.space(36),
   },
+  workspaceContext: {
+    minHeight: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.space(3),
+    paddingHorizontal: theme.space(3),
+    paddingVertical: theme.space(2),
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.color.groupedSurface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.color.separator,
+  },
+  workspaceMarker: { width: 8, height: 28, borderRadius: 4 },
+  workspaceCopy: { flex: 1, minWidth: 0 },
+  workspaceProvider: { color: theme.color.text, fontSize: theme.font.body, fontWeight: "600" },
+  workspaceProject: { color: theme.color.textDim, fontSize: theme.font.small, marginTop: 2 },
+  workspaceStatus: { fontSize: theme.font.tiny, fontWeight: "600" },
   greetingText: {
+    color: theme.color.textDim,
+    fontSize: theme.font.body,
+    lineHeight: theme.line.body,
+    textAlign: "left",
+  },
+  greetingHeadline: {
     color: theme.color.text,
-    fontFamily: theme.display.regular,
+    fontFamily: theme.display.editorial,
     fontSize: theme.font.greeting,
     lineHeight: theme.line.greeting,
-    letterSpacing: 0.3,
-    textAlign: "center",
+    letterSpacing: -0.4,
   },
 
   // One consistent gap between the thread and the composer, kept when the

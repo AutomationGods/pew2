@@ -23,7 +23,7 @@
  * name and the agent's opening line. Everything else in pew2 stays sealed; this
  * one string does not, and that is the price of an instant notification.
  */
-import { noticeBody, noticeTitle, type NoticeOrigin } from "@pew2/protocol";
+import { noticeBody, noticeTitle, summarise, type NoticeOrigin } from "@pew2/protocol";
 
 /** Expo's push endpoint. Needs no credentials of ours; EAS holds those. */
 const PUSH_URL = "https://exp.host/--/api/v2/push/send";
@@ -31,31 +31,36 @@ const PUSH_URL = "https://exp.host/--/api/v2/push/send";
 /** Matches what `getExpoPushTokenAsync` returns, so junk never reaches Expo. */
 const TOKEN_SHAPE = /^Expo(nent)?PushToken\[[^\]]+\]$/;
 
-/** A phone that has asked to be told when its agents finish. */
+/** A phone that has asked to be told about agent activity. */
 interface Target {
   token: string;
   platform: "ios" | "android";
-  /** Android needs the channel named on the message, not just on the device. */
-  channelId?: string;
 }
 
-export interface FinishedTurnPush extends NoticeOrigin {
+export type PushKind = "complete" | "input" | "error";
+
+export interface AgentPush extends NoticeOrigin {
   sessionId: string;
-  /** The agent's closing message, if it ended the turn by saying something. */
+  kind?: PushKind;
+  /** Agent output for completion, or an error message for failures. */
+  text?: string;
+  /** Backwards-compatible completion input. */
   lastText?: string;
 }
 
-/**
- * The Android channel the app creates in `ui/notifier.ts`.
- *
- * Restated rather than imported because the daemon cannot depend on the app
- * package. Worth the visible duplication: Expo documents that naming a channel
- * the device has not created means the notification is **not shown at all**, so
- * a drift here is silent and total rather than merely untidy.
- */
-const ANDROID_CHANNEL = "agent-turns";
+const ANDROID_CHANNELS: Record<PushKind, string> = {
+  complete: "agent-complete",
+  input: "agent-input",
+  error: "agent-error",
+};
 
-/** The notification category the app registers, which carries the reply box. */
+const SOUNDS: Record<PushKind, string> = {
+  complete: "complete.wav",
+  input: "input.wav",
+  error: "error.wav",
+};
+
+/** The notification category carrying the inline reply box. */
 const CATEGORY = "agentTurn";
 
 /**
@@ -75,21 +80,11 @@ export class PushRegistry {
    */
   register(deviceId: string, token: string, platform: "ios" | "android"): boolean {
     if (!TOKEN_SHAPE.test(token)) return false;
-    this.targets.set(deviceId, {
-      token,
-      platform,
-      ...(platform === "android" ? { channelId: ANDROID_CHANNEL } : null),
-    });
+    this.targets.set(deviceId, { token, platform });
     return true;
   }
 
-  /**
-   * Stop pushing to a token the push service has told us is dead.
-   *
-   * Expo reports `DeviceNotRegistered` when the app was uninstalled or the user
-   * revoked permission. Continuing to send to it is what gets a sender rate
-   * limited, so this is not merely tidy.
-   */
+  /** Stop pushing to a token the service says is no longer registered. */
   forget(token: string): void {
     for (const [deviceId, target] of this.targets) {
       if (target.token === token) this.targets.delete(deviceId);
@@ -110,19 +105,10 @@ interface ExpoMessage {
   to: string;
   title: string;
   body: string;
-  data: { sessionId: string };
-  sound: "default";
+  data: { sessionId: string; kind: PushKind };
+  sound: string;
   categoryId: string;
   channelId?: string;
-  /**
-   * High, which is what makes this instant on Android.
-   *
-   * Normal priority lets FCM hold a message back on a sleeping device to save
-   * battery — precisely the phone-in-a-pocket case this whole feature exists
-   * for, and it would reproduce the original complaint (the banner arriving
-   * long after the turn ended) through a different mechanism. On iOS high is
-   * already the default.
-   */
   priority: "high";
 }
 
@@ -133,20 +119,25 @@ interface ExpoTicket {
   details?: { error?: string };
 }
 
-export function pushMessages(registry: PushRegistry, turn: FinishedTurnPush): ExpoMessage[] {
-  const title = noticeTitle(turn);
-  const body = noticeBody(turn.lastText);
+export function pushMessages(registry: PushRegistry, notice: AgentPush): ExpoMessage[] {
+  const kind = notice.kind ?? "complete";
+  const title = noticeTitle(notice);
+  const body =
+    kind === "input"
+      ? "Your agent needs an answer."
+      : kind === "error"
+        ? summarise(notice.text) ?? "The agent hit an error."
+        : noticeBody(notice.text ?? notice.lastText);
   return registry.list().map((target) => ({
     to: target.token,
     title,
     body,
-    // Read back on tap to open the right conversation, and on an inline reply
-    // to address the right agent. Matches the local banner's payload exactly,
-    // so the app's existing handling works unchanged for both.
-    data: { sessionId: turn.sessionId },
-    sound: "default",
+    data: { sessionId: notice.sessionId, kind },
+    sound: SOUNDS[kind],
     categoryId: CATEGORY,
-    ...(target.channelId ? { channelId: target.channelId } : null),
+    ...(target.platform === "android"
+      ? { channelId: ANDROID_CHANNELS[kind] }
+      : null),
     priority: "high",
   }));
 }
@@ -171,42 +162,29 @@ export function applyTickets(
   });
 }
 
-/**
- * Announce a finished turn to every paired phone.
- *
- * Never throws and never blocks the turn: a notification is an addition to the
- * session, and a push service outage must not surface as a failed prompt. The
- * caller deliberately does not await it.
- *
- * No retry. Expo's guidance is exponential backoff on 429/5xx, but this
- * particular message is worthless once it is late — the whole point is
- * immediacy, and a banner arriving after the user has already picked up the
- * phone and read the reply is noise. A dropped push degrades to what the app did
- * before: the banner appears when the socket reconnects.
- */
-export async function pushFinishedTurn(
+/** Send one agent notification without delaying or failing the session. */
+export async function pushAgentNotice(
   registry: PushRegistry,
-  turn: FinishedTurnPush,
+  notice: AgentPush,
 ): Promise<void> {
   if (registry.size === 0) return;
-  const messages = pushMessages(registry, turn);
+  const messages = pushMessages(registry, notice);
   try {
     const response = await fetch(PUSH_URL, {
       method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json",
-      },
+      headers: { accept: "application/json", "content-type": "application/json" },
       body: JSON.stringify(messages),
-      // A push that has not been accepted in ten seconds has already lost the
-      // race with the user reaching for their phone.
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) return;
     const payload = (await response.json()) as { data?: unknown };
     applyTickets(registry, messages, payload?.data);
   } catch {
-    // Offline desktop, DNS failure, Expo outage. Nothing here is worth
-    // interrupting the session that just finished successfully.
+    // Offline desktop, DNS failure, or Expo outage: notifications stay optional.
   }
+}
+
+/** Backwards-compatible completion helper. */
+export function pushFinishedTurn(registry: PushRegistry, turn: AgentPush): Promise<void> {
+  return pushAgentNotice(registry, { ...turn, kind: "complete" });
 }

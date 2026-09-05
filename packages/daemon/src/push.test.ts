@@ -30,7 +30,7 @@ describe("PushRegistry", () => {
   it("names the Android channel, without which the banner is filed silently", () => {
     const registry = new PushRegistry();
     registry.register("phone", TOKEN, "android");
-    expect(registry.list()[0]?.channelId).toBe("agent-turns");
+    expect(pushMessages(registry, { sessionId: "s1" })[0]?.channelId).toBe("agent-complete");
   });
 });
 
@@ -49,7 +49,8 @@ describe("pushMessages", () => {
     expect(message?.body).toBe("Done");
     // Read back by the app on tap, to open the conversation the banner is
     // about — the same payload the local banner carries.
-    expect(message?.data).toEqual({ sessionId: "s1" });
+    expect(message?.data).toEqual({ sessionId: "s1", kind: "complete" });
+    expect(message?.sound).toBe("complete.wav");
     // The field that makes this instant on Android: normal priority lets FCM
     // hold a message back on a sleeping device, which is the phone-in-a-pocket
     // case the whole feature exists for.
@@ -59,6 +60,20 @@ describe("pushMessages", () => {
   it("still says something for a turn that ended without a message", () => {
     const [message] = pushMessages(registry, { sessionId: "s1", folder: "pew2" });
     expect(message?.body).toBe("Finished and waiting on you.");
+  });
+
+  it("distinguishes input and error with their own copy, sound, and channel", () => {
+    const android = new PushRegistry();
+    android.register("phone", TOKEN, "android");
+
+    expect(pushMessages(android, { sessionId: "s1", kind: "input" })[0]).toMatchObject({
+      body: "Your agent needs an answer.",
+      sound: "input.wav",
+      channelId: "agent-input",
+    });
+    expect(
+      pushMessages(android, { sessionId: "s1", kind: "error", text: "Connection failed" })[0],
+    ).toMatchObject({ body: "Connection failed", sound: "error.wav", channelId: "agent-error" });
   });
 
   it("sends nothing when no phone has registered", () => {

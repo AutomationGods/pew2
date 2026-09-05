@@ -18,7 +18,7 @@ import { workspaceStatus } from "./git.js";
 import { resolveWorkspace } from "./workspace.js";
 import { discoverRepos, listDirectory } from "./workspaces.js";
 import { wire } from "@pew2/protocol";
-import { pushFinishedTurn } from "./push.js";
+import { pushAgentNotice, pushFinishedTurn } from "./push.js";
 
 export interface HandlerContext {
   daemon: Daemon;
@@ -292,39 +292,29 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         const sessionId = message.sessionId;
         daemon
           .prompt(sessionId, message.text, attachments)
-          .catch((error) => reply(errorMessage("prompt_failed", error)))
-          // Tell every client the turn is over, so they can stop showing a
-          // working indicator. Broadcast, not reply: other devices watching this
-          // session need it too.
-          //
-          // Carries the project and agent so a client can announce a session it
-          // is not showing — the phone is usually elsewhere by the time a long
-          // turn ends, and only this machine knows the path.
+          .then(() => {
+            // Push delivery is optional and can take ten seconds; never delay idle.
+            void pushFinishedTurn(daemon.pushTargets, {
+              sessionId,
+              ...daemon.sessionNotice(sessionId),
+            });
+          })
+          .catch((error) => {
+            const failure = errorMessage("prompt_failed", error);
+            reply(failure);
+            void pushAgentNotice(daemon.pushTargets, {
+              sessionId,
+              kind: "error",
+              text: failure.message,
+              ...daemon.sessionNotice(sessionId),
+            });
+          })
+          // Always stop every client's working indicator, including failures.
           .finally(() => {
             broadcast({
               t: "session.idle",
               sessionId,
               ...daemon.sessionOrigin(sessionId),
-            });
-            // And again, out of band, to phones whose sockets are asleep.
-            //
-            // Sent unconditionally rather than only when no app is attached.
-            // Knowing that would mean trusting the relay's account of who is
-            // connected, and the relay is the one party in this system that is
-            // assumed hostile. It is also unreliable: a backgrounded iOS app
-            // holds a socket that looks alive for a while after its JavaScript
-            // has stopped, so "attached" does not mean "will show a banner".
-            //
-            // Duplicates are handled where the information actually exists —
-            // on the device, which knows whether it is foreground and which
-            // conversation is on screen. That is the same rule the local
-            // banner already applies, so there is one decision, not two.
-            //
-            // Not awaited: a turn is over, and the push service must never be
-            // able to hold a session open or fail it.
-            void pushFinishedTurn(daemon.pushTargets, {
-              sessionId,
-              ...daemon.sessionNotice(sessionId),
             });
           });
         break;

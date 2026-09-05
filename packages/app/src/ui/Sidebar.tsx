@@ -440,7 +440,7 @@ function SidebarView({
                 connection state is the first thing to check when the drawer is
                 opened, and it belongs to the list of apps it describes. */}
             <View style={styles.headerTitleRow}>
-              <Text style={styles.headerTitle}>Connected Apps</Text>
+              <Text style={styles.headerTitle}>{machineLabel}</Text>
               {/* The count is of apps that can actually be tapped, not of
                   manifests: the list also holds agents that are installed but
                   missing a key, or not installed at all, and counting those
@@ -464,7 +464,7 @@ function SidebarView({
                   accessibilityRole="text"
                   // Without this it is announced as a bare number after the
                   // title, which says nothing about what was counted.
-                  accessibilityLabel={`${availableCount} ${availableCount === 1 ? "app" : "apps"} ready to use`}
+                  accessibilityLabel={`${availableCount} ${availableCount === 1 ? "agent" : "agents"} ready`}
                 >
                   <Text style={styles.headerCountText}>{availableCount}</Text>
                 </View>
@@ -517,7 +517,7 @@ function SidebarView({
             ]}
           >
             <View style={styles.activityIcon}>
-              <Ionicons name="pulse" size={20} color={theme.color.accent} />
+              <View style={[styles.connectionDot, { backgroundColor: activityGroups.needsYou.length > 0 ? theme.color.warning : theme.color.success }]} />
             </View>
             <View style={styles.activityCopy}>
               <Text style={styles.activityTitle}>Activity</Text>
@@ -563,7 +563,7 @@ function SidebarView({
               it does not have — the project selector above is what reaches the
               rest. */}
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionLabel}>Latest chats</Text>
+            <Text style={styles.sectionLabel}>Recent sessions</Text>
 
             {/* Only with a project chosen, and that is the whole point: a "new
                 chat" button with no project named cannot say where the chat
@@ -815,7 +815,7 @@ function makeStyles(theme: AppTheme) {
     // curved side: the other three meet the screen edge, where a line would be
     // an outline around the whole app rather than the shape of this card.
     borderRightWidth: 1,
-    borderRightColor: "rgba(255,255,255,0.28)",
+    borderRightColor: theme.color.separator,
   },
   panelInner: { flex: 1, paddingBottom: theme.space(4) },
 
@@ -837,11 +837,13 @@ function makeStyles(theme: AppTheme) {
   // Sized from its own text rather than given a fixed width, so a two-digit
   // count cannot clip. `minWidth` keeps a single digit from looking pinched.
   headerCount: {
-    minWidth: 22,
+    minWidth: 24,
     paddingHorizontal: theme.space(1.5),
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: theme.radius.pill,
     backgroundColor: theme.color.surfaceRaised,
+    borderWidth: 2,
+    borderColor: theme.color.border,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -874,27 +876,23 @@ function makeStyles(theme: AppTheme) {
     alignItems: "center",
   },
   activityShortcut: {
-    minHeight: 64,
+    minHeight: theme.size.touch,
     marginHorizontal: theme.gutter,
     marginTop: theme.sectionGap,
     paddingHorizontal: theme.space(3),
-    borderRadius: theme.radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.border,
-    backgroundColor: theme.color.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.color.separator,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.space(3),
   },
   activityShortcutPressed: { backgroundColor: theme.color.surfacePressed },
   activityIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.border,
   },
   activityCopy: { flex: 1, minWidth: 0, gap: 2 },
   activityTitle: { color: theme.color.text, fontSize: theme.font.body, fontWeight: "600" },
@@ -959,15 +957,21 @@ function makeStyles(theme: AppTheme) {
   // selected-row highlight still extends past the text on both sides.
   sessionsContent: {
     paddingHorizontal: theme.gutter - theme.space(2),
-    gap: theme.space(1),
   },
   session: {
-    paddingHorizontal: theme.space(2),
+    marginBottom: theme.space(1),
+    paddingHorizontal: theme.space(3),
     paddingVertical: theme.space(3),
     borderRadius: theme.radius.md,
+    borderWidth: 2,
+    borderColor: "transparent",
     gap: 2,
   },
-  sessionActive: { backgroundColor: theme.glass.control.fill },
+  sessionActive: {
+    backgroundColor: theme.color.selectedRow,
+    borderColor: theme.color.border,
+    borderBottomWidth: 4,
+  },
   sessionLine: { flexDirection: "row", alignItems: "center", gap: theme.space(2) },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
   // The agent's own accent: this is the agent doing something.

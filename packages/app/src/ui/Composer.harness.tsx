@@ -15,6 +15,7 @@
 import { useEffect, type ReactNode } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { AppearanceProvider } from "../appearance";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
 import { theme } from "../theme";
@@ -82,8 +83,14 @@ export default function ComposerHarness() {
     });
   }, []);
 
+  // Wrapped, because every production component now reads its colours through
+  // `useAppTheme()` and throws outright without this provider. A harness that
+  // cannot render is worse than no harness: DESIGN.md points at these files as
+  // the way broad visual changes get verified, so one that red-screens quietly
+  // removes that check from the process.
   return (
-    <SafeAreaProvider>
+    <AppearanceProvider>
+      <SafeAreaProvider>
       <SafeAreaView style={styles.root}>
         <StatusBar style="light" />
 
@@ -162,6 +169,7 @@ export default function ComposerHarness() {
         </ScrollView>
       </SafeAreaView>
     </SafeAreaProvider>
+    </AppearanceProvider>
   );
 }
 

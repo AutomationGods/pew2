@@ -16,7 +16,9 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import { AppearanceProvider } from "../appearance";
 import { StatusBar } from "expo-status-bar";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { theme } from "../theme";
@@ -229,8 +231,15 @@ export default function StoreShotsHarness() {
     return () => clearInterval(timer);
   }, []);
 
+  // Wrapped, because every production component now reads its colours through
+  // `useAppTheme()` and throws outright without this provider. A harness that
+  // cannot render is worse than no harness: DESIGN.md points at these files as
+  // the way broad visual changes get verified, so one that red-screens quietly
+  // removes that check from the process.
   return (
-    <SafeAreaProvider>
+    <GestureHandlerRootView style={styles.root}>
+      <AppearanceProvider>
+        <SafeAreaProvider>
       <StatusBar style="light" />
       {/* Nothing is drawn over these poses — not even a debug marker.
 
@@ -246,7 +255,9 @@ export default function StoreShotsHarness() {
       {pose === 0 && <Conversation drawerOpen={false} />}
       {pose === 1 && <Conversation drawerOpen />}
       {pose === 2 && <ProjectPicker />}
-    </SafeAreaProvider>
+        </SafeAreaProvider>
+      </AppearanceProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -259,6 +270,9 @@ const styles = StyleSheet.create({
     gap: theme.space(2),
     paddingHorizontal: theme.gutter,
     paddingBottom: theme.space(2),
+    backgroundColor: theme.color.surface,
+    borderBottomWidth: 2,
+    borderBottomColor: theme.color.separator,
   },
   navSpacer: { flex: 1 },
   pill: {
@@ -267,8 +281,11 @@ const styles = StyleSheet.create({
     gap: theme.space(1),
     paddingHorizontal: theme.space(3),
     paddingVertical: theme.space(2),
-    borderRadius: 999,
+    borderRadius: theme.radius.pill,
     backgroundColor: theme.color.surface,
+    borderWidth: 2,
+    borderBottomWidth: 4,
+    borderColor: theme.color.border,
   },
   pillText: { color: theme.color.textDim, fontSize: 13 },
   dock: { position: "absolute", left: 0, right: 0, bottom: 0 },

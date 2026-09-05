@@ -8,6 +8,7 @@
  */
 import { StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { AppearanceProvider } from "../appearance";
 import { StatusBar } from "expo-status-bar";
 import { theme } from "../theme";
 import { ContextBar } from "./ContextBar";
@@ -83,8 +84,14 @@ const CASES: Array<{ note: string; props: React.ComponentProps<typeof ContextBar
 ];
 
 export default function ContextBarHarness() {
+  // Wrapped, because every production component now reads its colours through
+  // `useAppTheme()` and throws outright without this provider. A harness that
+  // cannot render is worse than no harness: DESIGN.md points at these files as
+  // the way broad visual changes get verified, so one that red-screens quietly
+  // removes that check from the process.
   return (
-    <SafeAreaProvider>
+    <AppearanceProvider>
+      <SafeAreaProvider>
       <StatusBar style="light" />
       <View style={styles.screen}>
         {CASES.map((testCase) => (
@@ -98,6 +105,7 @@ export default function ContextBarHarness() {
         ))}
       </View>
     </SafeAreaProvider>
+    </AppearanceProvider>
   );
 }
 

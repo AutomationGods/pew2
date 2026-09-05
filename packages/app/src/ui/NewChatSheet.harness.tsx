@@ -12,6 +12,7 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { AppearanceProvider } from "../appearance";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import { theme } from "../theme";
@@ -73,8 +74,14 @@ export default function NewChatSheetHarness() {
     "success" | "duplicate" | "error" | "loading"
   >("success");
 
+  // Wrapped, because every production component now reads its colours through
+  // `useAppTheme()` and throws outright without this provider. A harness that
+  // cannot render is worse than no harness: DESIGN.md points at these files as
+  // the way broad visual changes get verified, so one that red-screens quietly
+  // removes that check from the process.
   return (
     <GestureHandlerRootView style={styles.root}>
+      <AppearanceProvider>
       <SafeAreaProvider>
       <StatusBar style="light" />
       <View style={styles.screen}>
@@ -164,6 +171,7 @@ export default function NewChatSheetHarness() {
         }}
       />
       </SafeAreaProvider>
+    </AppearanceProvider>
     </GestureHandlerRootView>
   );
 }
