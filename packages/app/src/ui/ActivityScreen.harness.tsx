@@ -78,6 +78,8 @@ export default function ActivityScreenHarness() {
           providers={providers}
           status="online"
           reduceMotion={false}
+          refreshing={false}
+          onRefresh={() => {}}
           onClose={() => {}}
           onNewConversation={() => {}}
           onOpenSession={() => {}}

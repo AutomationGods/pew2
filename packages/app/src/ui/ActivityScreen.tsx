@@ -4,6 +4,7 @@ import {
   Animated,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -33,6 +34,8 @@ interface ActivityScreenProps {
   providers: Provider[];
   status: Status;
   reduceMotion: boolean;
+  refreshing: boolean;
+  onRefresh: () => void;
   onClose: () => void;
   onNewConversation: () => void;
   onOpenSession: (id: string) => void;
@@ -156,7 +159,7 @@ function RecentRow({ session, provider, onOpen }: SessionCardProps) {
           {session.title || "Untitled conversation"}
         </Text>
         <Text style={styles.metadata} numberOfLines={1}>
-          Recent · {providerLabel(session, provider)}
+          {providerLabel(session, provider)}
         </Text>
       </View>
       <Ionicons name="chevron-forward" size={18} color={theme.color.textFaint} />
@@ -279,6 +282,8 @@ function ActivityScreenView({
   providers,
   status,
   reduceMotion,
+  refreshing,
+  onRefresh,
   onClose,
   onNewConversation,
   onOpenSession,
@@ -337,9 +342,14 @@ function ActivityScreenView({
           <CircleButton label="Back to conversation" size={48} onPress={onClose}>
             <Ionicons name="chevron-back" size={26} color={theme.color.text} />
           </CircleButton>
-          <Text style={styles.title} accessibilityRole="header">
-            Activity
-          </Text>
+          <View style={styles.titleBlock}>
+            <Text style={styles.title} accessibilityRole="header">
+              Activity
+            </Text>
+            <Text style={styles.headerSummary} accessibilityLiveRegion="polite">
+              {activitySummary(groups)}
+            </Text>
+          </View>
           <CircleButton label="New conversation" size={48} onPress={onNewConversation}>
             <Ionicons name="create-outline" size={23} color={theme.color.text} />
           </CircleButton>
@@ -351,11 +361,19 @@ function ActivityScreenView({
             { paddingBottom: insets.bottom + theme.space(6) },
           ]}
           showsVerticalScrollIndicator={false}
+          bounces
+          alwaysBounceVertical
+          overScrollMode="auto"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={theme.color.textDim}
+              colors={[theme.color.accent]}
+              progressBackgroundColor={theme.color.surfaceRaised}
+            />
+          }
         >
-          <Text style={styles.summary} accessibilityLiveRegion="polite">
-            {activitySummary(groups)}
-          </Text>
-
           {status !== "online" ? (
             <View style={styles.offlineBanner} accessibilityRole="alert">
               <Ionicons name="cloud-offline-outline" size={19} color={theme.color.textDim} />
@@ -461,27 +479,32 @@ function makeStyles(theme: AppTheme) {
     width: "100%",
     maxWidth: 680,
     alignSelf: "center",
-    minHeight: 112,
-    paddingBottom: theme.space(3),
+    minHeight: 92,
+    paddingBottom: theme.space(2),
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.space(4),
+    gap: theme.space(3),
   },
+  titleBlock: { flex: 1, minWidth: 0, gap: theme.space(0.5) },
   title: {
-    flex: 1,
     color: theme.color.text,
     fontFamily: theme.display.semibold,
-    fontSize: 29,
-    letterSpacing: 1.2,
+    fontSize: 26,
+    lineHeight: 31,
+    letterSpacing: 0.4,
+  },
+  headerSummary: {
+    color: theme.color.textDim,
+    fontSize: theme.font.small,
+    lineHeight: 18,
   },
   content: {
     width: "100%",
     maxWidth: 680,
     alignSelf: "center",
     paddingHorizontal: theme.gutter,
-    gap: theme.space(6),
+    gap: theme.space(5),
   },
-  summary: { color: theme.color.textDim, fontSize: theme.font.body, lineHeight: 24 },
   offlineBanner: {
     minHeight: theme.size.touch,
     flexDirection: "row",
@@ -494,7 +517,7 @@ function makeStyles(theme: AppTheme) {
     backgroundColor: theme.color.surface,
   },
   offlineText: { flex: 1, color: theme.color.textDim, fontSize: theme.font.small, lineHeight: 20 },
-  section: { gap: theme.space(2.5) },
+  section: { gap: theme.space(2) },
   sectionTitle: {
     color: theme.color.textFaint,
     fontSize: theme.font.tiny,
@@ -503,9 +526,15 @@ function makeStyles(theme: AppTheme) {
     letterSpacing: 0.9,
     textTransform: "uppercase",
   },
-  sectionBody: { overflow: "hidden", borderRadius: theme.radius.md, backgroundColor: theme.color.groupedSurface, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.color.separator },
+  sectionBody: {
+    overflow: "hidden",
+    borderRadius: theme.radius.lg,
+    backgroundColor: theme.color.groupedSurface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.color.separator,
+  },
   card: {
-    minHeight: 76,
+    minHeight: 84,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.space(3.5),
@@ -611,7 +640,7 @@ function makeStyles(theme: AppTheme) {
   },
   recentPressed: { opacity: 0.58 },
   providerDot: { width: 8, height: 8, borderRadius: 4 },
-  statusMarker: { width: 8, height: 32, borderRadius: 4 },
+  statusMarker: { width: 4, height: 36, borderRadius: 2 },
   recentTitle: { color: theme.color.text, fontSize: theme.font.body, lineHeight: 22 },
   empty: {
     minHeight: 260,

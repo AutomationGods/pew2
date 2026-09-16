@@ -1503,6 +1503,8 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
           providers={daemon.providers}
           status={daemon.status}
           reduceMotion={reduceMotion}
+          refreshing={daemon.refreshing}
+          onRefresh={daemon.refreshNow}
           onClose={() => setActivityOpen(false)}
           onNewConversation={newConversationFromActivity}
           onOpenSession={openActivitySession}
