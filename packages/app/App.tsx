@@ -62,13 +62,13 @@ import { useDictation } from "./src/ui/useDictation";
 import { ApprovalSheet } from "./src/ui/ApprovalSheet";
 import { ThoughtSheet } from "./src/ui/ThoughtSheet";
 import { applyCommand, type SlashCommand } from "./src/slashCommands";
-import { CircleButton, Pill } from "./src/ui/controls";
+import { CircleButton } from "./src/ui/controls";
 import { haptics } from "./src/ui/haptics";
 import { Sidebar, DRAWER_WIDTH } from "./src/ui/Sidebar";
 import { projectsForProvider, projectSourceKey } from "./src/projects";
 import { greetingFor, hashSeed } from "./src/greeting";
 import { showsStop } from "./src/composerState";
-import { ConfigPicker, summarise, valueName } from "./src/ui/ConfigPicker";
+import { ConfigPicker } from "./src/ui/ConfigPicker";
 import { useReducedMotion } from "./src/ui/useReducedMotion";
 import { CanvasCover } from "./src/ui/CanvasCover";
 import { withLayoutX, type PillX } from "./src/ui/pillAnchor";
@@ -628,6 +628,15 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
   );
   const selectedProjectPath = activeId ? daemon.projectPath[activeId] : undefined;
   const selectedProject = projects.find((project) => project.path === selectedProjectPath);
+  const currentSession = daemonSessions.find((session) => session.id === daemon.sessionId);
+  const conversationTitle = currentSession?.title || selectedProject?.name || "New conversation";
+  const conversationContext = `${active?.name ?? "No agent"} · ${
+    daemon.status === "online"
+      ? "Connected"
+      : daemon.status === "connecting"
+        ? "Connecting"
+        : "Offline"
+  }`;
   const selectProject = useCallback(
     (path?: string) => {
       if (activeId) selectDaemonProject(activeId, path);
@@ -696,13 +705,6 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
     // leave the jump-to-latest chip showing over a thread already at its end.
     setAtBottom(true);
   }, [threadKey, inThread]);
-
-  // Model, permission mode and thinking level are whatever this agent
-  // advertised; pew2 keeps no model list of its own. Mode gets its own pill:
-  // folding it into the model pill would hide whichever one lost.
-  const { model, mode: modeOption, level } = summarise(daemon.configOptions);
-  // Never let one selector drive two pills.
-  const mode = modeOption && modeOption.id !== model?.id ? modeOption : undefined;
 
   // Feedback for things that happen on their own, rather than because a finger
   // touched the screen. This is the point of a remote control: the agent runs
@@ -1293,57 +1295,18 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
           )}
         </View>
 
-        {/* No agent-name pill. Which app is connected is already the drawer's
-            job, and repeating it here only stole width from the selectors,
-            which are the sole reason the top bar is interactive. */}
-        {model && (
-          <View
-            style={styles.selectorPill}
-            onLayout={(e) => setPillX(withLayoutX(e, "model"))}
-          >
-            <Pill
-              label={`Model: ${valueName(model)}${level ? `, ${valueName(level)}` : ""}`}
-              onPress={() => setPicker("model")}
-            >
-              {/* The thinking level is not shown here. It lives in this pill's
-                  own menu, and squeezing both names into one pill truncated
-                  each to a couple of letters. */}
-              <Text style={styles.selectorValue} numberOfLines={1}>
-                {valueName(model)}
-              </Text>
-              <Ionicons
-                name="chevron-down"
-                size={13}
-                color={theme.color.textDim}
-                style={styles.pillChevron}
-              />
-            </Pill>
+        <View style={styles.conversationIdentity}>
+          <Text style={styles.conversationTitle} numberOfLines={1}>{conversationTitle}</Text>
+          <Text style={styles.conversationContext} numberOfLines={1}>{conversationContext}</Text>
+        </View>
+
+        {daemon.configOptions.length > 0 && (
+          <View onLayout={(e) => setPillX(withLayoutX(e, "model"))}>
+            <CircleButton label="Session settings" onPress={() => setPicker("model")}>
+              <Ionicons name="options-outline" size={19} color={theme.color.text} />
+            </CircleButton>
           </View>
         )}
-
-        {mode && (
-          <View
-            style={styles.selectorPill}
-            onLayout={(e) => setPillX(withLayoutX(e, "mode"))}
-          >
-            <Pill
-              label={`${mode.name}: ${valueName(mode)}`}
-              onPress={() => setPicker("mode")}
-            >
-              <Text style={styles.selectorValue} numberOfLines={1}>
-                {valueName(mode)}
-              </Text>
-              <Ionicons
-                name="chevron-down"
-                size={13}
-                color={theme.color.textDim}
-                style={styles.pillChevron}
-              />
-            </Pill>
-          </View>
-        )}
-
-        <View style={styles.topBarSpacer} />
 
         {inThread && (
           // Asks where, rather than starting one immediately: the old behaviour
@@ -1386,6 +1349,8 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
             indicatorTop={insets.top + navHeight}
             indicatorBottom={dockHeight}
             onAtBottomChange={setAtBottom}
+            refreshing={daemon.refreshing}
+            onRefresh={daemon.refreshNow}
             onOpenThought={openThought}
             onRetry={retrySend}
           />
@@ -1571,19 +1536,11 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
 
       <ThoughtSheet visible={thought !== null} text={thought ?? ""} onClose={closeThought} />
 
-      {/* One picker, pointed at whichever pill opened it. The mode selector is
-          excluded from the model menu so each pill owns exactly one list. */}
       <ConfigPicker
         visible={picker !== null}
         onClose={closePicker}
-        anchorX={picker === "mode" ? pillX.mode : pillX.model}
-        options={
-          picker === "mode"
-            ? mode
-              ? [mode]
-              : []
-            : daemon.configOptions.filter((option) => option.id !== mode?.id)
-        }
+        anchorX={pillX.model}
+        options={daemon.configOptions}
         onSelect={daemon.setConfig}
       />
 
@@ -1660,8 +1617,8 @@ function makeStyles(theme: AppTheme) {
     // one baseline.
     paddingHorizontal: theme.gutter,
     paddingVertical: theme.headerInset,
-    backgroundColor: theme.color.surface,
-    borderBottomWidth: 2,
+    backgroundColor: theme.color.bg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.color.separator,
   },
   topBarOverlay: {
@@ -1672,19 +1629,18 @@ function makeStyles(theme: AppTheme) {
     zIndex: 3,
   },
   navFade: { zIndex: 2 },
-  topBarSpacer: { flex: 1 },
-  // Pills hug their text, but no single pill may take the row. flexShrink
-  // alone shrinks proportionally, which left the model pill wide and starved
-  // the mode pill to "A…"; the cap bounds the greedy one instead.
-  selectorPill: { flexShrink: 1, minWidth: 0, maxWidth: "42%" },
-  selectorValue: {
-    flexShrink: 1,
+  conversationIdentity: { flex: 1, minWidth: 0 },
+  conversationTitle: {
     color: theme.color.text,
-    fontSize: theme.font.small,
-    lineHeight: theme.font.body + 4,
+    fontSize: theme.font.body,
+    fontWeight: "600",
   },
-  // Inset so the chevron never hugs the pill edge.
-  pillChevron: { marginLeft: theme.space(0.5) },
+  conversationContext: {
+    color: theme.color.textDim,
+    fontSize: theme.font.tiny,
+    marginTop: 1,
+  },
+  topBarSpacer: { flex: 1 },
   statusDot: {
     position: "absolute",
     top: 0,

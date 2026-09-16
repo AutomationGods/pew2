@@ -11,7 +11,7 @@
  */
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { AppearanceProvider } from "../appearance";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
@@ -84,7 +84,7 @@ export default function NewChatSheetHarness() {
       <AppearanceProvider>
       <SafeAreaProvider>
       <StatusBar style="light" />
-      <View style={styles.screen}>
+      <SafeAreaView style={styles.screen} edges={["top"]}>
         <Text style={styles.heading}>Conversation behind the sheet</Text>
         <Text style={styles.body}>
           The sheet rises from the bottom edge over this. Tap the scrim to dismiss it.
@@ -117,7 +117,7 @@ export default function NewChatSheetHarness() {
         >
           <Text style={styles.buttonText}>Create fixture: {createFixture}</Text>
         </Pressable>
-      </View>
+      </SafeAreaView>
 
       <NewChatSheet
         visible={visible}

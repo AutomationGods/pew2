@@ -61,6 +61,8 @@ type Props = {
   indicatorTop: number;
   indicatorBottom: number;
   onAtBottomChange: (atBottom: boolean) => void;
+  refreshing?: boolean;
+  onRefresh?: () => void;
   /** Opens a thinking turn's full text. Must be stable: cells memo on it. */
   onOpenThought: (text: string) => void;
   /** Sends a failed prompt again. Must be stable: cells memo on it. */
@@ -78,6 +80,8 @@ function ChatThreadView(
     indicatorTop,
     indicatorBottom,
     onAtBottomChange,
+    refreshing,
+    onRefresh,
     onOpenThought,
     onRetry,
   }: Props,
@@ -273,14 +277,12 @@ function ChatThreadView(
       // arrived like a wall and nothing distinguished "the top of the history"
       // from "the list is stuck".
       //
-      // `alwaysBounceVertical` is the seam between those two cases: a thread
-      // that does not fill the screen cannot be dragged at all, so the inset it
-      // depends on stays intact, while a thread long enough to scroll bounces
-      // at both ends like every other list on the platform. Nothing is under
-      // the composer to expose there — the content that moves is mid-thread,
-      // which already passes under the translucent dock while scrolling.
+      // `alwaysBounceVertical` is normally the seam between those cases: a
+      // short thread stays fixed while a scrollable one keeps the native give.
+      // Pull-to-refresh is the deliberate exception because iOS needs the
+      // bounce before it can reveal the refresh control on a short transcript.
       bounces
-      alwaysBounceVertical={false}
+      alwaysBounceVertical={Boolean(onRefresh)}
       // Android's equivalent, and the same bargain: on 12+ this is the stretch
       // — a spring driven by the platform, not by us — and a glow below that.
       // "never" was the pair of `bounces={false}` and would otherwise leave the
@@ -296,6 +298,8 @@ function ChatThreadView(
       scrollIndicatorInsets={{ top: indicatorTop, bottom: indicatorBottom }}
       scrollEventThrottle={16}
       onScroll={handleScroll}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
     />
   );
 }
@@ -405,7 +409,7 @@ function Working() {
 
 function makeStyles(theme: AppTheme) {
   return StyleSheet.create({
-  row: { paddingTop: theme.space(5), paddingHorizontal: theme.gutter },
+  row: { paddingTop: theme.space(4), paddingHorizontal: theme.gutter },
   firstRow: { paddingTop: 0, paddingHorizontal: theme.gutter },
   // Sits on the same left rail as the agent text that replaces it, so the reply
   // does not jump horizontally when streaming begins.

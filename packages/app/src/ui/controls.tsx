@@ -1,9 +1,8 @@
 /**
  * Shared control primitives.
  *
- * Every interactive surface in the app is one of these three shapes, so press
- * feedback, radii, touch targets and disabled treatment stay identical
- * everywhere rather than being re-styled per screen.
+ * Shared shapes keep press feedback, radii, touch targets and disabled
+ * treatment consistent instead of restyling them per screen.
  *
  * That includes touch feedback: because every button routes through here, a tap
  * feels the same app-wide without a single call site opting in.
@@ -156,12 +155,11 @@ function makeStyles(theme: AppTheme) {
   return StyleSheet.create({
   circle: { alignItems: "center", justifyContent: "center" },
   control: {
-    backgroundColor: theme.color.surface,
-    borderWidth: 2,
-    borderBottomWidth: 4,
-    borderColor: theme.color.border,
+    backgroundColor: theme.color.controlFill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.color.separator,
   },
-  solid: { borderBottomWidth: 4, borderBottomColor: "rgba(0,0,0,0.18)" },
+  solid: {},
   // A pill in a crowded row must be able to give up width, and every layer down
   // to the label needs to say so — one rigid ancestor and the text below it can
   // never truncate, so the pill overflows the row instead.
@@ -182,9 +180,9 @@ function makeStyles(theme: AppTheme) {
   },
   pressed: {
     backgroundColor: theme.color.surfacePressed,
-    transform: [{ translateY: 2 }],
+    opacity: 0.72,
   },
   disabled: { opacity: 0.4 },
-  caption: { color: theme.color.textDim, fontSize: theme.font.small, fontWeight: "700" },
+  caption: { color: theme.color.textDim, fontSize: theme.font.small, fontWeight: "600" },
   });
 }

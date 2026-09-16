@@ -264,13 +264,12 @@ function makeStyles(theme: AppTheme) {
   userRow: { width: "100%", minWidth: 0, alignItems: "flex-end" },
   userBubble: {
     ...adaptiveUserBubbleStyle,
-    backgroundColor: theme.color.surfaceRaised,
+    backgroundColor: theme.color.groupedSurface,
     borderRadius: theme.radius.lg,
-    borderWidth: 2,
-    borderBottomWidth: 4,
-    borderColor: theme.color.border,
-    paddingHorizontal: theme.space(4),
-    paddingVertical: theme.space(3),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.color.separator,
+    paddingHorizontal: theme.space(3),
+    paddingVertical: theme.space(2),
   },
   queuedRow: {
     flexDirection: "row",

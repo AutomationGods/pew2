@@ -1,23 +1,12 @@
 /**
- * Canvas-coloured cover for the nav and composer rails.
+ * Theme-aware opaque cover for the navigation and composer rails.
  *
- * The overlay always uses the conversation's #05070e RGB. Its transparency lets
- * passing text remain faintly visible underneath without introducing a separate
- * grey material or a gradient that makes either rail read as another panel.
- *
- * Deliberately not a blur. There was a `BlurView` under this overlay, but an
- * overlay at 86% of the *exact colour underneath it* leaves only 14% of a
- * gentle blur visible — imperceptible, in exchange for two full-width GPU
- * passes on every frame of every scroll, on the two surfaces that are on screen
- * the entire time the app is open. Raising the alpha instead gets the same
- * result: text still fades out under the rails, and the frames are free.
+ * Deliberately not blurred: these full-width surfaces stay mounted while the
+ * transcript scrolls, so an opaque canvas is clearer and cheaper to render.
  */
 import { memo } from "react";
 import { StyleSheet, View } from "react-native";
-
-// The exact canvas RGB. Translucency softens content passing beneath the rails
-// without the nav or dock introducing a separate material colour.
-const CANVAS_OVERLAY = "rgba(5,7,14,0.92)";
+import { useAppTheme } from "../appearance";
 
 interface CanvasCoverProps {
   /** Exactly the zone to cover. Nothing beyond it is touched. */
@@ -28,13 +17,13 @@ interface CanvasCoverProps {
 }
 
 function CanvasCoverView({ height, edge = "top", style }: CanvasCoverProps) {
+  const { theme } = useAppTheme();
   return (
     <View
       style={[
         styles.container,
         edge === "top" ? styles.top : styles.bottom,
-        styles.canvasOverlay,
-        { height },
+        { height, backgroundColor: theme.color.canvas },
         style,
       ]}
       pointerEvents="none"
@@ -55,7 +44,6 @@ const styles = StyleSheet.create({
     right: 0,
     overflow: "hidden",
   },
-  canvasOverlay: { backgroundColor: CANVAS_OVERLAY },
   top: { top: 0 },
   bottom: { bottom: 0 },
 });

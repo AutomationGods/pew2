@@ -10,6 +10,7 @@ import "./src/cryptoPolyfill";
 
 import { registerRootComponent } from 'expo';
 import * as SplashScreen from 'expo-splash-screen';
+import { createElement, useEffect } from 'react';
 
 import { installCrashHandler } from './src/crashLog';
 import App from './App';
@@ -34,7 +35,17 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 // because nothing is mounted yet to catch anything.
 installCrashHandler();
 
-// registerRootComponent calls AppRegistry.registerComponent('main', () => App);
-// It also ensures that whether you load the app in Expo Go or in a native build,
-// the environment is set up appropriately
-registerRootComponent(App);
+function Root() {
+  useEffect(() => {
+    if (!__DEV__ || !process.env.EXPO_PUBLIC_HARNESS) return;
+    SplashScreen.hideAsync().catch(() => {
+      // Already hidden, or no splash on this platform.
+    });
+  }, []);
+
+  return createElement(App);
+}
+
+// The production app hides the splash after its own startup state resolves.
+// Harnesses bypass App, so Root releases it after their first committed frame.
+registerRootComponent(Root);

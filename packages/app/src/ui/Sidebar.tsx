@@ -841,9 +841,7 @@ function makeStyles(theme: AppTheme) {
     paddingHorizontal: theme.space(1.5),
     paddingVertical: 3,
     borderRadius: theme.radius.pill,
-    backgroundColor: theme.color.surfaceRaised,
-    borderWidth: 2,
-    borderColor: theme.color.border,
+    backgroundColor: theme.color.controlFill,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -915,14 +913,11 @@ function makeStyles(theme: AppTheme) {
   activityCountTextAttention: { color: theme.approval.allowText },
   pressed: { opacity: 0.6 },
 
-  // A heading, not a caption: the drawer has two sections and they are peers,
-  // so this matches "Connected Apps" exactly rather than sitting below it in
-  // the hierarchy. Its own padding moved to the row that now holds it.
   sectionLabel: {
-    color: theme.color.text,
-    fontFamily: theme.display.bold,
-    fontSize: theme.font.title,
-    letterSpacing: 0.4,
+    color: theme.color.textDim,
+    fontFamily: theme.display.semibold,
+    fontSize: theme.font.small,
+    letterSpacing: 0.2,
   },
   // The heading and its action share a baseline: the button is what you do to
   // the section it names, so it belongs on that line rather than above the list.
@@ -962,15 +957,13 @@ function makeStyles(theme: AppTheme) {
     marginBottom: theme.space(1),
     paddingHorizontal: theme.space(3),
     paddingVertical: theme.space(3),
-    borderRadius: theme.radius.md,
-    borderWidth: 2,
-    borderColor: "transparent",
+    borderRadius: theme.radius.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.color.separator,
     gap: 2,
   },
   sessionActive: {
     backgroundColor: theme.color.selectedRow,
-    borderColor: theme.color.border,
-    borderBottomWidth: 4,
   },
   sessionLine: { flexDirection: "row", alignItems: "center", gap: theme.space(2) },
   statusDot: { width: 7, height: 7, borderRadius: 4 },

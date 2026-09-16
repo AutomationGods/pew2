@@ -11,7 +11,7 @@
  */
 import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { AppearanceProvider } from "../appearance";
 import { StatusBar } from "expo-status-bar";
 import { theme } from "../theme";
@@ -103,7 +103,7 @@ export default function SidebarHarness() {
     <AppearanceProvider>
       <SafeAreaProvider>
       <StatusBar style="light" />
-      <View style={styles.screen}>
+      <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
         <Mount label="ALL PROJECTS (default)">
           <Drawer />
         </Mount>
@@ -119,7 +119,7 @@ export default function SidebarHarness() {
         <Mount label="UPDATE — AUTOMATIC">
           <Drawer update={{ latest: "0.9.19", automatic: true }} />
         </Mount>
-      </View>
+      </SafeAreaView>
       <Text style={styles.hint}>Tap the project row in either drawer to open the menu.</Text>
     </SafeAreaProvider>
     </AppearanceProvider>

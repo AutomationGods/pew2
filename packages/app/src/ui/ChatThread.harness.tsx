@@ -66,6 +66,8 @@ const FAILURE: Turn = {
 export default function ChatThreadHarness() {
   const [count, setCount] = useState(12);
   const [failed, setFailed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshCount, setRefreshCount] = useState(0);
   const [atBottom, setAtBottom] = useState(true);
   const list = useRef<ChatThreadRef>(null);
   const turns = Array.from({ length: count }, (_, i) => turn(i + 1));
@@ -73,6 +75,14 @@ export default function ChatThreadHarness() {
   // row without scrolling.
   turns.splice(-1, 0, codeOnlyTurn(count + 1));
   if (failed) turns.push(FAILURE);
+
+  const refresh = () => {
+    setRefreshing(true);
+    setTimeout(() => {
+      setRefreshCount((value) => value + 1);
+      setRefreshing(false);
+    }, 1_200);
+  };
 
   // Wrapped, because every production component now reads its colours through
   // `useAppTheme()` and throws outright without this provider. A harness that
@@ -94,6 +104,8 @@ export default function ChatThreadHarness() {
           indicatorTop={THREAD_TOP}
           indicatorBottom={DOCK_HEIGHT}
           onAtBottomChange={setAtBottom}
+          refreshing={refreshing}
+          onRefresh={refresh}
           onOpenThought={() => {}}
           onRetry={() => {}}
         />
@@ -101,7 +113,9 @@ export default function ChatThreadHarness() {
         {/* Stand-in for the real dock: same job, obvious edge. Anything visible
             below its top line has escaped the reading area. */}
         <View style={[styles.dock, { height: DOCK_HEIGHT }]} pointerEvents="box-none">
-          <Text style={styles.dockLabel}>composer ({DOCK_HEIGHT}px) — nothing may sit under here</Text>
+          <Text style={styles.dockLabel}>
+            {refreshing ? "refreshing" : `refreshed ${refreshCount} times`}
+          </Text>
           <View style={styles.controls}>
             <Pressable style={styles.button} onPress={() => setCount((c) => c + 1)}>
               <Text style={styles.buttonText}>+1 turn ({count})</Text>

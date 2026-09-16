@@ -622,6 +622,7 @@ export function useDaemon(
   // and then be silently replaced by the truth once a session opened. Only an
   // agent's own advertisement may populate this.
   const [knownConfigs, setKnownConfigs] = useState<Record<string, ConfigOption[]>>({});
+  const [refreshing, setRefreshing] = useState(false);
   // Pictures the daemon has been asked to read off the desktop's disk, keyed by
   // the path the agent named. Outside State because it is a cache belonging to
   // this device's viewport, not to the conversation: it is never replayed,
@@ -1079,6 +1080,7 @@ export function useDaemon(
         // `dropPendingSessions`.
         pendingStart.current = undefined;
         awaitingResume.current = false;
+        setRefreshing(false);
         setState((s) => ({
           ...s,
           status: "online",
@@ -2257,6 +2259,22 @@ export function useDaemon(
     resume.current?.();
   }, []);
 
+  /** Reconnect so the daemon replays the transcript and refreshes its indexes. */
+  const refreshNow = useCallback(() => {
+    if (fatal.current) return;
+    setRefreshing(true);
+    const ws = socket.current;
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      ws.close();
+      return;
+    }
+    resume.current?.();
+  }, []);
+
+  useEffect(() => {
+    if (state.fatal || state.unreachable) setRefreshing(false);
+  }, [state.fatal, state.unreachable]);
+
   /**
    * Send a prompt, or hold it until there is a socket to send it on.
    *
@@ -2952,6 +2970,8 @@ export function useDaemon(
     ...state,
     ...actions,
     resumeNow,
+    refreshNow,
+    refreshing,
     // Exported so the UI names the same agent the composer targets: the drawer
     // and top bar must not show Claude Code while a prompt would go elsewhere.
     effectiveProviderId,
