@@ -3,7 +3,7 @@
  * pew2 CLI — the surface a coding agent uses to wire up a new provider.
  *
  * Deliberately small and verb-oriented:
- *   pew2 setup [--json]              detect, verify and diagnose in one call
+ *   pew2 setup [--json]              detect, verify, run in the background, diagnose
  *   pew2 pair [--json] [--rotate] [--no-wait]
  *                                    show the QR a phone scans, then wait for it
  *   pew2 relay <url|off>             reach this machine from anywhere
@@ -53,6 +53,7 @@ import {
   outroFor,
   pickerNote,
   providerList,
+  serviceSection,
 } from "./setup-view.js";
 import { rail, plural } from "./rail.js";
 import { setEnabled, readDisabled, writeDisabled } from "../providers/enabled.js";
@@ -281,6 +282,7 @@ async function cmdSetup(flags: Set<string>) {
       // their back \u2014 and the answer they want is what it is for, not how it
       // works.
       if (stage === "verify") progress.update(`Checking ${note}`);
+      if (stage === "service") progress.update("Starting pew2 in the background");
       if (stage === "doctor") progress.update("Checking everything works");
     },
   });
@@ -366,6 +368,11 @@ async function cmdSetup(flags: Set<string>) {
     for (const line of agentSections(result.agents, view)) console.log(line);
   }
 
+  // Setup added a login item on the user's behalf, so it says so.
+  if (result.serviceInstall) {
+    for (const line of serviceSection(result.serviceInstall, view)) console.log(line);
+  }
+
   // Only problems that are not about an individual agent: those already have
   // their own sections above, and repeating them turns one issue into two.
   const general = result.doctor.problems.filter((p) => !p.provider);
@@ -444,6 +451,9 @@ async function cmdRelay(arg: string | undefined, flags: Set<string>) {
 function renderService(status: ServiceStatus) {
   if (status.state === "running") {
     console.log(ok(`Daemon running ${DIM}pid ${status.pid}${RESET}`));
+    // Running is not always the whole story: on Linux, refused lingering means
+    // it stops at logout, and the command that fixes that is in this line.
+    if (status.detail) console.log(warn(status.detail));
   } else if (status.state === "installed") {
     console.log(warn(`Installed but not running.${status.detail ? ` ${status.detail}` : ""}`));
   } else if (status.state === "not-installed") {
@@ -750,7 +760,7 @@ async function main() {
 
   if (group !== "providers") {
     console.log(`${BOLD}pew2${RESET}\n`);
-    console.log("  pew2 setup [--json]              Detect, verify and diagnose in one call");
+    console.log("  pew2 setup [--json]              Detect, verify, run in the background, diagnose");
     console.log("  pew2 pair [--rotate]           Show the QR a phone scans, then confirm it connected");
     console.log("    --no-wait                      Print the code and exit instead of waiting");
     console.log("  pew2 relay <url|off>             Reach this machine from anywhere");

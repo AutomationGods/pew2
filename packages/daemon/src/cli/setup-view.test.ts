@@ -18,6 +18,7 @@ import {
   needsSetup,
   outroFor,
   pickerNote,
+  serviceSection,
   type AgentState,
 } from "./setup-view.js";
 import { glyphs, stripAnsi, styler } from "./ui.js";
@@ -500,4 +501,51 @@ test("an agent that was never checked does not get a tick", () => {
   expect(ready).not.toContain("OpenCode");
   // And it is never described as a problem.
   expect(text).not.toMatch(/error|fail|not starting/i);
+});
+
+/** Screen text with wrapped lines rejoined, so a sentence can be matched whole. */
+function flat(lines: string[]): string {
+  return stripAnsi(lines.join("\n")).replace(/\s*\n[│|]\s*/g, " ");
+}
+
+test("a service setup started says so, and how to undo it", () => {
+  // Setup adds a login item on the user's behalf, so it has to say that it did
+  // and how to take it back.
+  const text = flat(serviceSection({ state: "running", pid: 42 }, plain));
+  expect(text).toContain("Running in the background");
+  expect(text).toContain("pew2 service uninstall");
+});
+
+test("the Linux lingering warning reaches the screen", () => {
+  // The install can half-succeed: running now, but stopped at logout because
+  // lingering was refused. That warning used to appear only in --json output.
+  const detail =
+    "Running, but lingering could not be enabled, so the daemon will stop when you " +
+    "log out. Run: sudo loginctl enable-linger alice";
+  const text = flat(serviceSection({ state: "running", pid: 42, detail }, plain));
+  expect(text).toContain("Run: sudo loginctl enable-linger alice");
+});
+
+test("a service that could not start says why, and offers no undo", () => {
+  const text = flat(
+    serviceSection(
+      { state: "installed", detail: "Written, but systemctl enable failed: no user bus", removed: true },
+      plain,
+    ),
+  );
+  expect(text).toContain("systemctl enable failed");
+  expect(text).not.toContain("Running in the background");
+  // Setup removed it again, so there is nothing to uninstall.
+  expect(text).not.toContain("pew2 service uninstall");
+});
+
+test("a failed service that could not be removed names the command that removes it", () => {
+  const text = flat(
+    serviceSection(
+      { state: "installed", detail: "Written, but schtasks /create failed: access denied", removed: false },
+      plain,
+    ),
+  );
+  expect(text).not.toContain("removed it again");
+  expect(text).toContain("pew2 service uninstall");
 });

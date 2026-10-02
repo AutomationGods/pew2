@@ -22,13 +22,14 @@
  *
  * ## Two hard gates, both about not destroying a working machine
  *
- * **darwin only.** Replacing the binary is only half an update; the process has
- * to end for it to take effect, and ending it is only survivable where a
- * supervisor brings it back. Only macOS has one: `cli/service.ts` installs a
- * launchd plist with `KeepAlive: true`. `install.ps1` registers no Windows
- * service and no scheduled task, and no systemd unit is written anywhere in
- * this repository. Swapping the binary on those platforms would leave the user
- * with a new file, an old process, and no way to close the gap except by hand.
+ * **A supervisor must be installed.** Replacing the binary is only half an
+ * update; the process has to end for it to take effect, and ending it is only
+ * survivable where a supervisor brings it back. Every platform pew2 ships for
+ * has one (launchd, a systemd user unit, a Scheduled Task; see `hasSupervisor`),
+ * but only once `pew2 setup` or `pew2 service install` has written it, so the
+ * gate is the service file on disk. Swapping the binary without one would leave
+ * the user with a new file, an old process, and no way to close the gap except
+ * by hand.
  *
  * **Compiled builds only.** `process.execPath` is the running executable, which
  * for a released install is `pew2` — but under `bun run packages/daemon/src/
@@ -290,10 +291,12 @@ export async function applyUpdate(options: ApplyOptions = {}): Promise<ApplyResu
       ok: false,
       reason: "unsupported-platform",
       // Two different situations, and telling them apart is the difference
-      // between "your OS cannot do this" and "run `pew2 setup` and it will".
+      // between "your OS cannot do this" and "install the service and it will".
+      // Not `pew2 setup`: this is said by a running daemon, and setup leaves a
+      // daemon that is already serving alone.
       detail: hasSupervisor(platform)
         ? `No pew2 service is installed, so nothing would restart the daemon ` +
-          `after it exits. Run \`pew2 setup\` to install one.`
+          `after it exits. Run \`pew2 service install\` to install one.`
         : `${platform} has no supervisor to restart the daemon after it exits, ` +
           `so a swapped binary would never take effect.`,
     };

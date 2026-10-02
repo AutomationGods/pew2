@@ -247,3 +247,16 @@ test("the plist runs the program, whatever shape it takes", () => {
   // Exactly the arguments, so a stale extra path cannot linger in the array.
   expect(block.match(/<string>/g)?.length).toBe(program.length);
 });
+
+test("a released binary is recognised on Windows too", () => {
+  // Bun roots a compiled binary's own modules at /$bunfs/ on macOS and Linux,
+  // but at B:/~BUN/ on Windows. Matching only the first made every Windows
+  // release believe it was a source checkout.
+  expect(isCompiled("file:///$bunfs/root/pew2")).toBe(true);
+  expect(isCompiled("file:///B:/~BUN/root/pew2.exe")).toBe(true);
+  expect(isCompiled("file:///B:/%7EBUN/root/pew2.exe")).toBe(true);
+  // Bun's own reports show the Windows root with backslashes too.
+  expect(isCompiled("B:\\~BUN\\root\\pew2.exe")).toBe(true);
+  expect(isCompiled("file:///Users/me/pew2/packages/daemon/src/cli/service-shared.ts")).toBe(false);
+  expect(isCompiled("file:///C:/Users/me/pew2/packages/daemon/src/cli/service-shared.ts")).toBe(false);
+});

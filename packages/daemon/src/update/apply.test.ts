@@ -524,7 +524,7 @@ test("macOS with no launchd job installed refuses, and downloads nothing", async
 
   expect(result).toMatchObject({ ok: false, reason: "unsupported-platform" });
   // And it says what to do about it, rather than blaming the operating system.
-  if (!result.ok) expect(result.detail).toContain("pew2 setup");
+  if (!result.ok) expect(result.detail).toContain("pew2 service install");
   expect(urls).toEqual([]);
   expect(await readFile(target, "utf8")).toBe(OLD_BINARY);
 });

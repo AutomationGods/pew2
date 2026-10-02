@@ -147,7 +147,7 @@ export function daemonUrl(env: NodeJS.ProcessEnv = process.env): string {
  * A short timeout on purpose: an unreachable daemon is the normal state before
  * setup has run, so this must fail fast rather than stall the diagnosis.
  */
-async function defaultProbe(url: string): Promise<boolean> {
+export async function probeDaemonHealth(url: string): Promise<boolean> {
   try {
     const response = await fetch(`${url}/health`, {
       signal: AbortSignal.timeout(1_500),
@@ -208,7 +208,7 @@ export async function doctor(options: DoctorOptions = {}): Promise<DoctorReport>
   }
 
   const url = daemonUrl(env);
-  const reachable = await (options.probeDaemon ?? defaultProbe)(url);
+  const reachable = await (options.probeDaemon ?? probeDaemonHealth)(url);
   const service = await (options.service ?? serviceStatus)();
 
   if (!reachable) {

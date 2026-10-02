@@ -60,16 +60,38 @@ Then:
 pew2 setup
 ```
 
-That looks at your computer, finds the coding agents you already have, gets
-everything running in the background, and shows you a QR code. Scan it with the
-app. Done.
+That looks at your computer, finds the coding agents you already have, checks
+each one works and asks which ones your phone should see. Then it starts pew2 in
+the background: from then on it starts whenever you log in, and comes back by
+itself if it ever stops. It uses each system's own way of doing that: launchd on
+macOS, a systemd user service on Linux, a Scheduled Task on Windows. To turn it
+off, run `pew2 service uninstall`.
+
+If pew2 is already running in a terminal (`pew2 serve`), setup leaves it alone
+and suggests `pew2 service install` instead.
+
+Last:
+
+```bash
+pew2 pair
+```
+
+That shows a QR code. Scan it with the app. Done.
 
 You do not need Node, Bun, Docker, a GitHub account or a copy of this repo. It is
 one file that runs on its own.
 
-On macOS it also sets itself to start again after a reboot. On Windows and Linux
-that part is not built yet, so you start it yourself after restarting. Everything
-else is identical.
+**On Linux, one more thing.** systemd stops your background services when you
+log out unless "lingering" is on for your account. Setup tries to turn it on, and
+if that needs an admin password, it tells you to run
+`sudo loginctl enable-linger $USER`. To check later:
+
+```bash
+loginctl show-user $USER --property=Linger
+```
+
+With lingering on (`Linger=yes`), pew2 also starts at boot and keeps running while
+you are logged out.
 
 > Want to read the script before you run it? Sensible.
 > [install.sh](install.sh) and [install.ps1](install.ps1) are short on purpose.
@@ -178,7 +200,7 @@ leaked before you first used it. Full detail in [SECURITY.md](SECURITY.md).
 ## 🛠 Everyday commands
 
 ```bash
-pew2 setup             # find agents, start the service, show the QR
+pew2 setup             # find agents, check them, run pew2 in the background
 pew2 pair              # pair another phone (unpairs the current one)
 pew2 doctor            # what is broken, and how to fix it
 pew2 providers list    # what is installed and what is missing
@@ -214,6 +236,10 @@ cd pew2
 bun install
 cd packages/daemon && bun link     # puts `pew2` on your PATH
 ```
+
+From a checkout, `pew2 setup` does not add a background service, because it
+would run your working copy. It prints the command to start the daemon by hand
+instead.
 
 Then the app:
 
@@ -276,9 +302,7 @@ Being straight with you:
 1. **No forward secrecy, no per-device revocation.** One key lasts the life of a
    pairing, so a key leaked tomorrow decrypts traffic captured today, and
    removing one device means re-pairing all of them.
-2. **Autostart is macOS only.** On Windows and Linux the daemon does not come
-   back by itself after a reboot yet.
-3. **`pty` transport is reserved but unimplemented.** `verify` skips it.
+2. **`pty` transport is reserved but unimplemented.** `verify` skips it.
 
 ---
 
