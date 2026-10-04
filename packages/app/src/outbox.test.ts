@@ -87,6 +87,18 @@ test("a prompt for a conversation that must be reopened waits instead of failing
   expect(held).toEqual([queue[1]!]);
 });
 
+test("only one prompt per chat is released, without blocking another chat", () => {
+  const queue = [prompt("a", "s1"), prompt("b", "s1"), prompt("c", "s2")];
+  const { ready, held } = partitionOutbox(queue, () => true);
+  expect(ready).toEqual([queue[0]!, queue[2]!]);
+  expect(held).toEqual([queue[1]!]);
+});
+
+test("a later prompt cannot pass a held prompt in the same chat", () => {
+  const queue = [prompt("a", "s1"), prompt("b", "s1")];
+  expect(partitionOutbox(queue, (entry) => entry.kind === "prompt" && entry.turnKey === "b").ready).toEqual([]);
+});
+
 test("pending rows with something queued are named so the reconnect keeps them", () => {
   const queue = [start("req-1"), prompt("b", "pending:req-1"), prompt("c", "s2")];
   expect(queuedPendingSessions(queue)).toEqual(new Set(["pending:req-1"]));
