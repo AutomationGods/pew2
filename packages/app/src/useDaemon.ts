@@ -2389,6 +2389,7 @@ export function useDaemon(
               ? enqueue(request, {
                   kind: "prompt",
                   turnKey: turn.key!,
+                  initialPrompt: true,
                   sessionId: pendingSessionKey(requestId),
                   text: initialText!,
                   attachments: toWireAttachments(attachments),

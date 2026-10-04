@@ -31,6 +31,8 @@ import type { Turn } from "./useDaemon";
 export interface QueuedPrompt {
   kind: "prompt";
   turnKey: string;
+  /** The offline start's initial prompt, protected until the session is created. */
+  initialPrompt?: boolean;
   /**
    * Where it goes. May be a `pending:` key while the conversation carrying it
    * has itself not been created yet — `remapSession` re-addresses it once the
@@ -219,10 +221,9 @@ export function pendingStartFor(
 export function cancelQueued(queue: readonly OutboxEntry[], turnKey: string): readonly OutboxEntry[] {
   const prompt = queue.find((entry) => entry.kind === "prompt" && entry.turnKey === turnKey);
   if (!prompt || prompt.kind !== "prompt") return queue;
-  // Keep the first prompt attached to its start, even after that start has
-  // left the outbox. Later follow-ups remain cancellable while it is in flight.
-  if (isPendingSession(prompt.sessionId) && queue.find((entry) =>
-    entry.kind === "prompt" && entry.sessionId === prompt.sessionId) === prompt) return queue;
+  // The start can leave the outbox before its response arrives. Track its
+  // initial prompt explicitly: online starts keep theirs outside this queue.
+  if (isPendingSession(prompt.sessionId) && prompt.initialPrompt) return queue;
   return queue.filter((entry) => entry.kind !== "prompt" || entry.turnKey !== turnKey);
 }
 

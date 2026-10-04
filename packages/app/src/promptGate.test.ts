@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
 import { PromptGate } from "./promptGate";
-import { cancelQueued, markCancelled, markSent, partitionOutbox, type OutboxEntry } from "./outbox";
+import { cancelQueued, markCancelled, markSent, partitionOutbox, type OutboxEntry, type QueuedPrompt } from "./outbox";
 import type { Turn } from "./useDaemon";
 import { pendingSessionKey } from "./pendingSession";
 
-const prompt = (turnKey: string, sessionId = "s1"): OutboxEntry => ({
+const prompt = (turnKey: string, sessionId = "s1"): QueuedPrompt => ({
   kind: "prompt", turnKey, sessionId, text: turnKey, attachments: [],
 });
 
@@ -111,14 +111,14 @@ test("cancelling affects only an unsent prompt and preserves its text and images
 test("a pending start cannot be separated from its first prompt by cancellation", () => {
   const queue: OutboxEntry[] = [
     { kind: "start", requestId: "new", providerId: "echo" },
-    prompt("first", pendingSessionKey("new")),
+    { ...prompt("first", pendingSessionKey("new")), initialPrompt: true },
   ];
   expect(cancelQueued(queue, "first")).toBe(queue);
 });
 
 test("later follow-ups can be cancelled while a new session is still starting", () => {
   const pending = pendingSessionKey("new");
-  const first = prompt("first", pending);
+  const first = { ...prompt("first", pending), initialPrompt: true };
   const second = prompt("second", pending);
   const third = prompt("third", pending);
   const start: OutboxEntry = { kind: "start", requestId: "new", providerId: "echo" };
