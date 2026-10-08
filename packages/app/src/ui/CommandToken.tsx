@@ -12,8 +12,7 @@
  * always at offset zero and both use the same font metrics.
  */
 import { memo } from "react";
-import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { useAppTheme } from "../appearance";
 import { ShimmerText } from "./ShimmerText";
 
 /** One pass of the sheen. Unhurried, so it reads as a sheen and not a flicker. */

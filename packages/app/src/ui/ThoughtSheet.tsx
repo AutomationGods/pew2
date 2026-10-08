@@ -10,7 +10,7 @@
 import { memo, useRef } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { MarkdownText } from "./MarkdownText";
-import { useAppTheme, useThemeStyles } from "../appearance";
+import { useThemeStyles } from "../appearance";
 import type { AppTheme } from "../theme";
 import { Sheet, SHEET_CARD_HEIGHT, sheetCardStyle } from "./Sheet";
 

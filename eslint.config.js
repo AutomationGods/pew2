@@ -39,6 +39,8 @@ export default tseslint.config(
       "packages/app/ios/**",
       "packages/app/android/**",
       "**/*.d.ts",
+      // Local, gitignored tooling and rollback copies. Not project source.
+      ".gg/**",
     ],
   },
 

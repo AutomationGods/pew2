@@ -1,5 +1,6 @@
 {
   "name": "@pew2/relay",
+  "license": "AGPL-3.0",
   "private": true,
   "type": "module",
   "scripts": {

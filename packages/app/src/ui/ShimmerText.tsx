@@ -186,7 +186,7 @@ function ShimmerTextView({
   );
 }
 
-function makeStyles(theme: AppTheme) {
+function makeStyles(_theme: AppTheme) {
   return StyleSheet.create({
   host: { flexDirection: "row" },
   // Occupies the mask's exact space while contributing no colour of its own.

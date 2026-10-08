@@ -387,7 +387,6 @@ function openLink(url: string): void {
  */
 const MarkdownBlock = memo(function MarkdownBlock({
   source,
-  tone,
   mdStyles,
 }: {
   source: string;

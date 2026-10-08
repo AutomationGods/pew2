@@ -1,0 +1,14 @@
+# gitleaks configuration. Extends the built-in rules; only adds allowlists.
+title = "pew2"
+
+[extend]
+useDefault = true
+
+# CocoaPods output: code-signature resource files and prebuilt frameworks match
+# the generic key rule. Pods is generated and not committed, so nothing is hidden
+# from history scans; this only quiets local `gitleaks dir` runs.
+[allowlist]
+description = "Generated iOS dependency output"
+paths = [
+  '''packages/app/ios/Pods/''',
+]
