@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon } from "./Icon";
 import { useAppTheme, useThemeStyles } from "../appearance";
 import type { AppTheme } from "../theme";
 import { haptics } from "./haptics";
@@ -116,7 +116,7 @@ export function QrScanner({ visible, onClose, onScan, error, busy }: Props) {
         <View style={[styles.overlay, { paddingTop: insets.top + theme.space(2) }]}>
           <View style={styles.bar}>
             <CircleButton label="Cancel scanning" size={40} onPress={close}>
-              <Ionicons name="close" size={22} color={theme.color.text} />
+              <Icon name="close" size={22} color={theme.color.text} />
             </CircleButton>
 
             {granted ? (
@@ -126,7 +126,7 @@ export function QrScanner({ visible, onClose, onScan, error, busy }: Props) {
                 onPress={() => setTorch((on) => !on)}
                 feel={haptics.select}
               >
-                <Ionicons
+                <Icon
                   name={torch ? "flashlight" : "flashlight-outline"}
                   size={20}
                   color={theme.color.text}
@@ -148,7 +148,7 @@ export function QrScanner({ visible, onClose, onScan, error, busy }: Props) {
             </View>
           ) : (
             <View style={styles.centre}>
-              <Ionicons name="camera-outline" size={40} color={theme.color.textFaint} />
+              <Icon name="camera-outline" size={40} color={theme.color.textFaint} />
               <Text style={styles.permissionTitle}>
                 {permission?.canAskAgain === false ? "Camera is off" : "Camera needed"}
               </Text>
@@ -223,7 +223,7 @@ function makeStyles(theme: AppTheme) {
     paddingHorizontal: theme.space(6),
     paddingVertical: theme.space(2),
     backgroundColor: "rgba(0,0,0,0.55)",
-    borderRadius: 10,
+    borderRadius: theme.radius.sm,
     overflow: "hidden",
   },
   permissionTitle: {

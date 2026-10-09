@@ -14,6 +14,8 @@
  * a side effect of refreshing a list.
  */
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { isFileError, withFileLock, writeFileAtomic } from "../atomic-file.js";
 import { join } from "node:path";
 import {
   parseRegistry,
@@ -130,18 +132,43 @@ export async function syncRegistry(options: {
   for (const manifest of manifests) {
     const path = join(targetDir, `${manifest.id}.json`);
     const body = serialise(manifest);
-    const existing = await readIfPresent(path);
-
-    if (existing === body) {
-      unchanged.push(manifest.id);
-      continue;
-    }
-    if (existing !== undefined && !options.force) {
-      conflicts.push(manifest.id);
-      continue;
-    }
-    if (!options.dryRun) await writeFile(path, body);
-    written.push(manifest.id);
+    const syncOne = async () => {
+      const existing = await readIfPresent(path);
+      if (existing === body) {
+        unchanged.push(manifest.id);
+        return;
+      }
+      if (existing !== undefined && !options.force) {
+        conflicts.push(manifest.id);
+        return;
+      }
+      if (!options.dryRun) {
+        if (existing !== undefined) {
+          // Force is explicit replacement consent, not permission to lose the
+          // old settings to a failed write. Keep an owner-only recovery copy.
+          const backupDir = join(targetDir, ".registry-backups");
+          await mkdir(backupDir, { recursive: true, mode: 0o700 });
+          await writeFile(join(backupDir, `${manifest.id}.${randomUUID()}.json`), existing, {
+            flag: "wx", mode: 0o600,
+          });
+          await writeFileAtomic(path, body);
+        } else {
+          try {
+            // Even a writer that does not use our lock cannot be overwritten
+            // between the earlier absence check and publication.
+            await writeFile(path, body, { flag: "wx", mode: 0o600 });
+          } catch (error) {
+            if (!isFileError(error, "EEXIST")) throw error;
+            conflicts.push(manifest.id);
+            return;
+          }
+        }
+      }
+      written.push(manifest.id);
+    };
+    // A dry run must not create directories, locks or backups.
+    if (options.dryRun) await syncOne();
+    else await withFileLock(path, syncOne);
   }
 
   return {
@@ -157,8 +184,11 @@ export async function syncRegistry(options: {
 async function readIfPresent(path: string): Promise<string | undefined> {
   try {
     return await readFile(path, "utf8");
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (isFileError(error, "ENOENT")) return undefined;
+    // An unreadable existing file is not an invitation to replace it, even
+    // with force: without its bytes we cannot make the recovery copy.
+    throw error;
   }
 }
 

@@ -6,10 +6,15 @@
  * the same way, and resolved later by id when the phone answers.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, isAbsolute, join, win32 } from "node:path";
+import { noTrace, type Trace } from "../trace.js";
 import { Readable, Writable } from "node:stream";
 import { client, ndJsonStream, type ClientConnection } from "@agentclientprotocol/sdk";
 import { findOnPath, type LoadedProvider } from "../providers/registry.js";
 import { humanError } from "../errors.js";
+import { desktopAskId, readDesktopState, SHARED_DESKTOP_PROVIDER } from "./sharedDesktop.js";
 import type { StoredAttachment } from "../attachments.js";
 import { promptBlocks, type PromptCapabilities } from "./promptBlocks.js";
 import { SESSION_HISTORY_LIMIT } from "../session-history.js";
@@ -237,6 +242,7 @@ export interface AdoptOptions {
 }
 
 export interface ConnectOptions {
+  trace?: Trace;
   provider: LoadedProvider;
   cwd: string;
   /** Called for every ACP `session/update` notification, in arrival order. */
@@ -479,10 +485,11 @@ export function launchSpec(
     : process.platform === "win32";
   if (!windows) return { command, args };
 
-  // Falls back to the bare name so the spawn still happens and still produces a
-  // real ENOENT: refusing here would report "not installed" for a command the
-  // user may have added to PATH since the registry last looked.
-  const resolved = findOnPath(command, env) ?? command;
+  // Never fall back to a bare name: Windows would search the repository again.
+  const resolved = findOnPath(command, env);
+  if (!resolved) {
+    throw new Error(`'${command}' was not found on PATH. Install it, or point the manifest at an absolute path.`);
+  }
   const lower = resolved.toLowerCase();
   if (!lower.endsWith(".cmd") && !lower.endsWith(".bat")) {
     return { command: resolved, args };
@@ -497,46 +504,111 @@ export function launchSpec(
   // outer quotes mean exactly "strip these two", which is what the line is
   // built to expect.
   return {
-    command: env.COMSPEC ?? "cmd.exe",
+    command: env.COMSPEC && win32.isAbsolute(env.COMSPEC)
+      ? env.COMSPEC
+      : win32.join(env.SystemRoot ?? env.WINDIR ?? "C:\\Windows", "System32", "cmd.exe"),
     args: ["/d", "/s", "/c", `"${line}"`],
     windowsVerbatimArguments: true,
   };
 }
 
+/** Keep a Windows batch shim's own interpreter lookup out of the workspace too. */
+export function providerEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const windows = env.PEW2_FAKE_PLATFORM
+    ? env.PEW2_FAKE_PLATFORM === "win32"
+    : process.platform === "win32";
+  if (!windows) return { ...env };
+  const path = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] ?? "";
+  const absolutePath = path.split(";")
+    .map((dir) => dir.replace(/^"(.*)"$/, "$1"))
+    .filter((dir) => isAbsolute(dir) || win32.isAbsolute(dir))
+    .join(";");
+  // Windows environment names are case-insensitive. Drop aliases so Node cannot
+  // select an older value, and force cmd's documented no-implicit-cwd policy.
+  const inherited = Object.fromEntries(Object.entries(env).filter(([key]) =>
+    !["path", "nodefaultcurrentdirectoryinexepath"].includes(key.toLowerCase()),
+  ));
+  return { ...inherited, PATH: absolutePath, NoDefaultCurrentDirectoryInExePath: "1" };
+}
+
+/**
+ * npx is a bootstrapper, not the agent. Starting it in a repository lets npm
+ * consume that repository's .npmrc, script-shell and local executable entries
+ * before ACP has even started. Keep bootstrap in a private empty directory;
+ * the real project still reaches the agent through session/new and load.
+ */
+export async function prepareProviderLaunch(
+  command: string,
+  args: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const name = basename(command.replaceAll("\\", "/")).toLowerCase();
+  if (!["npx", "npx.cmd", "npx.bat", "npx.exe"].includes(name)) {
+    return { ...launchSpec(command, args, env), cwd, cleanup: async () => {} };
+  }
+  const executable = findOnPath(command, env);
+  if (!executable) throw new Error(`'${command}' was not found on PATH. Install it, or point the manifest at an absolute path.`);
+  const bootstrap = await mkdtemp(join(tmpdir(), "pew2-bootstrap-"));
+  const cleanup = () => rm(bootstrap, { recursive: true, force: true });
+  try {
+    // Explicit prefix prevents npm walking into any ancestor project's config.
+    return { ...launchSpec(executable, ["--prefix", bootstrap, ...args], env), cwd: bootstrap, cleanup };
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
+}
+
 export async function connectProvider(options: ConnectOptions): Promise<AcpSessionHandle> {
   const { provider, cwd } = options;
+  const trace = options.trace ?? noTrace;
+  const startedAt = Date.now();
+  trace("acp.spawn", { providerId: provider.manifest.id });
 
   // Never with a faked platform: this one actually spawns, so simulating
   // Windows here would try to run cmd.exe on a Mac.
-  const launch = launchSpec(provider.command, provider.args, {
-    ...process.env,
-    PEW2_FAKE_PLATFORM: undefined,
-  });
+  const env = providerEnvironment({ ...process.env, PEW2_FAKE_PLATFORM: undefined });
+  const launch = await prepareProviderLaunch(provider.command, provider.args, cwd, env);
 
-  const child = spawn(launch.command, launch.args, {
-    cwd,
-    // Set only on the Windows batch-shim path, where the command line was
-    // escaped by hand above. Letting Node re-quote it would undo that.
-    windowsVerbatimArguments: launch.windowsVerbatimArguments,
-    // ACP mandates stdout carry only protocol messages, so logs go to stderr.
-    stdio: ["pipe", "pipe", "pipe"],
-    env: process.env,
-    // Its own process group, so `kill` can address the whole tree. Five bundled
-    // providers run through `npx`: signalling only the process we spawned kills
-    // the launcher and reparents the real agent to pid 1, where it runs until
-    // the machine reboots. Detaching also stops a terminal's Ctrl-C reaching
-    // agents directly — the daemon's own handler closes them in order instead.
-    // Never on Windows, where the same flag means "outlive the parent".
-    detached: DETACH_CHILDREN,
-  }) as ChildProcessWithoutNullStreams;
+  let child: ChildProcessWithoutNullStreams;
+  try {
+    child = spawn(launch.command, launch.args, {
+      cwd: launch.cwd,
+      // Set only on the Windows batch-shim path, where the command line was
+      // escaped by hand above. Letting Node re-quote it would undo that.
+      windowsVerbatimArguments: launch.windowsVerbatimArguments,
+      // ACP mandates stdout carry only protocol messages, so logs go to stderr.
+      stdio: ["pipe", "pipe", "pipe"],
+      env,
+      // Its own process group, so `kill` can address the whole tree. Five bundled
+      // providers run through `npx`: signalling only the process we spawned kills
+      // the launcher and reparents the real agent to pid 1, where it runs until
+      // the machine reboots. Detaching also stops a terminal's Ctrl-C reaching
+      // agents directly — the daemon's own handler closes them in order instead.
+      // Never on Windows, where the same flag means "outlive the parent".
+      detached: DETACH_CHILDREN,
+    }) as ChildProcessWithoutNullStreams;
+  } catch (error) {
+    await launch.cleanup();
+    throw error;
+  }
+  // `close` includes spawn failures and waits for inherited stdio to close.
+  child.once("close", () => {
+    void launch.cleanup().catch(() => trace("acp.bootstrap-cleanup-failed", { providerId: provider.manifest.id }));
+  });
 
   // A missing executable surfaces asynchronously as an 'error' event. Without a
   // listener Node treats it as unhandled and takes the whole daemon down, so one
   // uninstalled provider would kill every other session. Convert it to a
   // rejection of this call instead.
   const spawned = new Promise<void>((resolve, reject) => {
-    child.once("spawn", resolve);
+    child.once("spawn", () => {
+      trace("acp.spawned", { providerId: provider.manifest.id, pid: child.pid, ms: Date.now() - startedAt });
+      resolve();
+    });
     child.once("error", (error: NodeJS.ErrnoException) => {
+      trace("acp.spawn-failed", { providerId: provider.manifest.id, ms: Date.now() - startedAt });
       reject(
         error.code === "ENOENT"
           ? new Error(
@@ -564,6 +636,7 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
   let exitHandler = options.onExit;
   let exited = false;
   child.on("exit", (code, signal) => {
+    trace("acp.exit", { providerId: provider.manifest.id, pid, code, signal, ms: Date.now() - startedAt });
     exited = true;
     if (pid !== undefined) void unregisterChild(pid);
     exitHandler?.(code, signal);
@@ -577,6 +650,7 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
    */
   const stop = (graceMs?: number) => {
     if (exited || pid === undefined) return;
+    trace("acp.stop-requested", { providerId: provider.manifest.id, pid });
     terminateChild(pid, () => exited, graceMs);
   };
 
@@ -613,6 +687,7 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
   // daemon process.
   const pending = new Map<string, (optionId: string | null) => void>();
   let permissionCounter = 0;
+  const desktopAsks = new Map<string, { askId: string; sessionId: string | undefined }>();
 
   const { input, output } = toWebStreams(child);
   const stream = ndJsonStream(output, input);
@@ -654,6 +729,7 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
           currentModeId?: unknown;
         };
       };
+      trace("acp.update", { providerId: provider.manifest.id, pid, agentSessionId: params?.sessionId, updateType: params?.update?.sessionUpdate });
       if (params?.update?.sessionUpdate === "available_commands_update") {
         availableCommands = readAvailableCommands(params.update.availableCommands);
       }
@@ -670,6 +746,16 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
         }
       }
       const sid = params?.sessionId;
+      const desktopState = provider.manifest.id === SHARED_DESKTOP_PROVIDER ? readDesktopState(ctx.params) : undefined;
+      if (desktopState) {
+        for (const [requestId, ask] of desktopAsks) {
+          if (ask.sessionId === sid && desktopState.closedAsks.includes(ask.askId)) {
+            pending.get(requestId)?.(null);
+            pending.delete(requestId);
+            desktopAsks.delete(requestId);
+          }
+        }
+      }
       const handler = (sid ? updateHandlers.get(sid) : undefined) ?? pendingRoute?.onUpdate;
       handler?.(ctx.params);
     })
@@ -681,12 +767,15 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
         pending.set(requestId, resolve);
       });
       const sid = (ctx.params as { sessionId?: string })?.sessionId;
+      const askId = provider.manifest.id === SHARED_DESKTOP_PROVIDER ? desktopAskId(ctx.params) : undefined;
+      if (askId) desktopAsks.set(requestId, { askId, sessionId: sid });
       const handler =
         (sid ? permissionHandlers.get(sid) : undefined) ??
         pendingRoute?.onPermissionRequest ??
         options.onPermissionRequest;
       handler({ requestId, params: ctx.params });
       const optionId = await answered;
+      desktopAsks.delete(requestId);
       // Null means the connection went away with the question unanswered. ACP
       // has a word for that, and saying it lets the agent unwind instead of
       // sitting on a request whose client no longer exists.
@@ -708,6 +797,7 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
   // downstream — the capability probe, the app's session list — has a timeout of
   // its own, so an agent that never answers left the phone on a loading skeleton
   // with no error, no log line and no way back except restarting the daemon.
+  trace("acp.initialize", { providerId: provider.manifest.id, pid });
   const handshake = withTimeout(
     connection.agent.request("initialize", {
       protocolVersion: 1,
@@ -725,6 +815,7 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
       // child per attempt for as long as the user keeps tapping. No grace, since
       // it has already failed to answer for the whole handshake window — but by
       // group, or a wrapped agent survives the launcher it was started behind.
+      trace("acp.initialize-timeout", { providerId: provider.manifest.id, pid, ms: Date.now() - startedAt });
       stop(0);
       return new Error(
         `'${provider.manifest.name}' ${HANDSHAKE_TIMEOUT_MARKER}. ${failureContext()}`,
@@ -736,6 +827,7 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
   // rejects here promptly, but as a bare "ACP connection closed" that names
   // neither the agent nor the reason it printed on the way out.
   const initialized = (await handshake.catch((error: unknown) => {
+    trace("acp.initialize-failed", { providerId: provider.manifest.id, pid, ms: Date.now() - startedAt });
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes(HANDSHAKE_TIMEOUT_MARKER)) throw error;
     throw new Error(`'${provider.manifest.name}' failed to start: ${message}. ${failureContext()}`);
@@ -747,6 +839,7 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
     };
   };
 
+  trace("acp.initialized", { providerId: provider.manifest.id, pid, ms: Date.now() - startedAt });
   const caps = initialized.agentCapabilities;
   const canLoadSession = caps?.loadSession === true;
   // `session/resume` reconnects to a stored conversation *without* replaying it.
@@ -838,8 +931,11 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
     // different project entirely.
     availableCommands = [];
     pendingRoute = route;
+    const openedAt = Date.now();
+    const restoreMethod = restoreMethodFor(haveHistory, canResumeSession);
+    const method = loadSessionId ? restoreMethod : "session/new";
+    trace("acp.open", { providerId: provider.manifest.id, pid, method, agentSessionId: loadSessionId });
     try {
-      const restoreMethod = restoreMethodFor(haveHistory, canResumeSession);
       const created: NewSessionResult = loadSessionId
         ? {
             ...((await connection.agent.request(restoreMethod, {
@@ -856,7 +952,11 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
       updateHandlers.set(created.sessionId, route.onUpdate);
       permissionHandlers.set(created.sessionId, route.onPermissionRequest);
       if (route.onConfigOptions) configHandlers.set(created.sessionId, route.onConfigOptions);
+      trace("acp.opened", { providerId: provider.manifest.id, pid, method, agentSessionId: created.sessionId, ms: Date.now() - openedAt });
       return { sessionId: created.sessionId, configOptions: buildConfigOptions(created) };
+    } catch (error) {
+      trace("acp.open-failed", { providerId: provider.manifest.id, pid, method, ms: Date.now() - openedAt });
+      throw error;
     } finally {
       pendingRoute = undefined;
     }

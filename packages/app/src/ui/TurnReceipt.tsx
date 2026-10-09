@@ -12,14 +12,14 @@
 import { memo, useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text } from "react-native";
 import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { motion, type AppTheme } from "../theme";
 import { receiptText, type TurnReceipt as Receipt } from "../activity";
 import { useReducedMotion } from "./useReducedMotion";
 import { STATUS_ROW_MAX_FONT_SCALE } from "./statusRow";
 import { useStatusRowHeight } from "./useStatusRowHeight";
 
 /** Slower than a control's transition: this arrives, it does not respond. */
-const FADE_DURATION = 260;
+const FADE_DURATION = motion.receipt;
 
 function TurnReceiptView({ receipt }: { receipt: Receipt }) {
   const { theme } = useAppTheme();

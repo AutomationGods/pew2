@@ -13,6 +13,10 @@ import { connectProvider } from "../acp/connect.js";
 import { SessionLog } from "../session/log.js";
 import { mergeAgentSessions } from "../../../app/src/agentHistory.js";
 import { formatHistoryMetadata } from "../../../app/src/historyMetadata.js";
+import { wire } from "@pew2/protocol";
+import { recordSessionConfigs, visibleConfigs } from "../../../app/src/configTruth.js";
+import { configMenuSections, parseChoiceId } from "../../../app/src/ui/configMenu.js";
+import type { ConfigOption, Session } from "../../../app/src/useDaemon.js";
 
 async function echoProvider() {
   const { providers } = await loadProviders();
@@ -36,6 +40,55 @@ async function waitForSpareDirs(
   }
   return daemon.spareDirs(providerId);
 }
+
+test("recovered model and thinking menus can change the real agent after a missed settings reply", async () => {
+  const { Daemon } = await import("../index.js");
+  const { handleMessage } = await import("../handler.js");
+  const home = await mkdtemp(join(tmpdir(), "pew2-config-recovery-"));
+  const daemon = new Daemon({ id: "test", name: "test" }, true, { ...process.env, PEW2_HOME: home });
+  const frames: unknown[] = [];
+  const send = (message: unknown): void => { frames.push(message); };
+  daemon.attach(send);
+
+  try {
+    await daemon.refreshProviders();
+    const sessionId = await daemon.startSession("echo", process.cwd());
+    daemon.markLive(sessionId);
+    // The phone got the session id but missed its settings. It is reading
+    // another conversation when catch-up lands, then opens this one again.
+    const empty: { configOptions: ConfigOption[]; sessions: Session[] } = {
+      configOptions: [],
+      sessions: [{ id: sessionId, providerId: "echo", title: "Echo", startedAt: 0, turns: [], configOptions: [] }],
+    };
+    const snapshot = wire.Replay.parse(daemon.catchUp({ [sessionId]: -1 })[0]);
+    const recovered = recordSessionConfigs(empty, snapshot.sessionId, snapshot.configOptions, "other-chat");
+    expect(recovered.configOptions).toEqual([]);
+    const options = visibleConfigs({
+      session: recovered.sessions[0]?.configOptions ?? [], provider: undefined, inConversation: true,
+    });
+    const sections = configMenuSections(options);
+    expect(sections.map((section) => section.id)).toEqual(["model", "thought_level"]);
+
+    for (const title of ["Echo Mini", "Think Hard"]) {
+      const item = sections.flatMap((section) => section.choices).find((choice) => choice.title === title);
+      const selection = item && parseChoiceId(item.id);
+      if (!selection) throw new Error(`Missing menu choice: ${title}`);
+      await handleMessage(JSON.stringify({ t: "session.config", sessionId, ...selection }), {
+        daemon, reply: send, broadcast: send,
+      });
+    }
+    // Discard live config frames, as if the socket dropped. Reconnect alone
+    // must recover the selections the real echo ACP process acknowledged.
+    const updated = wire.Replay.parse(daemon.catchUp({ [sessionId]: -1 })[0]);
+    const visible = recordSessionConfigs(recovered, sessionId, updated.configOptions, sessionId);
+    expect(configMenuSections(visible.configOptions).map((section) =>
+      section.choices.find((choice) => choice.selected)?.title,
+    )).toEqual(["Echo Mini", "Think Hard"]);
+    expect(frames.some((frame) => typeof frame === "object" && frame !== null && "t" in frame && frame.t === "error")).toBe(false);
+  } finally {
+    daemon.closeAll();
+  }
+}, 60_000);
 
 test("streams incremental updates and records them in order", async () => {
   const log = new SessionLog("test-session");

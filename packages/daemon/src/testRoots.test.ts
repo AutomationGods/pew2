@@ -70,6 +70,28 @@ async function testFiles(): Promise<string[]> {
   return files.sort();
 }
 
+test("lint excludes generated Wrangler files but still checks every package's source", async () => {
+  // This exercises the real config, including a cold load of its TypeScript
+  // and React plugins. It is a coverage assertion, not a five-second speed test.
+  const { ESLint } = await import("eslint");
+  const lint = new ESLint({ cwd: repoRoot });
+  for (const path of [
+    "packages/relay/.wrangler/tmp/dev-fixture/index.js",
+    "packages/relay/.wrangler/tmp/bundle-fixture/middleware-loader.entry.ts",
+    ".gg/fixture.ts",
+  ]) {
+    expect(await lint.isPathIgnored(join(repoRoot, path))).toBe(true);
+  }
+  for (const path of [
+    "packages/relay/src/index.ts",
+    "packages/daemon/src/index.ts",
+    "packages/protocol/src/wire.ts",
+    "packages/app/App.tsx",
+  ]) {
+    expect(await lint.isPathIgnored(join(repoRoot, path))).toBe(false);
+  }
+}, 20_000);
+
 test("every test file lives under a root the test script names", async () => {
   const roots = rootsFrom(await testScript());
   const files = await testFiles();

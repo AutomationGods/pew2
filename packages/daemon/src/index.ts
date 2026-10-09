@@ -21,10 +21,12 @@ import { loadClaudeDisplayHistory } from "./acp/claude-history.js";
 import { readTranscript, writeTranscript } from "./transcript-cache.js";
 import { loadGgCoderDisplayHistory } from "./acp/ggcoder-history.js";
 import { SessionLog } from "./session/log.js";
+import { noTrace, type Trace } from "./trace.js";
 import { readDisabled } from "./providers/enabled.js";
 import { discardAttachments, storeAttachments } from "./attachments.js";
 import { folderName, resolveWorkspace } from "./workspace.js";
-import { PushRegistry, pushAgentNotice } from "./push.js";
+import { PushRegistry, pushAgentNotice, pushFinishedTurn } from "./push.js";
+import { desktopAskId, readDesktopState, SHARED_DESKTOP_PROVIDER } from "./acp/sharedDesktop.js";
 import { readProbeCache, writeProbeCache } from "./probe-cache.js";
 import { readKnownProjects, rememberKnownProject } from "./known-projects.js";
 import { hydrateMessageCounts } from "./acp/messageCounts.js";
@@ -447,6 +449,7 @@ export class Daemon {
     if (this.spares.has(Daemon.spareKey(provider.manifest.id, cwd))) return;
     try {
       const handle = await connectProvider({
+        trace: this.trace,
         provider,
         cwd,
         onUpdate: () => {},
@@ -808,6 +811,7 @@ export class Daemon {
     }
     if (!session.handle) {
       session.handle = await connectProvider({
+        trace: this.trace,
         provider,
         cwd,
         loadSessionId,
@@ -946,6 +950,7 @@ export class Daemon {
     private readonly machine: { id: string; name: string },
     private readonly includeExperimental = false,
     env: NodeJS.ProcessEnv = process.env,
+    readonly trace: Trace = noTrace,
   ) {
     // Copied, not referenced: the point is a value that cannot change under a
     // write that lands later.
@@ -1021,6 +1026,7 @@ export class Daemon {
    * because the message is a full snapshot of `activeSessions`.
    */
   private closeSession(sessionId: string, session: ActiveSession) {
+    this.trace("session.close", { sessionId, providerId: session.providerId, working: session.working });
     if (session.replayTimer) clearTimeout(session.replayTimer);
     session.replayTimer = undefined;
     session.handle?.close();
@@ -1211,6 +1217,32 @@ export class Daemon {
    * `markLive` and the reconnect replay both see the complete history.
    */
   private record(session: ActiveSession, payload: unknown) {
+    if (session.providerId === SHARED_DESKTOP_PROVIDER && payload && typeof payload === "object" && "kind" in payload && payload.kind === "exit") {
+      session.working = false;
+      session.permissions?.clear();
+      this.publishDesktopState(session);
+      if (this.sessions.get(session.log.sessionId) === session) {
+        this.closeSession(session.log.sessionId, session);
+        this.announceProviders();
+      }
+    }
+    const state = session.providerId === SHARED_DESKTOP_PROVIDER ? readDesktopState(payload) : undefined;
+    if (state) {
+      const finished = session.working && !state.working;
+      if (!session.working && state.working) session.turnText = undefined;
+      session.working = state.working;
+      session.lastUsedAt = Date.now();
+      for (const [requestId, params] of session.permissions ?? []) {
+        const askId = desktopAskId(params);
+        if (askId && state.closedAsks.includes(askId)) session.permissions?.delete(requestId);
+      }
+      this.publishDesktopState(session);
+      if (session.live && finished) {
+        this.send({ t: "session.idle", sessionId: session.log.sessionId, ...this.sessionOrigin(session.log.sessionId) });
+        void pushFinishedTurn(this.pushTargets, { sessionId: session.log.sessionId, ...this.sessionNotice(session.log.sessionId) });
+      }
+      return;
+    }
     rememberTurnText(session, payload);
     const event = session.log.append(payload);
     if (!session.live) return;
@@ -1237,6 +1269,7 @@ export class Daemon {
     const events = session.pendingReplay?.splice(0) ?? [];
     if (events.length > 0 || complete) {
       this.send({ t: "session.replay", sessionId: session.log.sessionId, events, complete });
+      this.publishDesktopState(session);
     }
   }
 
@@ -1255,6 +1288,7 @@ export class Daemon {
     // marks a resumed transcript as fully loaded and dismisses its skeleton.
     const backlog = session.log.since(-1);
     this.send({ t: "session.replay", sessionId, events: backlog });
+    this.publishDesktopState(session);
   }
 
   /** Announce first, then reveal resume history in frame-sized batches. */
@@ -1634,6 +1668,7 @@ export class Daemon {
       try {
         const workspace = resolveWorkspace();
         handle = await connectProvider({
+          trace: this.trace,
           provider,
           // Same rule as session.start: under launchd cwd is `/`, which is not a
           // project directory. Probing from it hid every agent's sessions.
@@ -1877,6 +1912,21 @@ export class Daemon {
     return updated;
   }
 
+  isSharedDesktop(sessionId: string): boolean {
+    return this.sessions.get(sessionId)?.providerId === SHARED_DESKTOP_PROVIDER;
+  }
+
+  private publishDesktopState(session: ActiveSession): void {
+    if (!session.live || session.providerId !== SHARED_DESKTOP_PROVIDER) return;
+    // History and current state are separate: old Android clients only apply
+    // authoritative liveness/approval state through the catch-up contract.
+    this.send({
+      t: "session.replay", sessionId: session.log.sessionId, events: [],
+      catchUp: true, complete: true, working: session.working,
+      permissions: [...(session.permissions ?? [])].map(([requestId, params]) => ({ requestId, params })),
+    });
+  }
+
   async prompt(sessionId: string, text: string, attachments: wire.PromptAttachment[] = []) {
     const session = this.require(sessionId);
     // Use, and the start of a turn. `working` is cleared in the `finally` below
@@ -1889,11 +1939,15 @@ export class Daemon {
     // ever, and a permanently working session is one the reaper can never
     // touch — the exact leak this flag exists to bound.
     session.lastUsedAt = Date.now();
-    session.working = true;
+    const shared = this.isSharedDesktop(sessionId);
+    if (!shared) session.working = true;
     // A new turn, so the previous turn's closing words must not be what the
     // push notification for this one quotes.
     session.turnText = undefined;
     try {
+      if (shared && attachments.length > 0) {
+        throw new Error("Attach files in GG Coder desktop for shared conversations; phone text messages are supported");
+      }
       // Written before the echo: an attachment that cannot be stored (over the
       // limits, disk full) must fail the whole prompt rather than leave a turn on
       // every screen referring to a file the agent never got.
@@ -1902,7 +1956,7 @@ export class Daemon {
       // The paths ride along so every client — including one replaying later —
       // can show what was sent; only this machine can read them, which is exactly
       // what `image.fetch` already exists to handle.
-      this.send(
+      if (!shared) this.send(
         session.log.append({
           kind: "user_message",
           text,
@@ -1921,13 +1975,14 @@ export class Daemon {
       await session.ready;
       await session.handle!.prompt(text, stored);
     } finally {
-      session.working = false;
+      if (!shared) session.working = false;
       // A turn cannot end while the agent is still waiting to be let past a
       // tool: it is blocked on that answer. So anything left here was killed
       // with the turn — cancelled, or the agent errored out — and offering it
       // to the next client to reconnect would be an approve button wired to a
       // request no one is listening for any more.
-      session.permissions?.clear();
+      if (!shared) session.permissions?.clear();
+      this.publishDesktopState(session);
       // Touched again at the end, so the idle window is measured from when the
       // agent stopped rather than from when the user typed. A turn that ran for
       // twenty minutes would otherwise be reapable the moment it finished.
@@ -2049,6 +2104,9 @@ export class Daemon {
         complete: true,
         catchUp: true,
         working: session.working === true,
+        // Settings are not logged events. Recover a missed session.config,
+        // but do not erase known settings while a deferred resume is attaching.
+        ...(session.handle ? { configOptions: session.handle.configOptions } : {}),
         // Always sent, empty array included. The app reads an *absent* field as
         // "an older daemon says nothing, leave any open sheet alone" and an
         // empty one as "nothing is pending, dismiss it" — so omitting it made

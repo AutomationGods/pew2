@@ -8,7 +8,7 @@
  * feels the same app-wide without a single call site opting in.
  */
 import { useMemo, type ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { Pressable, StyleSheet, type ViewStyle } from "react-native";
 import { useAppTheme, useThemeStyles } from "../appearance";
 import type { AppTheme } from "../theme";
 import { haptics } from "./haptics";
@@ -106,49 +106,39 @@ export function CircleButton({
   );
 }
 
-interface PillProps {
-  onPress?: () => void;
+interface BarButtonProps {
+  onPress: () => void;
   label: string;
   children: ReactNode;
   disabled?: boolean;
-  /** Override the press sensation. */
-  feel?: () => void;
 }
 
-/** Horizontal pill: the provider selector and the quick-action chips. */
-export function Pill({ onPress, label, children, disabled = false, feel }: PillProps) {
-  const { theme } = useAppTheme();
-  const styles = useMemo(() => makeStyles(theme), [theme]);
-  const content = <View style={styles.pillRow}>{children}</View>;
-
-  if (!onPress) {
-    return <View style={[styles.pillGlass, styles.control, styles.pill]} accessibilityLabel={label}>{content}</View>;
-  }
-
+/**
+ * Navigation-bar icon button: no fill, no outline, as UIKit draws a bar button.
+ *
+ * A filled disc per control turned the bar into a row of floating bubbles; on
+ * iOS a bar button is the glyph alone, and the press is the feedback. The box
+ * is still the full touch target, so nothing gets harder to hit.
+ */
+export function BarButton({ onPress, label, children, disabled = false }: BarButtonProps): React.JSX.Element {
+  const styles = useThemeStyles(makeStyles);
   return (
     <Pressable
-      onPress={withHaptic(onPress, feel)}
+      onPress={withHaptic(onPress)}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled }}
       style={({ pressed }) => [
-        styles.pillGlass,
-        styles.control,
-        styles.pill,
-        pressed && !disabled && styles.pressed,
+        styles.circle,
+        styles.bar,
+        pressed && !disabled && styles.barPressed,
         disabled && styles.disabled,
       ]}
     >
-      {content}
+      {children}
     </Pressable>
   );
-}
-
-/** Small muted caption used inside pills and rows. */
-export function Caption({ children }: { children: ReactNode }) {
-  const styles = useThemeStyles(makeStyles);
-  return <Text style={styles.caption}>{children}</Text>;
 }
 
 function makeStyles(theme: AppTheme) {
@@ -160,29 +150,12 @@ function makeStyles(theme: AppTheme) {
     borderColor: theme.color.separator,
   },
   solid: {},
-  // A pill in a crowded row must be able to give up width, and every layer down
-  // to the label needs to say so — one rigid ancestor and the text below it can
-  // never truncate, so the pill overflows the row instead.
-  pillGlass: { flexShrink: 1, minWidth: 0 },
-  pill: {
-    height: theme.size.control,
-    paddingHorizontal: theme.space(4),
-    justifyContent: "center",
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  pillRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.space(1.5),
-    flexShrink: 1,
-    minWidth: 0,
-  },
+  bar: { width: theme.size.touch, height: theme.size.touch },
+  barPressed: { opacity: 0.4 },
   pressed: {
     backgroundColor: theme.color.surfacePressed,
     opacity: 0.72,
   },
   disabled: { opacity: 0.4 },
-  caption: { color: theme.color.textDim, fontSize: theme.font.small, fontWeight: "600" },
   });
 }

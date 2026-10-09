@@ -1,0 +1,370 @@
+{
+  "version": 1,
+  "items": {
+    "accessibility": {
+      "checkedAt": "2026-10-08T22:16:04.403Z",
+      "commit": "f32339b",
+      "uncommittedChanges": true,
+      "result": "pass",
+      "summary": "All four recorded source findings fixed and rechecked: image descriptions, approval/empty-state names and metadata contrast. Native keyboard/focus and assistive-technology operation remain unverified.",
+      "findings": [],
+      "evidence": [
+        "Scope: remediation and source-level re-check of the four recorded accessibility findings; not a complete accessibility or native-conformance assessment.",
+        "imageFromMarkdown preserves explicit alt or parser content while retaining image-source validation. Regression test runs the installed renderer's actual parser/AST through this production helper.",
+        "Approval accessible-name expression tested with a real permission title and session/provider context. It no longer names only the conversation.",
+        "Empty-state visible text and accessible name share emptyMessage. Actual expressions tested across six connection/error/provider states; keyboard-dismiss action and layout retained.",
+        "Activity metadata uses textDim. Actual theme-factory colour calculations meet 4.5:1 on grouped, ordinary, pressed and raised surfaces across light/dark accent variants.",
+        "App suite passed: 530 tests, zero failures, 16207 assertions across 64 files. Existing assertions retained; parser, naming, contrast and malformed-input regressions added.",
+        "npm run typecheck --workspace app passed. ESLint passed on all seven affected files: zero errors, three hook-dependency warnings. git diff --check passed.",
+        "Reviewed affected changes and every recorded source location; image description wiring into ChatImage and ImageViewer verified. Pre-existing work preserved.",
+        "Applied already-loaded evidence-led-ui guidance. No packages installed, commits made or deployments performed; no native accessibility claims made from source tests.",
+        "Not checked: device keyboard/visible focus, modal focus handling, VoiceOver/TalkBack, rendered contrast, scaling/reflow, full monorepo tests or hosted CI. Not a legal conformance determination."
+      ]
+    },
+    "ci": {
+      "checkedAt": "2026-10-08T05:59:44.002Z",
+      "commit": "45a6de1",
+      "uncommittedChanges": true,
+      "result": "issues",
+      "summary": "Permissions hardened: ci.yml and release.yml default to read, write only on the publish job. Remaining: origin has never run CI, so the required check cannot pass until a run happens (not triggered, by your instruction).",
+      "findings": [
+        "high: origin AutomationGods/pew2 has zero workflow runs. Actions is enabled and both workflows are active, but neither has run. The protect-main ruleset requires check, so PRs cannot merge until one run completes. Fix: trigger a CI run on origin once you confirm."
+      ],
+      "evidence": [
+        "Scope: ci.yml and release.yml permissions blocks. Skill: none.",
+        "Edited ci.yml: added top-level permissions contents read. Edited release.yml: top-level contents read; publish job contents write.",
+        "Ran YAML parse of both files: ok. Parsed permissions per job: ci inherits read; release build inherits read, publish write.",
+        "Checked every uses line: all 14 still pinned to 40-char SHAs.",
+        "Ran gh api actions/permissions on origin: enabled true, allowed_actions all.",
+        "Ran gh api actions/workflows on origin: CI and Release both active. gh run list on origin: no runs.",
+        "Ran npm run typecheck: exit 0. npm run lint: exit 0. npm test: exit 0, 1241 pass.",
+        "Not triggered: no workflow_dispatch or push on origin, per instruction.",
+        "Not checked: whether a run on origin will pass; fork-PR approval settings."
+      ]
+    },
+    "code-health": {
+      "checkedAt": "2026-10-08T05:29:50.101Z",
+      "commit": "45a6de1",
+      "uncommittedChanges": true,
+      "result": "issues",
+      "summary": "Dead exports removed (Pill, Caption, fallbackGlassTokens) and checks pass. Remaining: oversized files, deferred to a planned change by user choice.",
+      "findings": [
+        "medium: oversized files. useDaemon.ts 3,012 lines; daemon index.ts 2,146; App.tsx 1,783. Deferred by user to a planned change. Fix: split by concern in behaviour-preserving steps.",
+        "low: Sidebar.tsx (1,053), acp/connect.ts (1,081) and NewChatSheet.tsx (752) are large and not dissected. Fix: review on next change."
+      ],
+      "evidence": [
+        "Scope: controls.tsx (Pill, PillProps, Caption, 5 style entries only they used, unused Text/View imports); materialTokens.ts (fallbackGlassTokens). Skill: refactoring.",
+        "Ran git grep for Pill, Caption, PillProps, fallbackGlassTokens: no references remain.",
+        "Ran npm run typecheck: exit 0, 0 TS errors (after restoring a wrongly removed 'pressed' style).",
+        "Ran npm run lint: exit 0, 0 errors, 9 accepted hook warnings.",
+        "Ran npm test: exit 0, 1241 pass, 0 fail, 121 files.",
+        "Not checked: on-device render of the changed controls.",
+        "Not checked: complexity per function, renamed near-duplicates, knip/ts-prune/jscpd (not installed)."
+      ]
+    },
+    "commit-gate": {
+      "checkedAt": "2026-10-08T05:45:33.458Z",
+      "commit": "45a6de1",
+      "uncommittedChanges": true,
+      "result": "pass",
+      "summary": "/commit command runs lint, typecheck, providers validation, tests, a review and a staged secret scan, then commits to a feature branch and opens a PR. Never pushes to main.",
+      "findings": [],
+      "evidence": [
+        "Scope: .gg/commands/commit.md rewritten: lint added to step 1, staged gitleaks scan in step 5, step 7 branch plus PR, commit-and-push-anyway removed.",
+        "Ran npm run lint: exit 0, 0 errors, 9 accepted warnings. typecheck: exit 0. providers:validate: exit 0. npm test: exit 0, 1241 pass.",
+        "Canary test in a temp repo, fake token: gitleaks protect --staged exits 1 on a leak, 0 on clean content, under both default and project config.",
+        "Earlier all-identical-letter canary was not caught; gitleaks treats it as a placeholder. Random-looking token used for the real test.",
+        "Checked: gh pr create supports --base and --fill; git switch exists; every npm script named exists; no push-to-main or B option wording left.",
+        "Not checked: the new step 7 has not been run end to end. No branch, push or PR was made, since that is externally visible.",
+        "Not checked: the review subagent's quality; project index left untouched (0 staged files, branch main)."
+      ]
+    },
+    "data-safety": {
+      "checkedAt": "2026-10-08T23:28:17.456Z",
+      "commit": "f32339b",
+      "uncommittedChanges": true,
+      "result": "issues",
+      "summary": "Fixed and rechecked settings races and registry overwrite guards. Four data-safety findings remain deferred. Isolated manifest restore passed; real backup recovery remains unverified.",
+      "findings": [
+        "High [CODE/DEDUCED] packages/daemon/src/attachments.ts:149-152; index.ts:1035: Later same-name attachments replace earlier copies; eviction removes path-backed copies. Use immutable IDs and durable reference-aware retention. Deferred.",
+        "High [CODE/DEDUCED] packages/app/src/useDaemon.ts:708-716,1011-1042; ui/ComposerDock.tsx:138: Accepted messages are RAM-only and leave queues before daemon confirmation. Persist recoverable drafts with acknowledged/deduplicated delivery and explicit restart resend. Deferred.",
+        "High [CODE/DEDUCED] packages/daemon/src/pairing.ts:210-235: In-place writes risk corrupt credentials; overlapping writers can undo rotation. Use durable atomic replacement, cross-process/generation guards and explicit corruption recovery. Deferred.",
+        "Medium [CODE/DEDUCED] packages/daemon/src/providers/enabled.ts:107-117: Overlapping legacy migrations can replace the original backup with newer settings, then clear them. Lock migration with writes and create non-replacing backups. Deferred."
+      ],
+      "evidence": [
+        "Scope: Rechecked all six recorded findings; fixed settings lost updates and registry overwrite guards only. Four attachment/outbox/pairing/migration findings remain.",
+        "Not checked: Real backup contents/restores, native Windows locking, power-loss durability, external agent retention or deployments. No real user data was changed.",
+        "Read atomic-file.ts, config-prefs.ts and session-prefs.ts: exclusive cross-process locks wrap read/merge/replace; bounded waits fail closed and never steal orphan locks.",
+        "Read registry-sync.ts: only ENOENT means missing; new files use wx; force saves private recovery copies then atomically replaces; dry runs create no locks or backups.",
+        "bun test config-prefs, registry-sync/view, transcript-cache, known-projects, probe-cache, index, handler, pipeline — final run: 138 passed, 0 failed across 9 files.",
+        "npm run typecheck && scoped ESLint on all six changed files && git diff --check — final run exit 0, no lint or whitespace diagnostics.",
+        "Re-ran temporary-home concurrency probe: all 12 choices and all 12 session records retained. Regression also verified four separate processes preserve all 24 updates.",
+        "Isolated forced-sync restore drill: old manifest restored into a separate directory, later canary absent, 5ms. Fixture-only timing, not a real-data RTO; temporary data removed.",
+        "Re-read attachments.ts, index.ts, app/useDaemon.ts, pairing.ts and providers/enabled.ts: all four deferred mechanisms remain. Session eviction behavior also exercised by index tests.",
+        "Applied durable guidance; added regressions for unreadable files, concurrent sync, force backups, cross-process merges, exception cleanup and occupied locks. Real backup verification remains pending."
+      ]
+    },
+    "dependencies": {
+      "checkedAt": "2026-10-08T20:11:09.637Z",
+      "commit": "f32339b",
+      "uncommittedChanges": true,
+      "result": "issues",
+      "summary": "Dependency re-check after compatible updates: audit reduced from 59 to 10 distinct advisories across six packages, none critical; two likely unused packages remain.",
+      "findings": [
+        "bun.lock:791,1137,1353,1429,1573,1673 — High/Moderate (audit ratings): 10 advisories remain in braces, image-size, node-forge, postcss, sprintf-js and uuid. Three lack published fixes; others need parent-range/major changes. Review compatible parent upgrades or replacements.",
+        "packages/app/package.json:6,22 — Low: @expo-google-fonts/bitcount-prop-single and expo-glass-effect still have no source/config references or locked dependents. Unchanged under audit-only fix selection; confirm native requirements before removal."
+      ],
+      "evidence": [
+        "Scope: dependency remediation and re-check of both recorded findings in the Bun monorepo. Method: bulletproof and dependency-audit-stinger.",
+        "Compared current manifests with lock: all match. Pinned markdown-it 14.3.2, sharp 0.35.5, wrangler 4.149.0; refreshed affected transitive resolutions; preserved other manifest edits.",
+        "bun install --frozen-lockfile --ignore-scripts --force passed; checked installed patched versions, including markdown-it 14.3.2 resolved from the renderer.",
+        "Final bun audit --json exited 1: 10 distinct advisories, six high and four moderate, across six package names. No critical or low advisories remain; runtime exploitability not established.",
+        "npm run typecheck passed for root, relay and app after final lock edits. git diff --check passed; reviewed manifest and lock version changes.",
+        "npm run lint failed: 38 errors in generated .wrangler files, nine source warnings. Re-run with --ignore-pattern packages/relay/.wrangler/** passed: zero errors, nine warnings.",
+        "Final npm test passed: 1247 tests, zero failures, 122 files. Earlier repeat had one 5-second probe-cache timeout; no tests or assertions were changed.",
+        "npm run relay:check passed all eight checks on Wrangler 4.149.0; Sharp 0.35.5 native PNG round-trip passed. Local relay remains at 127.0.0.1:8799.",
+        "Re-scanned source/config for both unused packages: no references; both remain declared and have zero locked dependents. Removal was not authorized.",
+        "Not checked: exhaustive exploitability, native dependency audits, native release builds, all upstream maintenance status, or unused-package removal. No commit or deployment."
+      ]
+    },
+    "design-system": {
+      "checkedAt": "2026-10-08T21:04:03.416Z",
+      "commit": "f32339b",
+      "uncommittedChanges": true,
+      "result": "pass",
+      "summary": "Both recorded source-level findings fixed and rechecked: accent previews derive from the shared theme, and pairing/markdown/error details share one platform-aware monospace token. Rendering unverified.",
+      "findings": [],
+      "evidence": [
+        "Scope: re-check of the two recorded design-token findings, preserving the existing design and shared components. Not an exhaustive visual or token-adoption review.",
+        "AppearanceSheet now derives each swatch and checkmark colour from createTheme(mode, accent); removed the separate ACCENT_PREVIEW palette.",
+        "Added theme.display.monospace with iOS Menlo and Android/default monospace; all three recorded consumers use it. Source re-scan found only the central production Menlo definition.",
+        "Added five regression cases to existing themeContrast.test.ts. Actual theme factory exercised for eight accent/mode pairs on three stubbed platform boundaries in isolated child processes.",
+        "bun test ./packages/app/src ./packages/app/app.config.test.js passed: 515 tests, zero failures, 16063 assertions across 64 files.",
+        "npm run typecheck --workspace app passed; ESLint passed on all six affected files with no output; git diff --check passed.",
+        "Reviewed affected code/test diffs; existing assertions and pre-existing work preserved. No packages installed, commits made or deployments performed.",
+        "Applied evidence-led-ui small-edit method: read shared owners/callers, centralized fixes, checked light/dark and platform variants without redesign.",
+        "Android SDK adb devices listed no attached devices; xcrun simctl list devices booted showed no booted iOS simulator. No native screenshots taken.",
+        "Not checked: native/rendered appearance, full accessibility or contrast compliance, full monorepo suite, hosted CI, or exhaustive token usage. Platform stubs are not device verification."
+      ]
+    },
+    "docs": {
+      "checkedAt": "2026-10-08T04:33:57.871Z",
+      "commit": "45a6de1",
+      "uncommittedChanges": true,
+      "result": "pass",
+      "summary": "Both docs findings fixed: .env.example added and AGPL-3.0 license set in all five package manifests; checks re-run and pass.",
+      "findings": [],
+      "evidence": [
+        "Scope: .env.example (new), .gitignore exception, license field in root and packages/{app,daemon,protocol,relay} package.json.",
+        "Not checked: README does not link to .env.example; Windows installer not run; external links not fetched.",
+        "Ran npm run typecheck: exit 0.",
+        "Ran npm test: exit 0, 1241 pass, 0 fail, 121 files.",
+        "Ran npm run providers:validate: exit 0, 13 manifests valid.",
+        "Verified: node reads license AGPL-3.0 from all five manifests; git check-ignore shows .env.example is re-included (untracked, not ignored).",
+        "Skill loaded: none."
+      ]
+    },
+    "errors-logging": {
+      "checkedAt": "2026-10-08T20:50:27.438Z",
+      "commit": "f32339b",
+      "uncommittedChanges": true,
+      "result": "pass",
+      "summary": "All three recorded findings fixed and rechecked: pairing failures release busy state, save/delete failures show recovery advice, and push failures emit rate-limited metadata-only warnings.",
+      "findings": [],
+      "evidence": [
+        "Scope: remediation and re-check of the three recorded pairing/push error-handling findings; not an exhaustive review of every I/O path.",
+        "Both PairingScreen entry methods now use runPairingAttempt: exceptions become recovery advice and busy clears in finally. Successful pairing awaits its completion callback.",
+        "App.tsx save/forget paths use withPairingStorageWarning and native alerts. Regression tests confirm failed saves still connect and failed removal still opens pairing while warning.",
+        "Push diagnostics cover HTTP, network, malformed replies and error tickets; limited to one warning/minute per registry. Tests verify redaction, token pruning and diagnostic-sink failure containment.",
+        "npm test exited 0: 1267 pass, zero failures, 25467 assertions across 123 files. Added 18 regression cases to existing reconnect and push test files.",
+        "npm run typecheck passed for root, relay and app.",
+        "ESLint passed on all six affected files: zero errors, two warnings in untouched App.tsx hooks. git diff --check passed.",
+        "Reviewed affected diffs; existing assertions and pre-existing work preserved. Applied loaded bulletproof guidance for logging/privacy. No dependencies added, commits made or deployments performed.",
+        "Earlier review run had two session-cleanup failures; both passed alone and the final full suite passed. This does not establish repeated-run stability.",
+        "Not checked: physical-device keychain failures/native alert presentation, live Expo outages, production logs, exhaustive I/O coverage or hosted CI."
+      ]
+    },
+    "git-github": {
+      "checkedAt": "2026-10-08T04:42:18.891Z",
+      "commit": "45a6de1",
+      "uncommittedChanges": true,
+      "result": "issues",
+      "summary": "High finding fixed: origin main now has an active ruleset (PRs, check status, no force-push or delete). Remaining: upstream ruleset gaps, diverged main, uncommitted changes (deferred by choice).",
+      "findings": [
+        "medium: upstream (KenKaiii/pew2) ruleset protect-main blocks only force-push and deletion. No PR or status-check rule. Not changed: outside the chosen scope. Fix: add pull_request and required_status_checks.",
+        "medium: local main is 7 ahead and 7 behind upstream/main. Deferred by user. Fix: reconcile before the next push.",
+        "low: 90 uncommitted changes, including untracked files. Deferred by user. Fix: commit or stash deliberately."
+      ],
+      "evidence": [
+        "Scope: AutomationGods/pew2 ruleset 24697451 (protect-main) created and read back; GitHub branch rules on main return non_fast_forward, deletion, pull_request, required_status_checks. Skill: none.",
+        "Ran gh api POST repos/AutomationGods/pew2/rulesets: created, enforcement active, bypass_actors empty, required check context 'check' from .github/workflows/ci.yml job 'check'.",
+        "Ran gh api GET upstream ruleset 21174206: still non_fast_forward, deletion only (unchanged).",
+        "Ran git rev-list main...upstream/main: 7 7 (unchanged).",
+        "Not checked: whether 'check' has run on origin yet; no check runs existed on origin main before the ruleset; first PR may wait for CI.",
+        "Not checked: no bypass actor configured, so repository admins must use pull requests too."
+      ]
+    },
+    "motion-consistency": {
+      "checkedAt": "2026-10-08T21:48:28.413Z",
+      "commit": "f32339b",
+      "uncommittedChanges": true,
+      "result": "pass",
+      "summary": "All three recorded source-level findings fixed and rechecked: newer preference events win, active fades settle on reduced motion, and named motion profiles preserve existing timing/curves. Native rendering unverified.",
+      "findings": [],
+      "evidence": [
+        "Scope: re-check of the three recorded motion findings; app-owned profiles and preference handling, not an exhaustive native animation/accessibility audit.",
+        "accessibilityState subscribes before querying and ignores stale snapshots after events. Regression tests cover six order/failure scenarios for each of two accessibility settings.",
+        "ActivityLine stops its previous fade and reveals final content on preference changes. Sheet cancels timing, restores opacity/title and guards queued stale JS title commits.",
+        "Added motionTokens.ts with preserved durations, staggers, pauses and spring tuning. Engine-specific easing adapters retain RN/Reanimated defaults without crossing JS/worklet easing functions.",
+        "Re-scanned production UI positive-duration/easing literals: only the intentional platform keyboard curve remains. Native sheet timing and keyboard event duration are unchanged.",
+        "App suite passed: 523 tests, zero failures, 16173 assertions across 64 files. Added regression checks for event ordering, effect cleanup, stale callbacks and profile values.",
+        "npm run typecheck --workspace app passed. ESLint passed on all affected files: zero errors, eight hook-dependency warnings. git diff --check passed.",
+        "Production Babel/worklet transforms passed in memory for App, Sheet, Composer and NewChatSheet using the existing config. This is compilation evidence, not native runtime verification.",
+        "Applied already-loaded evidence-led-ui. Reviewed affected changes and preserved existing work/assertions; no packages installed, commits made or deployments performed.",
+        "Not checked: physical-device/native transition behaviour, full accessibility, frame pacing, full monorepo suite or hosted CI. Effect/native-boundary stubs are not rendered-device tests."
+      ]
+    },
+    "naming": {
+      "checkedAt": "2026-10-08T04:38:48.749Z",
+      "commit": "45a6de1",
+      "uncommittedChanges": true,
+      "result": "issues",
+      "summary": "Both medium findings fixed: one label for the action, and no UI label used as logic. Three low findings remain (placeholder meanings, glossary, ADRs), deferred by choice.",
+      "findings": [
+        "low: two meanings share one placeholder. \"Untitled conversation\" (ActivityScreen.tsx:93, agentHistory.ts:106) and \"New conversation\" (pendingSession.ts:66) mark different states. Fix: name each state separately.",
+        "low: no glossary. No CONTEXT.md, and CLAUDE.md has no pointer to one. Deferred by user. Fix: add CONTEXT.md once terms settle.",
+        "low: decisions only in prose. No docs/adr/. Relay-stores-nothing, first-claim pairing and 90s eviction live in CLAUDE.md and comments. Deferred by user. Fix: write ADRs for the top 2-3."
+      ],
+      "evidence": [
+        "Scope: packages/app label and title comparisons (new conversationTitle.ts, replayFold.ts, useDaemon.ts, pendingSession.ts, NewChatSheet.tsx, Sidebar.tsx). Skill: shared-language.",
+        "Not checked: visual fit of the longer 'New conversation' chip in the drawer header (not rendered); harness and screenshot files; glossary and ADRs (deferred).",
+        "Ran npm run typecheck: exit 0.",
+        "Ran npm test: exit 0, 1241 pass, 0 fail, 121 files.",
+        "Ran eslint on the six touched files: exit 0.",
+        "Grep: no remaining string comparison against the label; only display text and comments use the literal.",
+        "Not fixed: the 'Untitled conversation' placeholder split (low)."
+      ]
+    },
+    "quality-tools": {
+      "checkedAt": "2026-10-08T05:13:48.736Z",
+      "commit": "45a6de1",
+      "uncommittedChanges": true,
+      "result": "issues",
+      "summary": "Lint now exits 0 (0 errors, 9 warnings) and typecheck passes. Remaining: 9 hook warnings left by choice, and no formatter configured. Backups kept as rollback.",
+      "findings": [
+        "low: 9 react-hooks/exhaustive-deps warnings (App.tsx:818, :903; ActivityScreen.tsx:312; ChatThread.tsx:126; Composer.tsx:215, :246, :260; Reconnect.harness.tsx:50; TurnReceipt.tsx:44). Left by user choice. Fix: correct dependency arrays.",
+        "low: no formatter configured (no Prettier or Biome; eslint.config.js deliberately skips formatting). Recorded as a gap.",
+        "low: .gg/live-sharing-backup-20261006-211558 (622M) and -20261007-090131 (673M) still exist. Lint now excludes them, but they hold the install rollback copy, so not deleted without your confirmation. Fix: delete the older one; keep the newer one until the install is confirmed."
+      ],
+      "evidence": [
+        "Scope: root lint, typecheck and tests after fixes. eslint.config.js ignores .gg/**. Edited 7 source files: unused variables removed or underscore-prefixed. Skill: none.",
+        "Ran npm run lint: exit 0, 9 warnings, 0 errors.",
+        "Ran npm run typecheck: exit 0.",
+        "Ran npm test: exit 0, 1241 pass, 0 fail, 121 files.",
+        "Read .gg/install-live-sharing.py and .gg/live-sharing-install-result.json: result backup field points to live-sharing-backup-20261007-090131 as the rollback copy.",
+        "Not checked: a formatter run (none configured); the 9 hook warnings unchanged; app rendering after the three unused-variable removals."
+      ]
+    },
+    "secrets": {
+      "checkedAt": "2026-10-08T04:56:04.824Z",
+      "commit": "45a6de1",
+      "uncommittedChanges": true,
+      "result": "issues",
+      "summary": "Fixed: unverified token-shaped matches (ios/build cache) removed, Pods allowlisted, and a gitleaks history gate added to CI. Remaining: 3 generic matches in old .gg backups, kept by your choice.",
+      "findings": [
+        "low: 3 generic-api-key matches in ignored .gg backup bundles (app sidecar code). Left in place by user choice. Fix: delete old backups when unneeded."
+      ],
+      "evidence": [
+        "Scope: packages/app/ios/build removed (2.3G, gitignored Xcode cache); .gitleaks.toml added with Pods allowlist; ci.yml new 'secrets' job. Skill: bulletproof.",
+        "Ran gitleaks dir with new config: 3 findings, all .gg backups; ios/build and Pods now report none.",
+        "Ran gitleaks git --all with new config: 215 commits, no leaks.",
+        "Ran YAML parse of ci.yml: jobs check, secrets, windows, android; secrets steps valid.",
+        "Ran checksum replay: gitleaks 8.30.1 linux_x64 tarball matches published sha256.",
+        "Ran npm run typecheck: exit 0. Ran npm test: exit 0, 1241 pass, 0 fail.",
+        "Not checked: the new CI job has not run on GitHub; the 3 .gg matches are not inspected; cloud dashboards not checked."
+      ]
+    },
+    "security": {
+      "checkedAt": "2026-10-08T23:04:01.038Z",
+      "commit": "f32339b",
+      "uncommittedChanges": true,
+      "result": "issues",
+      "summary": "Fixed and rechecked the four selected source-level findings. Two High pairing/replay findings remain deferred. Native Windows/iOS behavior and deployed artifacts remain unverified.",
+      "findings": [
+        "High [CODE/DEDUCED] packages/protocol/src/channel.ts:127-128,241-249: Stable traffic keys plus reset replay windows permit recorded prompts after reconnect. Bind frames/keys to fresh authenticated handshakes. Deferred by selected fix scope.",
+        "High [CODE/DEDUCED] packages/daemon/src/device-claim.ts:121-128; packages/relay/src/index.ts:221-225: Copied pairing links bypass reserved-ID checks and decrypt broadcasts despite claims. Use device-bound credentials/traffic keys and separately authorize watchers. Deferred."
+      ],
+      "evidence": [
+        "Scope: Rechecked all six findings; fixed npm bootstrap isolation, Windows executable/interpreter lookup, Git fsmonitor and notification reply authentication. Two protocol issues remain.",
+        "Not checked: Native Windows/iOS execution, live external npx providers, released artifacts or cloud deployment. Secret/dependency scans were not repeated; their separate records remain unchanged.",
+        "Read acp/connect.ts: npx resolves before launch, runs in a private temporary cwd with explicit prefix, cleans up on close/failure, and retains the real project in ACP session requests.",
+        "Read providers/registry.ts and acp/connect.ts: no implicit cwd/relative PATH lookup, no missing-command fallback, absolute cmd.exe; child environment disables cwd search, including batch interpreters.",
+        "Read git.ts: git status overrides core.fsmonitor with an empty value, avoiding executable hook names on older Git; regression executes the production status function with a recording runner.",
+        "Read notifier.ts: versioned authenticated reply action, foreground launch and dispatch gate, old reply text ignored, subscription cleanup and dedup retained; regression tests exercise queueing.",
+        "bun test (ACP/providers, git, pipeline/handler, app/src, protocol/src) — final run: 742 passed, 0 failed across 81 files, including launch/environment and notification regressions.",
+        "npm run typecheck && scoped ESLint on all eight changed files && git diff --check — final run exit 0, no lint or whitespace diagnostics.",
+        "Re-read channel.ts key derivation/replay reset, device-claim.ts reserved-ID admissions and relay/index.ts broadcasts: both deferred findings still present; passing tests do not resolve them.",
+        "Applied bulletproof guidance and independent source challenge; addressed its additional Windows batch-interpreter lookup finding using installed npm shim source and Microsoft search-policy docs."
+      ]
+    },
+    "styling-consistency": {
+      "checkedAt": "2026-10-08T21:16:07.709Z",
+      "commit": "f32339b",
+      "uncommittedChanges": true,
+      "result": "pass",
+      "summary": "All three recorded source-level styling findings fixed and rechecked: theme-aware control colours and matching shared size tokens. Normal/pressed colour calculations pass; native rendering unverified.",
+      "findings": [],
+      "evidence": [
+        "Scope: re-check of the three recorded styling findings; preserves existing geometry and shared-component design. Not an exhaustive visual or styling audit.",
+        "Composer send/stop glyph now uses theme.color.canvas against text/textDim button fills. ErrorBoundary uses accentSolid/accentText; pressed opacity adjusted to 0.9.",
+        "Turn uses size.touch; PairingScreen uses font.small at all three cited sites; ActivityScreen uses font.body; QrScanner hint uses radius.sm. Existing 44/13/17/10 values retained.",
+        "Extended existing themeContrast tests: actual theme factory exercised for eight accent/mode pairs on three isolated stubbed platform boundaries.",
+        "Calculated normal/pressed glyph pairs meet 3:1 and retry text pairs meet 4.5:1, including pressed opacity blending. These are source calculations, not rendered measurements.",
+        "bun test ./packages/app/src ./packages/app/app.config.test.js passed: 517 tests, zero failures, 16085 assertions across 64 files.",
+        "npm run typecheck --workspace app passed. ESLint passed on seven affected files: zero errors, four warnings in untouched hooks.",
+        "git diff --check passed; reviewed affected source/test diffs and re-scanned every recorded location. Existing assertions and pre-existing work preserved.",
+        "Applied already-loaded evidence-led-ui small-edit method. No packages installed, commits made or deployments performed; no screenshot or native interaction evidence claimed.",
+        "Not checked: native/rendered appearance, full accessibility conformance, full monorepo tests or hosted CI. No attached Android device, booted iOS simulator or local Expo UI server was available."
+      ]
+    },
+    "tests": {
+      "checkedAt": "2026-10-08T20:29:32.787Z",
+      "commit": "f32339b",
+      "uncommittedChanges": true,
+      "result": "pass",
+      "summary": "Both recorded test-gate gaps fixed and rechecked locally: npm test includes the app-config suite, and CI invokes the passing isolated relay runtime check.",
+      "findings": [],
+      "evidence": [
+        "Scope: re-check of both recorded test findings and the current local suite; earlier sampled real-process, crypto and filesystem coverage retained. No claim of exhaustive coverage.",
+        "Updated package.json test command with the explicit app.config.test.js path, preserving narrow source-root discovery. Existing test assertions unchanged.",
+        "npm test exited 0: 1249 pass, zero failures, 25387 assertions across 123 files; output explicitly includes both previously omitted app-config tests.",
+        "npm run relay:test exited 0: all eight existing checks passed against a new real Workers runtime on an ephemeral loopback port, with persistence disabled and teardown in finally.",
+        "CI YAML parsed successfully; assertions verified the relay:test step, three-minute timeout and unchanged contents:read permissions. No secrets or deployment steps added.",
+        "Invalid PEW2_RELAY_TEST_PORT values 0, 65536 and not-a-port each exited 1 with the validation error before connecting.",
+        "ESLint passed for relay-check.mjs and relay-test.mjs; git diff --check passed. Reviewed targeted diffs; pre-existing manifest edits preserved.",
+        "Loaded tdd, bulletproof and ci-release-stinger; applied loopback-only execution, local runtime, bounded child check and unchanged assertions.",
+        "Not checked: hosted CI execution, other OS/native device flows, deployed services, exhaustive coverage or repeated-run stability. Full lint/typecheck not rerun for this JS/config-only fix."
+      ]
+    },
+    "ui-states": {
+      "checkedAt": "2026-10-08T22:36:03.487Z",
+      "commit": "f32339b",
+      "uncommittedChanges": true,
+      "result": "pass",
+      "summary": "All four recorded source-level UI-state findings fixed and rechecked with regression tests; native small-screen/long-text rendering remains unverified.",
+      "findings": [],
+      "evidence": [
+        "Scope: Re-check of all four recorded findings only: approval overflow, settings overflow, conversation loading and folder-browser loading/error/retry behavior.",
+        "Not checked: Native visual rendering, device interaction, keyboard overlap, assistive technology or full daemon/relay integration tests; no Expo server or attached/booted device.",
+        "Read Sheet.tsx, ApprovalSheet.tsx and AppearanceSheet.tsx: bounded scrolling, measured header/safe-area budget, rotation handling and wrapping settings modes; dismissal rules preserved.",
+        "Read changed App.tsx: an empty loading transcript now renders a named busy state with an indicator; existing content and error paths remain intact.",
+        "Read useDaemon.ts and NewChatSheet.tsx: failed sends/disconnects/timeouts have errors and retry; progress remains above retained entries; request checks and sealed transport preserved.",
+        "bun test ./packages/app/src — 534 passed, 0 failed across 63 files, including six new UI-state regressions in nativeCommandCenter.test.ts.",
+        "Regressions execute browse send/response/deadline logic: offline, thrown send, timeout, replacement, stale reply, refusal and root retry; also check loading markup and short-screen height budgets.",
+        "npm run typecheck — exit 0 (root, relay and app). Initial combined check timed out; standalone background rerun completed successfully.",
+        "Scoped ESLint on seven changed files reported 0 errors, 2 pre-existing App.tsx hook warnings; git diff --check emitted no whitespace diagnostics.",
+        "Applied evidence-led-ui and bulletproof inline guidance; source/logic verification only, not a native visual or security sign-off. No installs, commits or deployment."
+      ]
+    }
+  }
+}

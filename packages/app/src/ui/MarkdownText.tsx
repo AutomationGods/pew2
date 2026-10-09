@@ -1,7 +1,7 @@
 import { createElement, memo, useMemo } from "react";
 import * as Clipboard from "expo-clipboard";
 import * as WebBrowser from "expo-web-browser";
-import { Alert, Linking, Platform, StyleSheet, Text, View } from "react-native";
+import { Alert, Linking, StyleSheet, Text, View } from "react-native";
 import Markdown, {
   type MarkdownStyles,
   type RenderFunction,
@@ -10,7 +10,7 @@ import Markdown, {
 import { useAppTheme, useThemeStyles } from "../appearance";
 import type { AppTheme } from "../theme";
 import { ChatImage } from "./ChatImage";
-import { isDisplayableImage } from "../images";
+import { imageFromMarkdown } from "../images";
 import { writeToClipboard } from "./clipboard";
 import { CopyButton } from "./CopyButton";
 import { linkTarget } from "./links";
@@ -23,7 +23,6 @@ export type MarkdownTone = "body" | "thought" | "system";
 
 // Read once so markdown style maps remain stable plain objects.
 const StyleSheetHairline = StyleSheet.hairlineWidth;
-const monospace = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
 
 function trimTrailingNewline(text: string): string {
   return text.endsWith("\n") ? text.slice(0, -1) : text;
@@ -106,10 +105,8 @@ function hasImageChild(node: { children?: { type?: string }[] }): boolean {
  * renders nothing, so a stray `![](notes.md)` is not a broken frame.
  */
 const renderImage: RenderFunction = (node) => {
-  const src: string = node.attributes?.src ?? "";
-  const alt: string = node.attributes?.alt ?? "";
-  if (!isDisplayableImage(src)) return null;
-  return <ChatImage key={node.key} image={{ src, alt: alt || undefined }} />;
+  const image = imageFromMarkdown(node);
+  return image ? <ChatImage key={node.key} image={image} /> : null;
 };
 
 const markdownRules: Partial<RenderRules> = {
@@ -210,7 +207,7 @@ function stylesFor(
       backgroundColor: theme.color.surfacePressed,
       borderRadius: theme.radius.sm,
       paddingHorizontal: theme.space(1),
-      fontFamily: monospace,
+      fontFamily: theme.display.monospace,
       fontSize: Math.max(12, fontSize - 1),
       lineHeight: Math.max(18, lineHeight - 2),
     },
@@ -234,7 +231,7 @@ function stylesFor(
       ...fencedCodeTextStyle,
       paddingHorizontal: theme.space(3),
       paddingVertical: theme.space(2.5),
-      fontFamily: monospace,
+      fontFamily: theme.display.monospace,
       fontSize: Math.max(12, fontSize - 1),
       lineHeight: Math.max(18, lineHeight - 2),
     },

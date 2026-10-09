@@ -22,6 +22,8 @@ import {
 } from "./pendingSession";
 import {
   enqueue,
+  cancelQueued,
+  markCancelled,
   markSent,
   partitionOutbox,
   pendingStartFor,
@@ -29,7 +31,9 @@ import {
   remapSession,
   type OutboxEntry,
 } from "./outbox";
-import { rememberConfigs, visibleConfigs, withChoice } from "./configTruth";
+import { recordSessionConfigs, rememberConfigs, visibleConfigs, withChoice } from "./configTruth";
+import { PromptGate } from "./promptGate";
+import { prepareReconnect } from "./connectionRecovery";
 import {
   beginActivity,
   foldActivity,
@@ -40,7 +44,6 @@ import {
   type TurnReceipt,
 } from "./activity";
 import { advance, alreadySeen, type Cursors } from "./cursors";
-import { findDuplicateError } from "./errorDedup";
 import { isEmptyChunk, readChunk } from "./chunks";
 import type { ChatImage } from "./images";
 import { emptyImageCache, putImage, type ImageCache } from "./imageCache";
@@ -73,9 +76,11 @@ import {
   foldCatchUp,
   foldSessionEvents,
   isOptimistic,
+  withError,
   type ReplayEvent,
 } from "./replayFold";
 import { readPermissionRequest } from "./permissions";
+import { NEW_CONVERSATION_TITLE } from "./conversationTitle";
 
 export type Status = "connecting" | "online" | "offline";
 
@@ -151,6 +156,10 @@ export interface Turn {
    * bubble can never keep the label after the agent has the message.
    */
   queued?: boolean;
+  /** Not yet sent: an earlier turn's matching echo must not claim this message. */
+  queuedForTurn?: boolean;
+  /** An unsent follow-up cancelled by the user; retained so its content is not lost. */
+  cancelled?: boolean;
 }
 
 /**
@@ -270,6 +279,10 @@ export interface WorkspaceBrowse {
   loading: boolean;
   /** The daemon would not open that path: missing, a file, or out of bounds. */
   refused: boolean;
+  requestId?: string;
+  /** Kept separately from the displayed listing, including for root retries. */
+  requestedPath?: string;
+  error?: "offline" | "timeout";
 }
 
 /**
@@ -293,6 +306,7 @@ const STALLED_ATTEMPTS = 4;
  * to appear with a message saying it failed.
  */
 const LOADING_SESSION_TIMEOUT = 20_000;
+const WORKSPACE_BROWSE_TIMEOUT = 10_000;
 
 /**
  * How long a socket may stay in CONNECTING before it is treated as dead.
@@ -649,7 +663,7 @@ export function useDaemon(
   const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attempts = useRef(0);
   const alive = useRef(true);
-  const resume = useRef<(() => void) | undefined>(undefined);
+  const resume = useRef<((refreshOpen?: boolean) => void) | undefined>(undefined);
   // Mirrors state.sessionId so actions can read it without doing work inside a
   // state updater. Updaters must stay pure: React may invoke them twice.
   const sessionRef = useRef<string | undefined>(undefined);
@@ -699,7 +713,8 @@ export function useDaemon(
   // not touch state, and it is deliberately not persisted — it holds attachment
   // bytes, and a queue that survives a force-quit would deliver a message the
   // user has long stopped expecting to send.
-  const outbox = useRef<OutboxEntry[]>([]);
+  const outbox = useRef<readonly OutboxEntry[]>([]);
+  const promptGate = useRef(new PromptGate());
   // The `session.start` this client is waiting on, if any. Held outside state
   // because the message handler must read it without a render having happened,
   // and matched against the `requestId` echoed back so the answer adopts the
@@ -979,7 +994,7 @@ export function useDaemon(
           }
           // A conversation with no id yet is early rather than undeliverable:
           // `session.started` re-addresses this entry the moment it is named.
-          if (isPendingSession(entry.sessionId)) return false;
+          if (isPendingSession(entry.sessionId) || !promptGate.current.canSend(entry.sessionId)) return false;
           // An undefined `activeSessions` is an older daemon saying nothing,
           // which `needsResume` reads as live.
           if (liveSessions.current === undefined || liveSessions.current.has(entry.sessionId))
@@ -1034,7 +1049,10 @@ export function useDaemon(
           // A request alone marks nothing: the conversation is not working
           // until the message it was started for has actually gone, which is a
           // separate entry addressed to it.
-          if (entry.kind === "prompt") sent.add(entry.turnKey);
+          if (entry.kind === "prompt") {
+            promptGate.current.started(entry.sessionId);
+            sent.add(entry.turnKey);
+          }
         }
         if (sent.size === 0) return;
 
@@ -1070,6 +1088,9 @@ export function useDaemon(
       ws.onopen = () => {
         clearTimeout(deadline);
         attempts.current = 0;
+        // Do not flush prompts on `providers` until catch-up tells us whether
+        // each existing chat is still working or awaiting an approval.
+        promptGate.current.reconnect(Object.keys(cursors.current));
         // A request written to the socket that died is never answered, and its
         // entry would hold the drawer in a skeleton forever. Dropping them here
         // also lets the open project be asked for again.
@@ -1175,6 +1196,14 @@ export function useDaemon(
         // loading; each batch is still folded in one state update, avoiding the
         // quadratic event-by-event array copies that caused multi-second stalls.
         if (message.t === "session.replay" && Array.isArray(message.events)) {
+          // Settings are current session state, not transcript events. Restore
+          // them even for an empty catch-up or a conversation off screen.
+          if (message.catchUp === true) {
+            promptGate.current.catchUp(message.sessionId, message.working, message.permissions);
+            setState((prev) =>
+              recordSessionConfigs(prev, message.sessionId, message.configOptions, sessionRef.current),
+            );
+          }
           if (message.sessionId !== sessionRef.current) {
             // Another conversation's missed events, folded into the transcript
             // that conversation carries. Not rendered now — the user is reading
@@ -1205,6 +1234,7 @@ export function useDaemon(
                   message.permissions,
                 ),
               );
+              flushOutbox();
             }
             return;
           }
@@ -1284,6 +1314,7 @@ export function useDaemon(
               ),
             };
           });
+          if (message.catchUp === true) flushOutbox();
           return;
         }
 
@@ -1347,6 +1378,7 @@ export function useDaemon(
           const pending = claimsScreen ? queued.current : undefined;
           if (pending) queued.current = undefined;
           if (pending) {
+            promptGate.current.started(message.sessionId);
             ws.send(
               JSON.stringify(
                 secure.seal(
@@ -1373,6 +1405,13 @@ export function useDaemon(
         // twice — appending twice would duplicate the text.
         if (message.t === "session.event") {
           const chunk = readChunk(message.payload);
+          const update = message.payload?.update?.sessionUpdate;
+          const permission = readPermissionRequest(message.payload);
+          if (permission) promptGate.current.waitForPermission(message.sessionId);
+          if ((chunk && chunk.role !== "system") || permission ||
+              update === "tool_call" || update === "tool_call_update") {
+            promptGate.current.started(message.sessionId);
+          }
           if (chunk?.role === "agent" && chunk.text) {
             const seen = turnText.current.get(message.sessionId) ?? "";
             // Only the opening line is ever shown, so a long turn must not
@@ -1389,31 +1428,28 @@ export function useDaemon(
         //
         // `session.idle` is deliberately absent: it is the only signal that a
         // conversation left running has finished, which is precisely the one
-        // nobody is looking at. It is applied per session instead.
-        const scoped = message.t === "session.event" || message.t === "session.config";
-        if (scoped && message.sessionId !== sessionRef.current) {
+        // nobody is looking at. It is applied per session instead. Settings
+        // must reach their per-session handler too, even when another chat is
+        // open; otherwise a late resume reply leaves that chat's menu empty.
+        if (message.t === "session.event" && message.sessionId !== sessionRef.current) {
           // Not on screen, but it is still someone's conversation. Its chunks go
           // into the transcript that session carries, so switching away from a
           // working agent and coming back shows the reply that landed while you
           // were gone rather than your own prompt and silence.
-          //
-          // `session.config` is genuinely not wanted here: it is answered by the
-          // `session.config` case, which already mirrors it per session.
-          if (message.t === "session.event") {
-            setState((prev) =>
-              foldBackgroundEvent(
-                prev,
-                message.sessionId,
-                `${message.sessionId}:${message.seq}`,
-                message.payload,
-              ),
-            );
-          }
+          setState((prev) =>
+            foldBackgroundEvent(
+              prev,
+              message.sessionId,
+              `${message.sessionId}:${message.seq}`,
+              message.payload,
+            ),
+          );
           return;
         }
 
         if (message.t === "session.idle") {
           const finished: string = message.sessionId;
+          promptGate.current.finished(finished);
           const lastText = turnText.current.get(finished);
           // One turn's worth: the next prompt in this session starts empty.
           turnText.current.delete(finished);
@@ -1454,6 +1490,12 @@ export function useDaemon(
         // before the announcement that would otherwise still call it stale.
         if (message.t === "session.started" && message.sessionId) {
           liveSessions.current = new Set(liveSessions.current ?? []).add(message.sessionId);
+          // Ask for state on reconnect even if no transcript event has arrived
+          // yet. -1 means nothing has been seen; never rewind an existing cursor.
+          cursors.current = {
+            ...cursors.current,
+            [message.sessionId]: cursors.current[message.sessionId] ?? -1,
+          };
 
           // This conversation has a real id now, so the messages waiting on the
           // name it used to have are addressed to it and can go. Two names lead
@@ -1553,6 +1595,7 @@ export function useDaemon(
           }
           if (Array.isArray(message.activeSessions)) {
             liveSessions.current = new Set<string>(message.activeSessions);
+            promptGate.current.retain(liveSessions.current);
             // The conversation on screen may have died with a previous daemon
             // process. Reopen it from the agent's own copy rather than leaving
             // a thread that answers "Unknown session" on the next prompt.
@@ -1689,6 +1732,8 @@ export function useDaemon(
           setState((s) => ({
             ...s,
             browse: {
+              ...s.browse,
+              error: undefined,
               // A refusal names no directory, so the one already on screen is
               // kept. Taking the absent path would drop the pane back to the
               // suggestions view — losing the user's place as the reward for
@@ -1815,7 +1860,7 @@ export function useDaemon(
               const live: Session = {
                 id: message.sessionId,
                 providerId: message.providerId ?? prev.activeProviderId ?? "",
-                title: firstUserText(turns) ?? resumedFrom?.title ?? "New conversation",
+                title: firstUserText(turns) ?? resumedFrom?.title ?? NEW_CONVERSATION_TITLE,
                 startedAt: Date.now(),
                 turns,
                 configOptions: message.configOptions ?? [],
@@ -1918,17 +1963,7 @@ export function useDaemon(
             }
 
             case "session.config": {
-              const configOptions = message.configOptions ?? [];
-              return {
-                ...prev,
-                configOptions,
-                // Mirror into history so reopening restores the same selection.
-                sessions: prev.sessions.map((session) =>
-                  session.id === message.sessionId
-                    ? { ...session, configOptions }
-                    : session,
-                ),
-              };
+              return recordSessionConfigs(prev, message.sessionId, message.configOptions, sessionRef.current);
             }
 
             case "session.event": {
@@ -1993,7 +2028,7 @@ export function useDaemon(
                       ...session,
                       turns: capped,
                       title:
-                        session.title === "New conversation" && chunk.role === "user"
+                        session.title === NEW_CONVERSATION_TITLE && chunk.role === "user"
                           ? chunk.text.trim().slice(0, 60)
                           : session.title,
                     }
@@ -2022,32 +2057,11 @@ export function useDaemon(
                   : { ...prev, loadingProject: undefined };
               }
 
-              // Agents usually stream a failure as message text and then reject
-              // the turn, so the same sentence arrives twice. Promote the copy
-              // already on screen instead of appending a second one: the user
-              // sees it once, and in the colour that says it failed.
-              const duplicate = findDuplicateError(prev.turns, message.message);
-              if (duplicate >= 0) {
-                const turns = [...prev.turns];
-                // Keep the agent's own wording, which may carry more context
-                // than the rejection; only its severity was wrong.
-                turns[duplicate] = { ...turns[duplicate]!, role: "system" };
-                return { ...prev, busy: false, loadingSession: false, turns };
-              }
               return {
                 ...prev,
                 busy: false,
                 loadingSession: false,
-                turns: capTurns([
-                  ...prev.turns,
-                  // Date.now() collides when two errors land in the same
-                  // millisecond; the length keeps it unique within the thread.
-                  {
-                    id: `err-${prev.turns.length}-${Date.now()}`,
-                    role: "system",
-                    text: message.message,
-                  },
-                ]),
+                turns: withError(prev.turns, `err-${prev.turns.length}-${now}`, message.message),
               };
             }
 
@@ -2055,6 +2069,8 @@ export function useDaemon(
               return prev;
           }
         });
+        // The idle fold must precede the next turn's busy/clock update.
+        if (message.t === "session.idle") flushOutbox();
       };
 
       const scheduleReconnect = () => {
@@ -2118,18 +2134,16 @@ export function useDaemon(
 
     // Published for `resumeNow` below, which cannot reach `connect` itself: the
     // socket and its backoff are scoped to this effect.
-    resume.current = () => {
+    resume.current = (refreshOpen = false) => {
       if (!alive.current) return;
       // A refusal the daemon explained is still a refusal after a trip to the
       // home screen; retrying it here would defeat the whole point of `fatal`.
       if (fatal.current) return;
       const ws = socket.current;
-      // A live socket needs nothing. `CONNECTING` is left alone too: an attempt
-      // is already in flight, and replacing it would abandon a connection that
-      // may be one frame from opening.
-      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-        return;
-      }
+      // After suspension, OPEN can describe a dead connection. Replace it on
+      // a real background return, but leave healthy foreground attempts alone.
+      if (!prepareReconnect(ws, refreshOpen)) return;
+      rejectPendingCreates("offline");
       if (retry.current) {
         clearTimeout(retry.current);
         retry.current = null;
@@ -2255,8 +2269,8 @@ export function useDaemon(
    * `.unref()` and `Timeout` in the daemon, in files nobody touched. Keeping
    * this hook free of native imports is the same rule the pure modules follow.
    */
-  const resumeNow = useCallback(() => {
-    resume.current?.();
+  const resumeNow = useCallback((refreshOpen = false) => {
+    resume.current?.(refreshOpen);
   }, []);
 
   /** Reconnect so the daemon replays the transcript and refreshes its indexes. */
@@ -2294,10 +2308,16 @@ export function useDaemon(
       // conversation with no id yet cannot be addressed at all, so it does not
       // even try: `session.started` re-addresses this entry later.
       const wire = toWireAttachments(attachments);
+      const waitingForTurn = isPendingSession(sessionId) || !promptGate.current.canSend(sessionId) ||
+        outbox.current.some((entry) => entry.kind === "prompt" && entry.sessionId === sessionId);
       const sent =
-        !isPendingSession(sessionId) &&
+        !isPendingSession(sessionId) && !waitingForTurn &&
         post({ t: "session.prompt", sessionId, text, attachments: wire });
-      const turn = localTurn(localSeq.current++, text, attachmentImages(attachments), !sent);
+      if (sent) promptGate.current.started(sessionId);
+      const turn: Turn = {
+        ...localTurn(localSeq.current++, text, attachmentImages(attachments), !sent),
+        ...(!sent && waitingForTurn ? { queuedForTurn: true } : {}),
+      };
       if (!sent) {
         const queue = enqueue(outbox.current, {
           kind: "prompt",
@@ -2342,7 +2362,7 @@ export function useDaemon(
                 busy: sent ? true : session.busy,
                 unread: false,
                 title:
-                  session.title === "New conversation" ? turn.text.slice(0, 60) : session.title,
+                  session.title === NEW_CONVERSATION_TITLE ? turn.text.slice(0, 60) : session.title,
               }
             : session,
         ),
@@ -2369,9 +2389,12 @@ export function useDaemon(
         // Offline that is the ordinary case rather than a race — without it,
         // every message typed in a tunnel would open its own thread and spawn
         // its own agent the moment the signal came back.
-        const waiting = initialText ? pendingStartFor(outbox.current, providerId) : undefined;
-        if (waiting) {
-          return deliverPrompt(pendingSessionKey(waiting.requestId), initialText!, attachments);
+        const waiting = initialText ? pendingStartFor(outbox.current, providerId)?.requestId : undefined;
+        const livePending = pendingStart.current &&
+          viewingRef.current === pendingSessionKey(pendingStart.current) ? pendingStart.current : undefined;
+        const pendingId = waiting ?? livePending;
+        if (pendingId && initialText) {
+          return deliverPrompt(pendingSessionKey(pendingId), initialText, attachments);
         }
         queued.current = initialText ? { text: initialText, attachments } : undefined;
         // Named, so the answer can be matched to this request rather than to
@@ -2411,6 +2434,7 @@ export function useDaemon(
               ? enqueue(request, {
                   kind: "prompt",
                   turnKey: turn.key!,
+                  initialPrompt: true,
                   sessionId: pendingSessionKey(requestId),
                   text: initialText!,
                   attachments: toWireAttachments(attachments),
@@ -2480,6 +2504,18 @@ export function useDaemon(
         return deliverPrompt(sessionId, text, attachments);
       },
 
+      cancelQueued: (turnKey: string): void => {
+        const next = cancelQueued(outbox.current, turnKey);
+        if (next === outbox.current) return;
+        outbox.current = next;
+        setState((prev) => ({
+          ...prev,
+          turns: markCancelled(prev.turns, turnKey),
+          sessions: prev.sessions.map((session) => ({
+            ...session, turns: markCancelled(session.turns, turnKey),
+          })),
+        }));
+      },
       cancel: () => {
         const sessionId = sessionRef.current;
         if (sessionId) {
@@ -2739,19 +2775,26 @@ export function useDaemon(
         const requestId = `ws_${++browseCounter.current}`;
         browseRequest.current = requestId;
 
-        const sent = post({ t: "workspaces", requestId, path });
+        let sent = false;
+        try {
+          sent = post({ t: "workspaces", requestId, path });
+        } catch {
+          // The socket can close between the ready-state check and the write.
+          // Treat that as offline without exposing transport details in the UI.
+        }
         setState((s) => ({
           ...s,
           browse: {
             // The previous listing is kept underneath the spinner rather than
             // cleared: blanking the list on every tap makes the picker flash
             // empty between levels.
-            path: path ?? s.browse?.path,
+            path: s.browse?.path,
             parent: s.browse?.parent,
             entries: s.browse?.entries ?? [],
             loading: sent,
-            // Not a refusal — the request never reached the daemon. The picker
-            // shows the offline case from `status`, which is already on screen.
+            requestId,
+            requestedPath: path,
+            error: sent ? undefined : "offline",
             refused: false,
           },
         }));
@@ -2847,6 +2890,27 @@ export function useDaemon(
     // change in practice, and listing it costs nothing if it ever does.
     [post, deliverPrompt, sendImageRequest, clearImages, createWorkspace, deviceId],
   );
+
+  // A browse request must end even if the desktop never answers. Key the timer
+  // to this request, not to unrelated frames, and do not fail a newer listing.
+  const browseRequestId = state.browse?.requestId;
+  const browseLoading = state.browse?.loading === true;
+  useEffect(() => {
+    if (!browseRequestId || !browseLoading) return;
+    const fail = (error: "offline" | "timeout") => {
+      setState((s) =>
+        s.browse?.requestId === browseRequestId && s.browse.loading
+          ? { ...s, browse: { ...s.browse, loading: false, error } }
+          : s,
+      );
+    };
+    if (state.status !== "online") {
+      fail("offline");
+      return;
+    }
+    const timer = setTimeout(() => fail("timeout"), WORKSPACE_BROWSE_TIMEOUT);
+    return () => clearTimeout(timer);
+  }, [browseRequestId, browseLoading, state.status]);
 
   // Give up on a conversation that is taking impossibly long to open.
   //

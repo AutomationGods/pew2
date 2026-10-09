@@ -6,10 +6,11 @@
  * and the ability to run the command twice without it undoing itself.
  */
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bundledEntries, fetchRegistry, syncRegistry } from "./registry-sync.js";
+import { POSIX_MODES } from "../testing/platform.js";
 
 async function tempDir(): Promise<string> {
   return mkdtemp(join(tmpdir(), "pew2-sync-"));
@@ -34,6 +35,73 @@ const doc = {
     },
   ],
 };
+
+test("unreadable existing manifests fail closed, including with force", async () => {
+  const raw = { ...doc, agents: doc.agents.filter(agent => agent.id === "kimi") };
+  // A directory in place of a manifest is a portable non-ENOENT read failure.
+  const badTarget = await tempDir();
+  await mkdir(join(badTarget, "kimi.json"));
+  await writeFile(join(badTarget, "kimi.json", "keep"), "untouched");
+  await expect(syncRegistry({ raw, targetDir: badTarget, bundled: [], platform: "darwin-aarch64" })).rejects.toThrow();
+  expect(await readFile(join(badTarget, "kimi.json", "keep"), "utf8")).toBe("untouched");
+
+  // NTFS has no POSIX read bits; the permission-specific case runs where those
+  // bits are enforced. The read-error guard above is exercised on every OS.
+  if (POSIX_MODES && process.getuid?.() !== 0) {
+    const targetDir = await tempDir();
+    const path = join(targetDir, "kimi.json");
+    const original = "private user configuration";
+    await writeFile(path, original, { mode: 0o200 });
+    try {
+      for (const flags of [{}, { force: true }, { dryRun: true }]) {
+        await expect(syncRegistry({ raw, targetDir, bundled: [], platform: "darwin-aarch64", ...flags })).rejects.toThrow();
+      }
+    } finally {
+      await chmod(path, 0o600);
+    }
+    expect(await readFile(path, "utf8")).toBe(original);
+    expect(await readdir(targetDir)).toEqual(["kimi.json"]);
+  }
+});
+
+test("concurrent syncs never overwrite a competing manifest without force", async () => {
+  const targetDir = await tempDir();
+  const first = doc.agents[0];
+  if (!first) throw new Error("Missing registry fixture");
+  const raw = (description: string) => ({ ...doc, agents: [{ ...first, description }] });
+  const results = await Promise.all([
+    syncRegistry({ raw: raw("first"), targetDir, bundled: [], platform: "darwin-aarch64" }),
+    syncRegistry({ raw: raw("second"), targetDir, bundled: [], platform: "darwin-aarch64" }),
+  ]);
+  expect(results.flatMap(result => result.written)).toEqual(["kimi"]);
+  expect(results.flatMap(result => result.conflicts)).toEqual(["kimi"]);
+  const stored = JSON.parse(await readFile(join(targetDir, "kimi.json"), "utf8"));
+  const winningIndex = results.findIndex(result => result.written.length > 0);
+  expect(stored.description).toBe(winningIndex === 0 ? "first" : "second");
+  expect(await readdir(targetDir)).toEqual(["kimi.json"]);
+});
+
+test("forced replacement retains an owner-only recovery copy that restores separately", async () => {
+  const targetDir = await tempDir();
+  const options = { raw: doc, targetDir, bundled: [], platform: "darwin-aarch64" };
+  await syncRegistry(options);
+  const path = join(targetDir, "kimi.json");
+  const original = JSON.stringify({ ...JSON.parse(await readFile(path, "utf8")), customSetting: "before-force" });
+  await writeFile(path, original);
+  await syncRegistry({ ...options, force: true });
+  const backups = join(targetDir, ".registry-backups");
+  const names = await readdir(backups);
+  expect(names).toHaveLength(1);
+  const name = names[0];
+  if (!name) throw new Error("Missing recovery copy");
+  const backup = join(backups, name);
+  expect(await readFile(backup, "utf8")).toBe(original);
+  if (POSIX_MODES) expect((await stat(backup)).mode & 0o077).toBe(0);
+  const restored = await tempDir();
+  await writeFile(join(restored, "kimi.json"), await readFile(backup));
+  expect(await readFile(join(restored, "kimi.json"), "utf8")).toBe(original);
+  expect(JSON.parse(await readFile(path, "utf8")).customSetting).toBeUndefined();
+});
 
 test("writes one manifest per agent, and reads back as valid JSON", async () => {
   const targetDir = await tempDir();

@@ -22,7 +22,7 @@
  * may be the thing that broke.
  */
 import { Component, type ReactNode } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useThemeStyles } from "../appearance";
 import type { AppTheme } from "../theme";
 
@@ -106,16 +106,16 @@ function makeStyles(theme: AppTheme) {
     fontSize: theme.font.tiny,
     // System monospace, always present. A stack trace in a proportional face is
     // materially harder to read, and this is the part worth reporting.
-    fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
+    fontFamily: theme.display.monospace,
   },
   button: {
-    backgroundColor: theme.color.accent,
+    backgroundColor: theme.color.accentSolid,
     borderRadius: theme.radius.pill,
     paddingVertical: theme.space(3),
     alignItems: "center",
   },
-  buttonPressed: { opacity: 0.85 },
-  buttonText: { color: "#ffffff", fontSize: theme.font.body, fontWeight: "600" },
+  buttonPressed: { opacity: 0.9 },
+  buttonText: { color: theme.color.accentText, fontSize: theme.font.body, fontWeight: "600" },
   });
 }
 ;

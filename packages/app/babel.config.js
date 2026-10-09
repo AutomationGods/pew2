@@ -29,12 +29,13 @@
  * has nothing to gain and a bad failure mode. Widen this only after the UI has
  * been through a real session on a device.
  *
- * Of the 33 components in scope, 25 are memoised and 8 are left exactly as
- * written. That split is not arbitrary and is worth knowing before reading a
- * profile: the compiler refuses any component that assigns to a Reanimated
- * shared value from a callback — `Composer`, `ComposerDock`, `ShimmerText`,
- * `ActivityLine`, `TurnReceipt`, `ThoughtSheet`, `ConfigPicker` — because it
- * cannot prove that write is safe, and `ErrorBoundary` because it is a class.
+ * Most components in scope are memoised; a handful are left exactly as written
+ * (the last count, before the model picker became a native menu, was 25 of 33).
+ * That split is not arbitrary and is worth knowing before reading a profile:
+ * the compiler refuses any component that assigns to a Reanimated shared value
+ * from a callback — `Composer`, `ComposerDock`, `ShimmerText`, `ActivityLine`,
+ * `TurnReceipt`, `ThoughtSheet` — because it cannot prove that write is safe,
+ * and `ErrorBoundary` because it is a class.
  * Those are the files whose hand-written memoisation is load-bearing rather
  * than belt-and-braces, so do not strip it out of them.
  *

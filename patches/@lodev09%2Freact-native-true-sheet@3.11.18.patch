@@ -1,0 +1,29 @@
+diff --git a/ios/TrueSheetView.mm b/ios/TrueSheetView.mm
+index 948a6623d45e45a61ef8f0456b2c0e8ea12b0ae2..edb674a410a442be5105d11681c3936de3bbafe8 100644
+--- a/ios/TrueSheetView.mm
++++ b/ios/TrueSheetView.mm
+@@ -339,6 +339,24 @@ - (void)finalizeUpdates:(RNComponentViewUpdateMask)updateMask {
+ - (void)prepareForRecycle {
+   [super prepareForRecycle];
+ 
++  // Fabric recycles this view on unmount rather than deallocating it, so the
++  // dismissal in -dealloc never runs: a sheet unmounted while presented was
++  // left on screen (showing a snapshot of its content) with window
++  // accessibility still redirected to it. Dismiss it here instead.
++  UIViewController *presenter = _controller.presentingViewController;
++  if (presenter && !_controller.isBeingDismissed) {
++    id<UIViewControllerTransitionCoordinator> coordinator = _controller.transitionCoordinator;
++    if (coordinator) {
++      // Still arriving: UIKit ignores a dismissal issued mid-presentation.
++      [coordinator animateAlongsideTransition:nil
++                                   completion:^(id<UIViewControllerTransitionCoordinatorContext> context) {
++                                     [presenter dismissViewControllerAnimated:YES completion:nil];
++                                   }];
++    } else {
++      [presenter dismissViewControllerAnimated:YES completion:nil];
++    }
++  }
++
+   [TrueSheetModule unregisterViewWithTag:@(self.tag)];
+ 
+   _lastStateSize = CGSizeZero;

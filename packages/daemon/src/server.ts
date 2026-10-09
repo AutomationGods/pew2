@@ -19,12 +19,23 @@ import { SecureChannel, e2e, envelopeHeader, wire } from "@pew2/protocol";
 import { handleMessage } from "./handler.js";
 import { RelayClient } from "./relay-client.js";
 import { hostname } from "node:os";
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+import { logDir } from "./logs.js";
+import { createTrace, noTrace, openTraceFile, traceMessage } from "./trace.js";
 import { daemonLogPaths, rotateLog, startLogRotation } from "./logs.js";
 import { sweepOrphans } from "./children.js";
 import { startUpdateScheduler } from "./update/scheduler.js";
 import type { ServerWebSocket } from "bun";
 
 const PORT = Number(process.env.PEW2_PORT ?? 8787);
+const traceSink = (() => {
+  if (process.env.PEW2_LOG_LEVEL !== "silly") return undefined;
+  try { return openTraceFile(join(logDir(), "trace.log")); }
+  catch { console.error("[trace] could not open diagnostic log; tracing disabled"); return undefined; }
+})();
+const trace = traceSink ? createTrace({ enabled: true, write: traceSink.write }) : noTrace;
+trace("daemon.start", { pid: process.pid });
 
 // Under launchd this process's stdout is an append-only file that nothing else
 // ever trims. Done here first, before anything is written.
@@ -54,6 +65,8 @@ const pairing = await loadPairing();
 const daemon = new Daemon(
   { id: "local", name: "this machine" },
   process.env.PEW2_EXPERIMENTAL === "1",
+  process.env,
+  trace,
 );
 /**
  * The pairing key, as bytes.
@@ -112,6 +125,7 @@ function admitDevice(deviceId: string): ClaimDecision {
  * each other's traffic as replays.
  */
 interface Client {
+  connectionId: string;
   channel: SecureChannel;
   /** True once a valid `hello` proof has arrived. */
   authenticated: boolean;
@@ -139,6 +153,7 @@ const clients = new Map<ServerWebSocket<unknown>, Client>();
  * shape of a conversation to whoever opened it.
  */
 function broadcast(message: unknown, header: { sid?: string; seq?: number } = {}) {
+  traceMessage(trace, "wire.broadcast", message, { transport: "lan", connections: clients.size });
   for (const [ws, client] of clients) {
     if (!client.authenticated) continue;
     try {
@@ -159,6 +174,7 @@ function broadcast(message: unknown, header: { sid?: string; seq?: number } = {}
 const relay = pairing.relay
   ? new RelayClient({
       daemon,
+      trace,
       url: pairing.relay,
       token: pairing.token,
       key: pairing.key,
@@ -191,6 +207,7 @@ for (const error of errors) console.error(error.message);
 function send(ws: ServerWebSocket<unknown>, message: unknown) {
   const client = clients.get(ws);
   if (!client) return;
+  traceMessage(trace, "wire.out", message, { transport: "lan", connectionId: client.connectionId, deviceId: client.deviceId });
   ws.send(JSON.stringify(client.channel.seal(message, envelopeHeader(message))));
 }
 
@@ -224,13 +241,17 @@ const server = Bun.serve({
 
   websocket: {
     open(ws) {
-      clients.set(ws, { channel: new SecureChannel(rootKey, "daemon"), authenticated: false });
+      const connectionId = randomUUID();
+      clients.set(ws, { connectionId, channel: new SecureChannel(rootKey, "daemon"), authenticated: false });
+      trace("transport.open", { transport: "lan", connectionId, connections: clients.size });
       // Cleartext, and one of the few frames that can be: it carries no content,
       // and the client has not proved it can decrypt anything yet.
       sendPlain(ws, { t: "ready", wire: wire.WIRE_VERSION, now: Date.now() });
     },
 
-    close(ws) {
+    close(ws, code) {
+      const client = clients.get(ws);
+      trace("transport.close", { transport: "lan", connectionId: client?.connectionId, deviceId: client?.deviceId, authenticated: client?.authenticated, code });
       clients.delete(ws);
     },
 
@@ -244,6 +265,7 @@ const server = Bun.serve({
       try {
         frame = JSON.parse(raw);
       } catch {
+        trace("frame.rejected", { transport: "lan", connectionId: client.connectionId, reason: "invalid-json", bytes: raw.length });
         return;
       }
 
@@ -261,6 +283,7 @@ const server = Bun.serve({
         // told to update rather than silently refused as unauthenticated.
         const mismatch = wire.wireMismatch(hello.wire);
         if (mismatch) {
+          trace("handshake.rejected", { transport: "lan", connectionId: client.connectionId, reason: "wire-version" });
           sendPlain(ws, { t: "error", code: "wire-version", message: mismatch });
           ws.close(1002, "protocol version");
           return;
@@ -268,6 +291,7 @@ const server = Bun.serve({
 
         const deviceId = typeof hello.deviceId === "string" ? hello.deviceId : "";
         if (!deviceId || !client.channel.verifyProof(hello.proof, deviceId)) {
+          trace("handshake.rejected", { transport: "lan", connectionId: client.connectionId, reason: "proof" });
           sendPlain(ws, {
             t: "error",
             code: "unpaired",
@@ -283,6 +307,7 @@ const server = Bun.serve({
         // already holds the key, which a leaked link does give them.
         const decision = admitDevice(deviceId);
         if (!decision.ok) {
+          trace("handshake.rejected", { transport: "lan", connectionId: client.connectionId, deviceId, reason: "device-refused" });
           // Named, though this socket serves one device and needs no routing.
           // The relay path must address its refusals or they reach the phone
           // that owns the pairing, and a frame that means the same thing on both
@@ -303,6 +328,7 @@ const server = Bun.serve({
         // zero. Same call as the relay transport makes, so one rule covers both:
         // a sealed frame is only read from a sender that proved it holds the key.
         client.channel.acceptHandshake(deviceId);
+        trace("handshake.accepted", { transport: "lan", connectionId: client.connectionId, deviceId, count: Object.keys(wire.readCursors(hello.cursors)).length });
         // Confirmed first, and not behind the provider scan.
         //
         // `refreshProviders` reads every manifest off disk, which is slow on a
@@ -330,16 +356,25 @@ const server = Bun.serve({
       // Anything else must be a sealed frame from an authenticated peer. An
       // unauthenticated socket is ignored entirely rather than answered, so it
       // learns nothing from what it does or does not get back.
-      if (!client.authenticated || !client.deviceId) return;
+      if (!client.authenticated || !client.deviceId) {
+        trace("frame.rejected", { transport: "lan", connectionId: client.connectionId, reason: "unproven" });
+        return;
+      }
       // The device this socket actually proved itself as — not the default, which
       // would open a window nothing was verified against.
       const message = client.channel.open(frame, client.deviceId);
-      if (message === undefined) return;
+      if (message === undefined) {
+        trace("frame.rejected", { transport: "lan", connectionId: client.connectionId, reason: "decrypt-or-replay" });
+        return;
+      }
+      traceMessage(trace, "wire.in", message, { transport: "lan", connectionId: client.connectionId, deviceId: client.deviceId, bytes: raw.length });
 
       // Shared with the relay transport, so a message type can never work on
       // one path and not the other.
       await handleMessage(JSON.stringify(message), {
         daemon,
+        trace,
+        transport: "lan",
         deviceId: client.deviceId,
         reply: (reply) => send(ws, reply),
         broadcast: (event) => {
@@ -425,6 +460,7 @@ process.on("unhandledRejection", (error) => console.error("[unhandled]", error))
  * so. SIGHUP is included for a terminal that closes on a foreground run.
  */
 function releaseEverything() {
+  trace("daemon.shutdown", { pid: process.pid });
   stopWatching();
   relay?.stop();
   daemon.closeAll();

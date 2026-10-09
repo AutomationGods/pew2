@@ -617,6 +617,12 @@ export const Replay = z.object({
    */
   working: z.boolean().optional(),
   /**
+   * Current selectors on reconnect. `session.config` is not logged, so a
+   * missed frame cannot be recovered from transcript events. Absent means an
+   * older daemon or a session still attaching; leave known settings alone.
+   */
+  configOptions: z.array(ConfigOption).optional(),
+  /**
    * Approval requests this session is still blocked on, on a catch-up frame.
    *
    * The one piece of a turn that a replayed event stream cannot carry. A

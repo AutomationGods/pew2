@@ -13,7 +13,7 @@
  */
 import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon, type IconName } from "./Icon";
 import { useAppTheme, useThemeStyles } from "../appearance";
 import type { AppTheme } from "../theme";
 import { touchSlop } from "./controls";
@@ -29,7 +29,7 @@ interface AttachmentSheetProps {
 
 const SOURCES: {
   id: AttachmentSource;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IconName;
   label: string;
   hint: string;
 }[] = [
@@ -60,7 +60,7 @@ function AttachmentSheetView({ visible, onSelect, onClose }: AttachmentSheetProp
             accessibilityLabel={`${source.label}. ${source.hint}`}
             onPress={() => onSelect(source.id)}
           >
-            <Ionicons name={source.icon} size={20} color={theme.color.text} />
+            <Icon name={source.icon} size={20} color={theme.color.text} />
             <View style={styles.labels}>
               <Text style={styles.label} numberOfLines={1}>
                 {source.label}

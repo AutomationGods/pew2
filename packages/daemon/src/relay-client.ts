@@ -13,10 +13,12 @@
  * than no remote access at all.
  */
 import { handleMessage } from "./handler.js";
+import { noTrace, traceMessage, type Trace } from "./trace.js";
 import { SecureChannel, e2e, envelopeHeader, wire } from "@pew2/protocol";
 import type { Daemon } from "./index.js";
 
 export interface RelayClientOptions {
+  trace?: Trace;
   daemon: Daemon;
   /** Relay origin, e.g. `wss://relay.example.com`. */
   url: string;
@@ -97,7 +99,11 @@ export class RelayClient {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
 
-  constructor(private readonly options: RelayClientOptions) {}
+  private readonly trace: Trace;
+
+  constructor(private readonly options: RelayClientOptions) {
+    this.trace = options.trace ?? noTrace;
+  }
 
   /**
    * Point this client at a new pairing and reconnect into its room.
@@ -151,7 +157,11 @@ export class RelayClient {
 
   /** Push a sealed message to the relay. Silently dropped while offline. */
   send(message: unknown): void {
-    if (this.socket?.readyState !== WebSocket.OPEN || !this.channel) return;
+    if (this.socket?.readyState !== WebSocket.OPEN || !this.channel) {
+      traceMessage(this.trace, "wire.offline", message, { transport: "relay" });
+      return;
+    }
+    traceMessage(this.trace, "wire.out", message, { transport: "relay", buffered: this.socket.bufferedAmount });
     try {
       this.socket.send(JSON.stringify(this.channel.seal(message, envelopeHeader(message))));
     } catch {
@@ -165,6 +175,7 @@ export class RelayClient {
   }
 
   private status(status: RelayStatus, detail?: string) {
+    this.trace("relay.status", { transport: "relay", status, attempt: this.attempts });
     this.options.onStatus?.(status, detail);
   }
 
@@ -222,6 +233,7 @@ export class RelayClient {
       try {
         frame = JSON.parse(raw);
       } catch {
+        this.trace("frame.rejected", { transport: "relay", reason: "invalid-json", bytes: raw.length });
         return;
       }
 
@@ -244,6 +256,7 @@ export class RelayClient {
         // rather than dismissed as unpaired — different problems, different fixes.
         const mismatch = wire.wireMismatch(hello.wire);
         if (mismatch) {
+          this.trace("handshake.rejected", { transport: "relay", reason: "wire-version" });
           socket.send(JSON.stringify({ t: "error", code: "wire-version", message: mismatch }));
           return;
         }
@@ -258,8 +271,10 @@ export class RelayClient {
         // device's replay protection without holding the key at all: whoever
         // knew the relay room id could then replay a captured `session.permission`
         // and re-approve a tool call the user approved once.
-        if (!deviceId) return;
-        if (!this.channel.verifyProof(hello.proof, deviceId)) return;
+        if (!deviceId || !this.channel.verifyProof(hello.proof, deviceId)) {
+          this.trace("handshake.rejected", { transport: "relay", reason: "proof" });
+          return;
+        }
 
         // One pairing, one device. Enforced here as well as on the LAN socket:
         // a leaked link is most useful to an attacker from off the network, so
@@ -272,6 +287,7 @@ export class RelayClient {
         // the handshake it depends on.
         const decision = this.options.admitDevice?.(deviceId);
         if (decision && !decision.ok) {
+          this.trace("handshake.rejected", { transport: "relay", deviceId, reason: "device-refused" });
           // Cleartext, like the version mismatch above and for the same reason:
           // this refusal is what stops the channel being established, so there
           // is no sealed path to send it down. It carries no user content — only
@@ -294,6 +310,7 @@ export class RelayClient {
           return;
         }
         this.channel.acceptHandshake(deviceId);
+        this.trace("handshake.accepted", { transport: "relay", deviceId, count: Object.keys(wire.readCursors(hello.cursors)).length });
 
         // The app may have been waiting here long before this machine woke up,
         // so re-announce rather than assume it saw the last list.
@@ -337,10 +354,16 @@ export class RelayClient {
       const sender = (frame as { from?: unknown }).from;
       if (typeof sender !== "string" || sender === "") return;
       const message = this.channel.open(frame, sender);
-      if (message === undefined) return;
+      if (message === undefined) {
+        this.trace("frame.rejected", { transport: "relay", deviceId: sender, reason: "decrypt-or-replay" });
+        return;
+      }
+      traceMessage(this.trace, "wire.in", message, { transport: "relay", deviceId: sender, bytes: raw.length });
 
       void handleMessage(JSON.stringify(message), {
         daemon: this.options.daemon,
+        trace: this.trace,
+        transport: "relay",
         // The relay stamps each sealed frame with the sending socket's device
         // id, and `open` above only succeeded because that id's channel state
         // decrypted it — so this is the sender the frame was actually verified
@@ -359,11 +382,13 @@ export class RelayClient {
     };
 
     socket.onerror = () => {
+      this.trace("transport.error", { transport: "relay" });
       // Errors are always followed by close; retrying here as well would open
       // two sockets for one failure.
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
+      this.trace("transport.close", { transport: "relay", code: event.code, attempt: this.attempts });
       this.clearTimers();
       // Only tear down state that still belongs to *this* socket. `rekey`
       // closes the old one and immediately opens a new one, and `onclose`
@@ -412,6 +437,7 @@ export class RelayClient {
     const delay = backoff / 2 + Math.random() * (backoff / 2);
     this.attempts++;
 
+    this.trace("relay.retry", { transport: "relay", attempt: this.attempts, delayMs: Math.round(delay) });
     this.retryTimer = setTimeout(() => this.connect(), delay);
     this.retryTimer.unref?.();
   }

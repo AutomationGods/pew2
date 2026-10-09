@@ -9,7 +9,8 @@
  * Pure and react-free so the rule is directly testable: the failure it prevents
  * is invisible in a typecheck and looks perfectly normal on screen.
  */
-import type { ConfigOption } from "./useDaemon";
+import { wire } from "@pew2/protocol";
+import type { ConfigOption, Session } from "./useDaemon";
 
 /**
  * What a new conversation with each agent will open with.
@@ -26,6 +27,28 @@ export function rememberConfigs(
 ): Record<string, ConfigOption[]> {
   if (!providerId || options.length === 0) return known;
   return { ...known, [providerId]: options };
+}
+
+/** File settings against their conversation, independently of the visible chat. */
+export function recordSessionConfigs<S extends { configOptions: ConfigOption[]; sessions: Session[] }>(
+  state: S,
+  sessionId: unknown,
+  incoming: unknown,
+  visibleSessionId: string | undefined,
+): S {
+  if (typeof sessionId !== "string" || !state.sessions.some((session) => session.id === sessionId)) {
+    return state;
+  }
+  const parsed = wire.ConfigOption.array().safeParse(incoming);
+  if (!parsed.success) return state;
+  const configOptions = parsed.data;
+  return {
+    ...state,
+    configOptions: sessionId === visibleSessionId ? configOptions : state.configOptions,
+    sessions: state.sessions.map((session) =>
+      session.id === sessionId ? { ...session, configOptions } : session,
+    ),
+  };
 }
 
 /** Apply one chosen value to a remembered list, leaving the rest alone. */

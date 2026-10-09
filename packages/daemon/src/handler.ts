@@ -12,6 +12,7 @@
  * desktop watching one session both need the update.
  */
 import type { Daemon } from "./index.js";
+import { noTrace, traceMessage, type Trace } from "./trace.js";
 import { humanError } from "./errors.js";
 import { loadImage } from "./images.js";
 import { workspaceStatus } from "./git.js";
@@ -21,6 +22,8 @@ import { wire } from "@pew2/protocol";
 import { pushAgentNotice, pushFinishedTurn } from "./push.js";
 
 export interface HandlerContext {
+  trace?: Trace;
+  transport?: "lan" | "relay";
   daemon: Daemon;
   /** Send to the one client that sent this message. */
   reply: (message: unknown) => void;
@@ -75,6 +78,8 @@ export function errorMessage(code: string, error: unknown) {
  */
 export async function handleMessage(raw: string, ctx: HandlerContext): Promise<void> {
   const { daemon, reply, broadcast } = ctx;
+  const trace = ctx.trace ?? noTrace;
+  const startedAt = Date.now();
   // A headless daemon (launchd) has cwd `/`; an agent spawned there writes its
   // state into the filesystem root or fails trying. Resolve to somewhere real.
   const cwd = resolveWorkspace(ctx.cwd);
@@ -83,6 +88,7 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
   try {
     parsed = JSON.parse(raw);
   } catch {
+    trace("request.rejected", { reason: "invalid-json" });
     reply(errorMessage("bad_json", "Message was not valid JSON"));
     return;
   }
@@ -94,6 +100,7 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
   // rules further down are checking a string that is definitely a string.
   const result = wire.ClientMessage.safeParse(parsed);
   if (!result.success) {
+    trace("request.rejected", { reason: "invalid-message" });
     // Told apart from a malformed type on purpose: an app newer than this daemon
     // sends things it has never heard of, and that is "you are out of date",
     // not "your message was wrong".
@@ -107,6 +114,7 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
     return;
   }
   const message = result.data;
+  traceMessage(trace, "request.begin", message, { deviceId: ctx.deviceId, transport: ctx.transport });
 
   try {
     switch (message.t) {
@@ -290,9 +298,11 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         // Deliberately not awaited: a turn can run for minutes, and the client
         // is driven by streamed events rather than this reply.
         const sessionId = message.sessionId;
+        const sharedDesktop = daemon.isSharedDesktop(sessionId);
         daemon
           .prompt(sessionId, message.text, attachments)
           .then(() => {
+            if (sharedDesktop) return;
             // Push delivery is optional and can take ten seconds; never delay idle.
             void pushFinishedTurn(daemon.pushTargets, {
               sessionId,
@@ -311,6 +321,8 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
           })
           // Always stop every client's working indicator, including failures.
           .finally(() => {
+            // Desktop owner notifications, not this request, end shared turns.
+            if (sharedDesktop) return;
             broadcast({
               t: "session.idle",
               sessionId,
@@ -499,6 +511,9 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         return;
     }
   } catch (error) {
+    traceMessage(trace, "request.failed", message, { deviceId: ctx.deviceId, transport: ctx.transport, ms: Date.now() - startedAt });
     reply(errorMessage("command_failed", error));
+  } finally {
+    traceMessage(trace, "request.end", message, { deviceId: ctx.deviceId, transport: ctx.transport, ms: Date.now() - startedAt });
   }
 }

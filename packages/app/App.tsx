@@ -8,8 +8,9 @@
  * The approval sheet is the reason this app exists, so it is a blocking,
  * unmissable surface rather than an inline row that can scroll away.
  */
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   AppState,
@@ -33,10 +34,11 @@ import Reanimated, {
   withTiming,
 } from "react-native-reanimated";
 import { StatusBar } from "expo-status-bar";
-import Ionicons from "@expo/vector-icons/Ionicons";
-import type { AppTheme } from "./src/theme";
+import { Icon } from "./src/ui/Icon";
+import { motion, nativeMotionEasings, type AppTheme } from "./src/theme";
 import { AppearanceProvider, useAppTheme, useThemeStyles } from "./src/appearance";
 import { useDaemon, type Provider, type TurnFinished } from "./src/useDaemon";
+import { foregroundState } from "./src/connectionRecovery";
 import { currentTool } from "./src/activity";
 import { dockHeightFor, recordDockHeight, type DockHeights } from "./src/dockHeight";
 import { finishedNotice } from "./src/notificationPolicy";
@@ -62,20 +64,22 @@ import { useDictation } from "./src/ui/useDictation";
 import { ApprovalSheet } from "./src/ui/ApprovalSheet";
 import { ThoughtSheet } from "./src/ui/ThoughtSheet";
 import { applyCommand, type SlashCommand } from "./src/slashCommands";
-import { CircleButton } from "./src/ui/controls";
+import { BarButton, CircleButton } from "./src/ui/controls";
 import { haptics } from "./src/ui/haptics";
 import { Sidebar, DRAWER_WIDTH } from "./src/ui/Sidebar";
 import { projectsForProvider, projectSourceKey } from "./src/projects";
 import { greetingFor, hashSeed } from "./src/greeting";
 import { showsStop } from "./src/composerState";
-import { ConfigPicker } from "./src/ui/ConfigPicker";
+import { summarise, valueName } from "./src/ui/configSlots";
+import { configMenuSections, parseChoiceId } from "./src/ui/configMenu";
+import { ConfigSelector } from "./src/ui/ConfigSelector";
 import { useReducedMotion } from "./src/ui/useReducedMotion";
 import { CanvasCover } from "./src/ui/CanvasCover";
-import { withLayoutX, type PillX } from "./src/ui/pillAnchor";
 import { PairingScreen } from "./src/ui/PairingScreen";
 import { LaunchScreen } from "./src/ui/LaunchScreen";
 import { clearPairing, loadPairing, savePairing, type Pairing } from "./src/pairing";
 import { clearCachedProviders } from "./src/preferences";
+import { forgetConnection, withPairingStorageWarning } from "./src/reconnect";
 import * as SplashScreen from "expo-splash-screen";
 import { clearCrash, readCrash } from "./src/crashLog";
 import * as Clipboard from "expo-clipboard";
@@ -139,7 +143,7 @@ function AppWithAppearance() {
             it. Coordinating two animation systems made the thread land twice. */}
         <KeyboardProvider>
           <SafeAreaProvider>
-            <Root />
+            <PairingGate connected={(pairing, onUnpair) => <Pew2 pairing={pairing} onUnpair={onUnpair} />} />
           </SafeAreaProvider>
         </KeyboardProvider>
       </GestureHandlerRootView>
@@ -155,14 +159,17 @@ function AppWithAppearance() {
  * open a socket to nowhere, so this holds a neutral screen for the frame it
  * takes, and shows the pairing screen when nothing is stored.
  */
-function Root() {
+/** The connected surface is separate so native harnesses never start a daemon socket. */
+export function PairingGate({ connected }: {
+  connected: (pairing: Pairing, onUnpair: () => void) => ReactNode;
+}): ReactNode {
   const { theme: appTheme } = useAppTheme();
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [checked, setChecked] = useState(false);
   // Whether the user has moved past the launch screen. Not persisted: it only
   // exists between opening the app and pairing, and a stored pairing skips it
   // entirely.
-  const [connecting, setConnecting] = useState(false);
+  const [connecting, setConnecting] = useState<false | "manual" | "scan">(false);
 
   useEffect(() => {
     let alive = true;
@@ -208,8 +215,7 @@ function Root() {
     // Connect regardless of whether the keychain accepted it. A locked or
     // unavailable keychain costs the user a re-pair next launch; blocking on it
     // would strand them on this screen with a spinner and no way forward.
-    void savePairing(next)
-      .catch(() => {})
+    return withPairingStorageWarning("save", () => savePairing(next), Alert.alert)
       .then(() => setPairing(next));
   }, []);
 
@@ -220,22 +226,23 @@ function Root() {
     // The remembered agent list goes with it. It describes one specific machine,
     // so keeping it would offer the next computer agents it may not have — and
     // "Forget this computer" ought to mean it.
-    void Promise.all([clearPairing(), clearCachedProviders()])
-      .catch(() => {})
-      .then(() => {
+    void withPairingStorageWarning("forget", () => forgetConnection({
+      clearPairing,
+      clearProviders: clearCachedProviders,
+      openPairing: () => {
         setPairing(null);
-        // Back to the launch screen rather than straight to the form, so
-        // disconnecting lands somewhere deliberate.
-        setConnecting(false);
-      });
+        // A deliberate reconnect goes straight to scanning, even offline.
+        setConnecting("scan");
+      },
+    }), Alert.alert);
   }, []);
 
   if (!checked) return <View style={{ flex: 1, backgroundColor: appTheme.color.bg }} />;
   // A paired device never sees the launch screen: it has a machine already, and
   // an extra tap on every cold start would be pure friction.
-  if (pairing) return <Pew2 pairing={pairing} onUnpair={unpair} />;
-  if (!connecting) return <LaunchScreen onConnect={() => setConnecting(true)} />;
-  return <PairingScreen onPaired={pair} onBack={() => setConnecting(false)} />;
+  if (pairing) return connected(pairing, unpair);
+  if (!connecting) return <LaunchScreen onConnect={() => setConnecting("manual")} />;
+  return <PairingScreen onPaired={pair} onBack={() => setConnecting(false)} startScanning={connecting === "scan"} />;
 }
 
 /**
@@ -257,7 +264,7 @@ const ORB_SETTLED_SCALE = 56 / ORB_REST_SIZE;
  * edge with a full conversation riding on it, and visible overshoot there reads
  * as the whole app sloshing rather than as a panel arriving.
  */
-const DRAWER_SETTLE = { duration: 340, dampingRatio: 0.95 } as const;
+const DRAWER_SETTLE = motion.drawerSpring;
 
 /**
  * A flick worth committing to, in points per second.
@@ -478,8 +485,11 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
   // a banner, which is the more delicate of the two orderings.
   const resumeDaemon = daemon.resumeNow;
   useEffect(() => {
-    const subscription = AppState.addEventListener("change", (next) => {
-      if (next === "active") resumeDaemon();
+    let backgrounded = AppState.currentState === "background";
+    const subscription = AppState.addEventListener("change", (state) => {
+      const next = foregroundState(backgrounded, state);
+      backgrounded = next.backgrounded;
+      if (state === "active") resumeDaemon(next.refresh);
     });
     return () => subscription.remove();
   }, [resumeDaemon]);
@@ -513,9 +523,6 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
   const [attachOpen, setAttachOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
-  // Which pill's menu is open, and where that pill sits, so the menu opens
-  // under it instead of always at the gutter.
-  const [picker, setPicker] = useState<"model" | "mode" | null>(null);
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [newChatOpen, setNewChatOpen] = useState(false);
   // The reasoning currently being read, if any. Held here rather than per turn
@@ -558,10 +565,6 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
   const [atBottom, setAtBottom] = useState(true);
   const jumpOpacity = useRef(new Animated.Value(0)).current;
 
-  const [pillX, setPillX] = useState<PillX>({
-    model: theme.gutter,
-    mode: theme.gutter,
-  });
   const reduceMotion = useReducedMotion();
   // How far the drawer is uncovered, 0 to 1.
   //
@@ -599,7 +602,7 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
   // are chosen in `pew2 setup`, and nothing on screen said so.
   const emptyReason = (providerCount: number): string =>
     providerCount === 0
-      ? "Getting the list of agents..."
+      ? "Getting the list of agents…"
       : "No agents are turned on. Run pew2 setup on your computer to choose some.";
 
   const active: Provider | undefined =
@@ -630,13 +633,16 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
   const selectedProject = projects.find((project) => project.path === selectedProjectPath);
   const currentSession = daemonSessions.find((session) => session.id === daemon.sessionId);
   const conversationTitle = currentSession?.title || selectedProject?.name || "New conversation";
-  const conversationContext = `${active?.name ?? "No agent"} · ${
-    daemon.status === "online"
-      ? "Connected"
-      : daemon.status === "connecting"
-        ? "Connecting"
-        : "Offline"
-  }`;
+  // Under the title, like the contact line in Messages: which agent, on which
+  // model. Connection state only when it is not the normal case, since a
+  // permanent "Connected" is noise the dot on the menu button already covers.
+  const modelName = valueName(summarise(daemon.configOptions).model);
+  const conversationContext = [
+    active?.name ?? "No agent",
+    daemon.status === "online" ? modelName : daemon.status === "connecting" ? "Connecting" : "Offline",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const selectProject = useCallback(
     (path?: string) => {
       if (activeId) selectDaemonProject(activeId, path);
@@ -696,6 +702,23 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
     () => greetingFor(active?.name, hashSeed(`${greetingRound}:${active?.id ?? ""}`)),
     [greetingRound, active?.id, active?.name],
   );
+  // One message for sighted and screen-reader users, including failure states.
+  const emptyMessage = daemon.fatal
+    ? daemon.fatal
+    : daemon.unreachable
+      ? "Can't reach your machine."
+      : daemon.status !== "online"
+        ? "Connecting to your machine…"
+        : active
+          ? greeting
+          : emptyReason(daemon.providers.length);
+  const emptyAccessibilityLabel = [
+    active?.name ?? "No agent available",
+    selectedProject?.name ?? pairing.label,
+    daemon.status === "online" ? "Connected" : "Offline",
+    emptyMessage,
+    "Dismiss keyboard",
+  ].join("\n");
 
   useEffect(() => {
     // Every transcript opens on its newest message, so it starts at the bottom
@@ -805,6 +828,7 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
     const animation = Animated.timing(jumpOpacity, {
       toValue: atBottom ? 0 : 1,
       duration: reduceMotion ? 0 : theme.motion.fast,
+      easing: nativeMotionEasings.nativeTiming,
       useNativeDriver: true,
     });
     animation.start();
@@ -1200,7 +1224,20 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
     [answerDaemon],
   );
 
-  const closePicker = useCallback(() => setPicker(null), []);
+  // The title's menu: every selector the agent advertises, model first.
+  const configSections = useMemo(
+    () => configMenuSections(daemon.configOptions),
+    [daemon.configOptions],
+  );
+  const setConfig = daemon.setConfig;
+  const selectConfig = useCallback(
+    (id: string) => {
+      const choice = parseChoiceId(id);
+      // Section headers carry ids too, but iOS never reports a tap on one.
+      if (choice) setConfig(choice.configId, choice.value);
+    },
+    [setConfig],
+  );
 
   // Images the agent named by path live on the desktop, and the socket is the
   // only way to them. Provided here rather than passed down because pictures
@@ -1272,12 +1309,12 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
         onLayout={(e) => setNavHeight(e.nativeEvent.layout.height)}
       >
         <View>
-          <CircleButton
+          <BarButton
             label={`Open menu. Daemon ${daemon.status}.`}
             onPress={() => setMenuOpen(true)}
           >
-            <Ionicons name="menu" size={20} color={theme.color.text} />
-          </CircleButton>
+            <Icon name="menu" size={22} color={theme.color.text} />
+          </BarButton>
           {/* Connection state as a dot on the menu button: always visible, but
               it never competes with the model name for space. */}
           {daemon.status !== "online" && (
@@ -1295,27 +1332,48 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
           )}
         </View>
 
-        <View style={styles.conversationIdentity}>
-          <Text style={styles.conversationTitle} numberOfLines={1}>{conversationTitle}</Text>
-          <Text style={styles.conversationContext} numberOfLines={1}>{conversationContext}</Text>
-        </View>
-
-        {daemon.configOptions.length > 0 && (
-          <View onLayout={(e) => setPillX(withLayoutX(e, "model"))}>
-            <CircleButton label="Session settings" onPress={() => setPicker("model")}>
-              <Ionicons name="options-outline" size={19} color={theme.color.text} />
-            </CircleButton>
+        {/* Model and thinking choices: scrollable lists on Android, the
+            system title menu on iOS. Both share the same saved config path. */}
+        {configSections.length > 0 ? (
+          <ConfigSelector
+            style={styles.conversationIdentity}
+            sections={configSections}
+            onSelect={selectConfig}
+            accessibilityLabel={`${conversationTitle}. ${conversationContext}.`}
+            accessibilityHint="Change model, thinking, and mode"
+          >
+            <View style={styles.titleContent}>
+              <View style={styles.titleRow}>
+                <Text style={styles.conversationTitle} numberOfLines={1}>{conversationTitle}</Text>
+                <Icon name="chevron-down" size={11} color={theme.color.textDim} weight="semibold" />
+              </View>
+              <Text style={styles.conversationContext} numberOfLines={1}>{conversationContext}</Text>
+            </View>
+          </ConfigSelector>
+        ) : (
+          <View
+            style={[styles.conversationIdentity, styles.titleContent]}
+            accessible
+            accessibilityRole="header"
+            accessibilityLabel={`${conversationTitle}. ${conversationContext}.`}
+          >
+            <Text style={styles.conversationTitle} numberOfLines={1}>{conversationTitle}</Text>
+            <Text style={styles.conversationContext} numberOfLines={1}>{conversationContext}</Text>
           </View>
         )}
 
-        {inThread && (
-          // Asks where, rather than starting one immediately: the old behaviour
-          // always landed wherever the agent happened to be, which is the wrong
-          // project as often as the right one and was unfixable from the phone.
-          <CircleButton label="New conversation" onPress={() => setNewChatOpen(true)}>
-            <Ionicons name="create-outline" size={18} color={theme.color.text} />
-          </CircleButton>
-        )}
+        {/* Holds the right-hand slot even outside a thread, so the title stays
+            centred instead of drifting when the compose button comes and goes. */}
+        <View style={styles.barSlot}>
+          {inThread && (
+            // Asks where, rather than starting one immediately: the old behaviour
+            // always landed wherever the agent happened to be, which is the wrong
+            // project as often as the right one and was unfixable from the phone.
+            <BarButton label="New conversation" onPress={() => setNewChatOpen(true)}>
+              <Icon name="create-outline" size={21} color={theme.color.text} />
+            </BarButton>
+          )}
+        </View>
       </View>
 
       {/* Frosted cover for the nav zone only — it ends exactly at the nav's
@@ -1353,8 +1411,22 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
             onRefresh={daemon.refreshNow}
             onOpenThought={openThought}
             onRetry={retrySend}
+            onCancelQueued={daemon.sessionId ? daemon.cancelQueued : undefined}
           />
-        ) : !daemon.loadingSession ? (
+        ) : daemon.loadingSession ? (
+          <Reanimated.View style={[styles.greetingLift, keyboard.centred]}>
+            <View
+              style={styles.conversationLoading}
+              accessible
+              accessibilityLabel="Loading conversation"
+              accessibilityState={{ busy: true }}
+              accessibilityLiveRegion="polite"
+            >
+              <ActivityIndicator color={theme.color.textDim} />
+              <Text style={styles.greetingText}>Loading conversation…</Text>
+            </View>
+          </Reanimated.View>
+        ) : (
           // Cancels half the pane's lift, so the greeting settles in the middle
           // of the shrunken screen instead of riding the composer all the way up.
           <Reanimated.View style={[styles.greetingLift, keyboard.centred]}>
@@ -1364,7 +1436,7 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
             <Pressable
               style={styles.greeting}
               accessibilityRole="button"
-              accessibilityLabel="Dismiss keyboard"
+              accessibilityLabel={emptyAccessibilityLabel}
               onPress={Keyboard.dismiss}
             >
               <Reanimated.View style={[styles.workspaceContext, keyboard.settled]}>
@@ -1395,19 +1467,11 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
                     advice most of the times they are read, and unfollowable
                     anyway from wherever the user is standing. What can be done
                     from here is keep typing, which the composer now says. */}
-                {daemon.fatal
-                  ? daemon.fatal
-                  : daemon.unreachable
-                    ? "Can't reach your machine."
-                    : daemon.status !== "online"
-                      ? "Connecting to your machine..."
-                      : active
-                        ? greeting
-                        : emptyReason(daemon.providers.length)}
+                {emptyMessage}
               </Text>
             </Pressable>
           </Reanimated.View>
-        ) : null}
+        )}
 
         <View style={[styles.dockOverlay, { bottom: 0 }]}>
           {/* Only ever a way back down: there is no jump-to-top, because the top
@@ -1427,7 +1491,7 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
               }}
               size={theme.size.chip}
             >
-              <Ionicons name="arrow-down" size={18} color={theme.color.text} />
+              <Icon name="arrow-down" size={18} color={theme.color.text} />
             </CircleButton>
           </Animated.View>
           {dockHeight > 0 && (
@@ -1479,15 +1543,15 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
             editable={!daemon.fatal}
             placeholder={
               dictation.listening
-                ? "Listening..."
+                ? "Listening…"
                 : // Kept to one line: the collapsed pill is a single line tall,
                   // and a placeholder that wraps pushes its own second line out
                   // of the box — the state reads as broken rather than as calm.
                   daemon.status !== "online"
                   ? "Offline — sends when you reconnect"
                   : active
-                    ? "Ask me anything..."
-                    : "Waiting for an agent..."
+                    ? "Ask me anything…"
+                    : "Waiting for an agent…"
             }
             attachments={attachments}
             onAttach={openAttach}
@@ -1538,13 +1602,6 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
 
       <ThoughtSheet visible={thought !== null} text={thought ?? ""} onClose={closeThought} />
 
-      <ConfigPicker
-        visible={picker !== null}
-        onClose={closePicker}
-        anchorX={pillX.model}
-        options={daemon.configOptions}
-        onSelect={daemon.setConfig}
-      />
 
       {/* Last of every overlay on purpose. All the sheets share one zIndex, so
           paint order is sibling order — and an approval the agent is blocked on
@@ -1613,15 +1670,15 @@ function makeStyles(theme: AppTheme) {
   topBar: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.space(2),
-    // Shares theme.gutter and theme.headerInset with the drawer header, so the
-    // hamburger and the "Connected Apps" title it reveals sit on one rail and
-    // one baseline.
-    paddingHorizontal: theme.gutter,
+    gap: theme.space(1),
+    // Bar buttons are full touch targets with the glyph centred inside, so the
+    // inset is narrower than the gutter: the glyph lands back on the gutter
+    // rail the drawer header uses.
+    paddingHorizontal: theme.gutter - (theme.size.touch - 22) / 2,
     paddingVertical: theme.headerInset,
+    // No hairline: the frosted CanvasCover already separates bar from thread,
+    // and iOS drops the bar's shadow line while content scrolls under it.
     backgroundColor: theme.color.bg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.color.separator,
   },
   topBarOverlay: {
     position: "absolute",
@@ -1631,22 +1688,32 @@ function makeStyles(theme: AppTheme) {
     zIndex: 3,
   },
   navFade: { zIndex: 2 },
-  conversationIdentity: { flex: 1, minWidth: 0 },
+  conversationIdentity: { flex: 1, minWidth: 0, alignItems: "center" },
+  // Fills the menu's invisible button so the whole title is the target, not
+  // only the glyphs; the 44pt floor keeps a short title easy to hit.
+  titleContent: { minHeight: theme.size.touch, alignItems: "center", justifyContent: "center" },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: theme.space(1), maxWidth: "100%" },
+  // Shrinks before the chevron does, so a long title truncates instead of
+  // pushing the menu cue off the end.
   conversationTitle: {
     color: theme.color.text,
     fontSize: theme.font.body,
     fontWeight: "600",
+    flexShrink: 1,
   },
   conversationContext: {
     color: theme.color.textDim,
     fontSize: theme.font.tiny,
     marginTop: 1,
   },
+  barSlot: { width: theme.size.touch, height: theme.size.touch },
   topBarSpacer: { flex: 1 },
+  // On the glyph's top-right corner: the button box is a 44pt target around a
+  // 22pt glyph, so the box's own corner would float the dot off the icon.
   statusDot: {
     position: "absolute",
-    top: 0,
-    right: 0,
+    top: (theme.size.touch - 22) / 2 - 3,
+    right: (theme.size.touch - 22) / 2 - 3,
     width: 10,
     height: 10,
     borderRadius: 5,
@@ -1656,6 +1723,14 @@ function makeStyles(theme: AppTheme) {
 
 
   greetingLift: { flex: 1 },
+  conversationLoading: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.space(3),
+    paddingHorizontal: theme.gutter,
+    paddingBottom: theme.size.composerCollapsed,
+  },
   greeting: {
     flex: 1,
     alignItems: "stretch",

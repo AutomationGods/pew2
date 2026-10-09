@@ -7,8 +7,8 @@
  * confirmation. Tapping opens this instead — the picture at full size, with
  * Save and Share as ordinary buttons and the result stated in words.
  *
- * A real `Modal`, unlike `ConfigPicker`: this *is* leaving the conversation for
- * a moment, and the keyboard should drop.
+ * A real `Modal`, unlike the in-place menus: this *is* leaving the conversation
+ * for a moment, and the keyboard should drop.
  */
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
@@ -17,7 +17,7 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "rea
 // main-thread decode of bytes the app already holds.
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon } from "./Icon";
 import { useAppTheme, useThemeStyles } from "../appearance";
 import type { AppTheme } from "../theme";
 import { haptics } from "./haptics";
@@ -113,7 +113,7 @@ export function ImageViewer({
             onPress={onClose}
             style={styles.closeButton}
           >
-            <Ionicons name="close" size={20} color={theme.color.text} />
+            <Icon name="close" size={20} color={theme.color.text} />
           </Pressable>
         </View>
 
@@ -161,7 +161,7 @@ export function ImageViewer({
               {busy === "save" ? (
                 <ActivityIndicator color={theme.color.text} size="small" />
               ) : (
-                <Ionicons name="download-outline" size={18} color={theme.color.text} />
+                <Icon name="download-outline" size={18} color={theme.color.text} />
               )}
               <Text style={styles.buttonText}>Save</Text>
             </Pressable>
@@ -180,7 +180,7 @@ export function ImageViewer({
               {busy === "share" ? (
                 <ActivityIndicator color={theme.color.text} size="small" />
               ) : (
-                <Ionicons name="share-outline" size={18} color={theme.color.text} />
+                <Icon name="share-outline" size={18} color={theme.color.text} />
               )}
               <Text style={styles.buttonText}>Share</Text>
             </Pressable>

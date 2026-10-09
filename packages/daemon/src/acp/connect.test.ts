@@ -16,11 +16,13 @@
  */
 import { expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   connectProvider,
+  prepareProviderLaunch,
+  providerEnvironment,
   HANDSHAKE_TIMEOUT_MARKER,
   restoreMethodFor,
   withTimeout,
@@ -119,6 +121,73 @@ test("without the transcript, the replay is the only way to draw the thread", ()
   // never fills — worse than the 500ms it saves.
   expect(restoreMethodFor(false, true)).toBe("session/load");
   expect(restoreMethodFor(false, false)).toBe("session/load");
+});
+
+test("Windows child interpreters cannot reintroduce implicit or relative cwd search", () => {
+  const inherited = {
+    PEW2_FAKE_PLATFORM: "win32",
+    Path: '.;;".";relative;C:relative;"C:\\Program Files\\nodejs";D:\\bin',
+    NODEFAULTCURRENTDIRECTORYINEXEPATH: "",
+    OTHER_SETTING: "preserved",
+  };
+  const env = providerEnvironment(inherited);
+  expect(env.PATH).toBe("C:\\Program Files\\nodejs;D:\\bin");
+  expect(env.NoDefaultCurrentDirectoryInExePath).toBe("1");
+  expect(env.Path).toBeUndefined();
+  expect(env.NODEFAULTCURRENTDIRECTORYINEXEPATH).toBeUndefined();
+  expect(env.OTHER_SETTING).toBe("preserved");
+  expect(inherited.Path).toContain("relative");
+  expect(providerEnvironment({ PEW2_FAKE_PLATFORM: "win32" }).PATH).toBe("");
+});
+
+test("POSIX child environments retain operator configuration", () => {
+  const env = { PEW2_FAKE_PLATFORM: "posix", PATH: "/usr/bin:/bin", OTHER_SETTING: "preserved" };
+  expect(providerEnvironment(env)).toEqual(env);
+});
+
+test("npx bootstraps outside the workspace with an explicit private prefix", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "pew2-bootstrap-test-"));
+  const executable = join(workspace, "npx");
+  // Only plan the launch. No package is installed and no fixture is executed.
+  writeFileSync(executable, "", { mode: 0o700 });
+  writeFileSync(join(workspace, ".npmrc"), "script-shell=unused-test-shell\n");
+  const plan = await prepareProviderLaunch(executable, ["--yes", "test-agent@1.0.0"], workspace, { PEW2_FAKE_PLATFORM: "posix" });
+  try {
+    expect(plan.cwd).not.toBe(workspace);
+    expect(plan.cwd.startsWith(workspace + "/")).toBe(false);
+    expect(readdirSync(plan.cwd)).toEqual([]);
+    expect(plan.command).toBe(executable);
+    expect(plan.args).toEqual(["--prefix", plan.cwd, "--yes", "test-agent@1.0.0"]);
+  } finally {
+    await plan.cleanup();
+    rmSync(workspace, { recursive: true, force: true });
+  }
+  expect(existsSync(plan.cwd)).toBe(false);
+});
+
+test("native providers retain their ACP working directory and arguments", async () => {
+  const plan = await prepareProviderLaunch("native-agent", ["acp"], "/project", { PEW2_FAKE_PLATFORM: "posix" });
+  expect(plan.cwd).toBe("/project");
+  expect(plan.command).toBe("native-agent");
+  expect(plan.args).toEqual(["acp"]);
+  await plan.cleanup();
+});
+
+test("Windows npx bootstrap arguments keep the isolated prefix through batch escaping", async () => {
+  const installed = mkdtempSync(join(tmpdir(), "pew2-npx-win-"));
+  writeFileSync(join(installed, "npx.cmd"), "");
+  const plan = await prepareProviderLaunch("npx", ["--yes", "test-agent@1.0.0"], installed, {
+    PEW2_FAKE_PLATFORM: "win32", PATH: installed,
+  });
+  try {
+    expect(plan.cwd).not.toBe(installed);
+    expect(plan.windowsVerbatimArguments).toBe(true);
+    expect(plan.args[3]).toContain("--prefix");
+    expect(plan.args[3]?.replaceAll("^", "")).toContain(plan.cwd);
+  } finally {
+    await plan.cleanup();
+    rmSync(installed, { recursive: true, force: true });
+  }
 });
 
 /** The echo agent: a real ACP peer that needs no key, no network and no PATH. */

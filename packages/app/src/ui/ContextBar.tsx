@@ -28,7 +28,7 @@
  */
 import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon } from "./Icon";
 import { useAppTheme, useThemeStyles } from "../appearance";
 import type { AppTheme } from "../theme";
 import { touchSlop } from "./controls";
@@ -102,7 +102,7 @@ function ContextBarView({
               is tappable at all: everything to its right is inert text in the
               same size and weight. Trailing, so it reads as "leads onward"
               rather than decorating the word. */}
-          <Ionicons
+          <Icon
             name="chevron-forward"
             size={12}
             color={theme.color.textDim}

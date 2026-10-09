@@ -70,8 +70,33 @@ const CATEGORY = "agentTurn";
  * replaces its old entry instead of accumulating one per launch — otherwise a
  * week of app restarts means a week of duplicate banners.
  */
+type PushFailure = "http" | "network" | "invalid-response" | "ticket";
+
 export class PushRegistry {
   private readonly targets = new Map<string, Target>();
+  private nextWarningAt = 0;
+
+  constructor(private readonly diagnostics: {
+    warn?: (message: string) => void;
+    now?: () => number;
+  } = {}) {}
+
+  /** One metadata-only warning per minute per daemon, even during an outage. */
+  reportFailure(reason: PushFailure, status?: number): void {
+    const now = (this.diagnostics.now ?? Date.now)();
+    if (now < this.nextWarningAt) return;
+    this.nextWarningAt = now + 60_000;
+    const httpStatus = reason === "http" && typeof status === "number" &&
+      Number.isInteger(status) && status >= 100 && status <= 599 ? ` ${status}` : "";
+    try {
+      (this.diagnostics.warn ?? console.warn)(
+        `[push] Notification delivery failed (${reason}${httpStatus}). Further failures are suppressed for 60s.`,
+      );
+    } catch {
+      // A broken diagnostic sink must not turn an optional notice into a
+      // rejected session operation. Never retry logging through the same sink.
+    }
+  }
 
   /**
    * Remember where to push for a device, or reject a token that is not one.
@@ -112,13 +137,6 @@ interface ExpoMessage {
   priority: "high";
 }
 
-/** Expo's per-message result. Errors are reported here, not as an HTTP status. */
-interface ExpoTicket {
-  status?: string;
-  message?: string;
-  details?: { error?: string };
-}
-
 export function pushMessages(registry: PushRegistry, notice: AgentPush): ExpoMessage[] {
   const kind = notice.kind ?? "complete";
   const title = noticeTitle(notice);
@@ -153,10 +171,24 @@ export function applyTickets(
   messages: ExpoMessage[],
   tickets: unknown,
 ): void {
-  if (!Array.isArray(tickets)) return;
-  tickets.forEach((ticket: ExpoTicket, index) => {
-    if (ticket?.status !== "error") return;
-    if (ticket.details?.error !== "DeviceNotRegistered") return;
+  if (!Array.isArray(tickets)) {
+    registry.reportFailure("invalid-response");
+    return;
+  }
+  if (tickets.length !== messages.length) registry.reportFailure("invalid-response");
+  tickets.forEach((ticket: unknown, index) => {
+    if (!ticket || typeof ticket !== "object" || !("status" in ticket) ||
+        (ticket.status !== "ok" && ticket.status !== "error")) {
+      registry.reportFailure("invalid-response");
+      return;
+    }
+    if (ticket.status !== "error") return;
+    registry.reportFailure("ticket");
+    // Do not log server-provided messages or details: they can echo tokens or
+    // notification contents. Only this known error changes the token registry.
+    const details = "details" in ticket ? ticket.details : undefined;
+    if (!details || typeof details !== "object" || !("error" in details) ||
+        details.error !== "DeviceNotRegistered") return;
     const message = messages[index];
     if (message) registry.forget(message.to);
   });
@@ -166,21 +198,33 @@ export function applyTickets(
 export async function pushAgentNotice(
   registry: PushRegistry,
   notice: AgentPush,
+  options: { fetchImpl?: (url: string, init: RequestInit) => Promise<Response> } = {},
 ): Promise<void> {
   if (registry.size === 0) return;
   const messages = pushMessages(registry, notice);
   try {
-    const response = await fetch(PUSH_URL, {
+    const response = await (options.fetchImpl ?? fetch)(PUSH_URL, {
       method: "POST",
       headers: { accept: "application/json", "content-type": "application/json" },
       body: JSON.stringify(messages),
       signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) return;
-    const payload = (await response.json()) as { data?: unknown };
-    applyTickets(registry, messages, payload?.data);
+    if (!response.ok) {
+      registry.reportFailure("http", response.status);
+      return;
+    }
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      registry.reportFailure("invalid-response");
+      return;
+    }
+    applyTickets(registry, messages,
+      payload && typeof payload === "object" && "data" in payload ? payload.data : undefined);
   } catch {
     // Offline desktop, DNS failure, or Expo outage: notifications stay optional.
+    registry.reportFailure("network");
   }
 }
 

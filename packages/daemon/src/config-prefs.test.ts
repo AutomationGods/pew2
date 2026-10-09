@@ -1,14 +1,83 @@
 import { test, expect } from "bun:test";
-import { mkdtemp, mkdir, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, stat, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readConfigPrefs, writeConfigPref } from "./config-prefs.js";
 import { POSIX_MODES } from "./testing/platform.js";
+import { readSessionPrefs, writeSessionPrefs } from "./session-prefs.js";
+import { withFileLock } from "./atomic-file.js";
 
 async function tempEnv() {
   const home = await mkdtemp(join(tmpdir(), "pew2-prefs-"));
   return { PEW2_HOME: home } as NodeJS.ProcessEnv;
 }
+
+test("concurrent choices retain every provider and conversation update", async () => {
+  const env = await tempEnv();
+  const ids = Array.from({ length: 12 }, (_, index) => `choice_${index}`);
+  await Promise.all(ids.flatMap((id) => [
+    writeConfigPref("claude-code", id, id, env),
+    writeConfigPref("ggcoder", id, true, env),
+    writeSessionPrefs("claude-code", id, { model: id }, env),
+    writeSessionPrefs("claude-code", "shared-session", { [id]: true }, env),
+  ]));
+  expect(await readConfigPrefs("claude-code", env)).toEqual(Object.fromEntries(ids.map(id => [id, id])));
+  expect(await readConfigPrefs("ggcoder", env)).toEqual(Object.fromEntries(ids.map(id => [id, true])));
+  expect(await readSessionPrefs("claude-code", "shared-session", env)).toEqual(Object.fromEntries(ids.map(id => [id, true])));
+  for (const id of ids) expect(await readSessionPrefs("claude-code", id, env)).toEqual({ model: id });
+  const home = env.PEW2_HOME;
+  if (!home) throw new Error("Missing test home");
+  expect((await readdir(home)).filter(name => name.endsWith(".lock") || name.endsWith(".tmp"))).toEqual([]);
+});
+
+test("separate processes merge settings without stale-file replacement", async () => {
+  const env = await tempEnv();
+  const configModule = new URL("./config-prefs.ts", import.meta.url).href;
+  const sessionModule = new URL("./session-prefs.ts", import.meta.url).href;
+  const children = Array.from({ length: 4 }, (_, worker) => Bun.spawn([
+    process.execPath, "-e", `
+      import { writeConfigPref } from ${JSON.stringify(configModule)};
+      import { writeSessionPrefs } from ${JSON.stringify(sessionModule)};
+      await Promise.all(Array.from({ length: 6 }, (_, index) => {
+        const id = ${worker} + ':' + index;
+        return Promise.all([
+          writeConfigPref('shared', id, id),
+          writeSessionPrefs('shared', id, { model: id }),
+        ]);
+      }));
+    `,
+  ], { env: { ...process.env, ...env }, stdout: "ignore", stderr: "pipe" }));
+  const results = await Promise.all(children.map(async (child) => {
+    const [exitCode, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+    return { exitCode, stderr };
+  }));
+  expect(results).toEqual(Array.from({ length: 4 }, () => ({ exitCode: 0, stderr: "" })));
+  const stored = await readConfigPrefs("shared", env);
+  expect(Object.keys(stored)).toHaveLength(24);
+  for (const [id, value] of Object.entries(stored)) {
+    expect(value).toBe(id);
+    expect(await readSessionPrefs("shared", id, env)).toEqual({ model: id });
+  }
+}, 20_000);
+
+test("file locks release on failure, allow unrelated files, and never steal an existing lock", async () => {
+  const env = await tempEnv();
+  const home = env.PEW2_HOME;
+  if (!home) throw new Error("Missing test home");
+  const path = join(home, "settings.json");
+  await expect(withFileLock(path, async () => { throw new Error("fixture failure"); })).rejects.toThrow("fixture failure");
+  await expect(withFileLock(path, () => withFileLock(join(home, "other.json"), async () => "ok"))).resolves.toBe("ok");
+  const lock = `${path}.lock`;
+  await mkdir(lock);
+  let entered = false;
+  try {
+    await expect(withFileLock(path, async () => { entered = true; }, { timeoutMs: 0 })).rejects.toThrow("No update was made");
+    expect(entered).toBe(false);
+    expect((await stat(lock)).isDirectory()).toBe(true);
+  } finally {
+    await rm(lock, { recursive: true, force: true });
+  }
+});
 
 test("a chosen selector reads back for that provider", async () => {
   const env = await tempEnv();

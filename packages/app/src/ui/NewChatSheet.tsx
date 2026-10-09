@@ -1,5 +1,5 @@
 /**
- * "New chat" — where?
+ * "New conversation" — where?
  *
  * The button used to start a conversation the instant it was tapped, which
  * meant a new chat always landed wherever the agent happened to be. That is the
@@ -45,9 +45,9 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon, type IconName } from "./Icon";
 import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { motion, type AppTheme } from "../theme";
 import { touchSlop } from "./controls";
 import { Sheet, SHEET_ROW_HEIGHT, SHEET_VISIBLE_ROWS, sheetCardStyle } from "./Sheet";
 import { haptics } from "./haptics";
@@ -63,7 +63,7 @@ import type { WorkspaceBrowse, WorkspaceCreateErrorCode } from "../useDaemon";
  * re-presented. Slightly tighter damping than the sheet too — a horizontal
  * overshoot on a list of projects looks like a bounce rather than a push.
  */
-const STEP_SPRING = { duration: 340, dampingRatio: 0.92 } as const;
+const STEP_SPRING = motion.stepSpring;
 
 /**
  * Which pane is on screen. Ordered, because moving between them is a push.
@@ -175,13 +175,17 @@ function NewChatSheetView({
   // The browser adds an "up" row below a root, which occupies list space and is
   // counted here or the card comes out a row short.
   const browseEntries = browse?.entries ?? [];
-  // The refusal notice occupies a row of its own, above a list that is still
-  // showing where the user was.
+  const browseError = browse?.error === "offline"
+    ? "Your computer is offline"
+    : browse?.error === "timeout"
+      ? "Your computer didn't answer"
+      : browse?.refused
+        ? "That folder can't be opened"
+        : undefined;
   const browseRows =
     browseEntries.length +
     (browse?.parent ? 1 : 0) +
-    (listMode === "location" && browse?.path ? 1 : 0) +
-    (browse?.refused ? 1 : 0);
+    (listMode === "location" && browse?.path ? 1 : 0);
   const browseHeight = Math.max(1, Math.min(browseRows, SHEET_VISIBLE_ROWS)) * SHEET_ROW_HEIGHT;
   const browseScrolls = browseRows > SHEET_VISIBLE_ROWS;
 
@@ -291,7 +295,7 @@ function NewChatSheetView({
       visible={visible}
       title={
         step === STEP_CHOICES
-          ? "New chat"
+          ? "New conversation"
           : creating
             ? "Create project"
             : browsing
@@ -316,7 +320,6 @@ function NewChatSheetView({
             : () => goTo(STEP_CHOICES)
       }
       dismissLabel="Close new chat"
-      avoidKeyboard
     >
       <Animated.View
         style={[styles.card, cardStyle]}
@@ -354,7 +357,7 @@ function NewChatSheetView({
               // Named, so the row is not a restatement of the sheet's own title.
               // Before the daemon has answered there is no name to use, and the
               // detail line carries the meaning instead.
-              title={currentFolder ? `New chat in ${currentFolder}` : "Start a new chat"}
+              title={currentFolder ? `New conversation in ${currentFolder}` : "Start a new conversation"}
               detail={currentFolder ? "Continue in this project" : "Where the agent last worked"}
               divided={canPick || canBrowse}
               onPress={() => onStart(currentCwd)}
@@ -489,6 +492,25 @@ function NewChatSheetView({
             )}
 
             {browsing && (
+              <View>
+                {/* Keep progress and recovery above even a retained, scrolled list. */}
+                {browse?.loading ? (
+                  <View style={styles.browseStatus} accessibilityLiveRegion="polite" accessibilityState={{ busy: true }}>
+                    <Text style={styles.emptyText}>Looking…</Text>
+                  </View>
+                ) : browseError ? (
+                  <View style={styles.browseStatus} accessibilityLiveRegion="polite">
+                    <Text style={styles.emptyText}>{browseError}</Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Retry loading folders"
+                      onPress={() => onBrowse?.(browse?.requestedPath)}
+                      style={({ pressed }) => [styles.browseRetry, pressed && styles.rowPressed]}
+                    >
+                      <Text style={styles.retryText}>Try again</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
               <ScrollView
                 style={{ height: browseHeight }}
                 showsVerticalScrollIndicator={browseScrolls}
@@ -532,23 +554,15 @@ function NewChatSheetView({
                     descendLabel={`Open ${entry.name}`}
                   />
                 ))}
-                {/* A refusal keeps the listing the user was on, so this has to
-                    show over a non-empty list too — otherwise tapping a folder
-                    that cannot be opened looks like nothing happened at all. */}
-                {(browseEntries.length === 0 || browse?.refused) && (
+                {browseEntries.length === 0 && !browse?.loading && !browseError && (
                   <View style={styles.empty}>
                     <Text style={styles.emptyText}>
-                      {browse?.loading
-                        ? "Looking…"
-                        : browse?.refused
-                          ? "That folder can't be opened"
-                          : browse?.path
-                            ? "No folders in here"
-                            : "No projects found on your computer"}
+                      {browse?.path ? "No folders in here" : "No projects found on your computer"}
                     </Text>
                   </View>
                 )}
               </ScrollView>
+              </View>
             )}
           </Animated.View>
         )}
@@ -594,7 +608,7 @@ function Row({
   onDescend,
   descendLabel,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: IconName;
   title: string;
   detail?: string;
   divided?: boolean;
@@ -622,7 +636,7 @@ function Row({
         onPress={onPress}
         style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       >
-        <Ionicons name={icon} size={20} color={theme.color.glyph} />
+        <Icon name={icon} size={20} color={theme.color.glyph} />
         <View style={styles.rowText}>
           <Text style={styles.rowTitle} numberOfLines={1}>
             {title}
@@ -635,7 +649,7 @@ function Row({
         </View>
         {/* Only on the row that leads somewhere: it promises a next step, and on
             a row that starts a chat it would be a lie. */}
-        {chevron && <Ionicons name="chevron-forward" size={16} color={theme.color.textDim} />}
+        {chevron && <Icon name="chevron-forward" size={16} color={theme.color.textDim} />}
       </Pressable>
       {onDescend && (
         <Pressable
@@ -646,7 +660,7 @@ function Row({
           // is visibly a second control rather than part of the row.
           style={({ pressed }) => [styles.rowDescend, pressed && styles.rowPressed]}
         >
-          <Ionicons name="chevron-forward" size={16} color={theme.color.textDim} />
+          <Icon name="chevron-forward" size={16} color={theme.color.textDim} />
         </Pressable>
       )}
     </View>
@@ -690,6 +704,9 @@ function makeStyles(theme: AppTheme) {
     justifyContent: "center",
     paddingHorizontal: theme.space(4),
   },
+  browseStatus: { padding: theme.space(3), gap: theme.space(1) },
+  browseRetry: { minHeight: theme.size.touch, alignItems: "center", justifyContent: "center" },
+  retryText: { color: theme.color.accent, fontSize: theme.font.small },
   emptyText: {
     color: theme.color.textDim,
     fontSize: theme.font.small,

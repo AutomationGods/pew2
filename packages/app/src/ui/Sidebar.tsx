@@ -14,22 +14,21 @@ import {
   Alert,
   Animated,
   Dimensions,
-  Easing,
   FlatList,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon } from "./Icon";
 import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
-import { AgentChip } from "./AgentChip";
+import { motion, nativeMotionEasings, type AppTheme } from "../theme";
+import { MenuRow } from "./MenuRow";
+import { agentChoices, projectChoices, projectPathFromChoice } from "./drawerMenus";
 import { touchSlop } from "./controls";
-import { Glass } from "./Glass";
 import { haptics } from "./haptics";
+import { reconnectDialog } from "../reconnect";
 import { HistorySkeleton } from "./Skeleton";
 import { orderProvidersByRecency } from "../providerRecency";
 import { formatHistoryMetadata } from "../historyMetadata";
@@ -37,9 +36,7 @@ import { recentSessionsForProvider } from "../sessionHistory";
 import { useReducedMotion } from "./useReducedMotion";
 import { useAppActive } from "./useAppActive";
 import { AppearanceSheet } from "./AppearanceSheet";
-import { ProjectSelect } from "./ProjectSelect";
-import { ProjectMenu } from "./ProjectMenu";
-import { sessionsInProject, type Project } from "../projects";
+import { projectLabel, sessionsInProject, type Project } from "../projects";
 import { activitySummary, groupActivitySessions } from "../activitySessions";
 import type { Provider, Session, Status } from "../useDaemon";
 
@@ -103,8 +100,8 @@ const INSTALL_COMMAND =
   "curl -fsSL https://raw.githubusercontent.com/KenKaiii/pew2/main/install.sh | sh";
 
 const MAX_STAGGERED_ROWS = 14;
-const ROW_STAGGER_MS = 18;
-const ROW_REVEAL_MS = 180;
+const ROW_STAGGER_MS = motion.rowStagger;
+const ROW_REVEAL_MS = motion.rowReveal;
 
 /**
  * The dot beside a conversation title: working, or finished while you were
@@ -145,14 +142,14 @@ function SessionStatus({
       Animated.sequence([
         Animated.timing(pulse, {
           toValue: 0.3,
-          duration: 700,
-          easing: Easing.inOut(Easing.quad),
+          duration: motion.sessionPulse,
+          easing: nativeMotionEasings.inOutQuad,
           useNativeDriver: true,
         }),
         Animated.timing(pulse, {
           toValue: 1,
-          duration: 700,
-          easing: Easing.inOut(Easing.quad),
+          duration: motion.sessionPulse,
+          easing: nativeMotionEasings.inOutQuad,
           useNativeDriver: true,
         }),
       ]),
@@ -239,7 +236,7 @@ const SessionRow = memo(function SessionRow({
       toValue: 1,
       delay: index * ROW_STAGGER_MS,
       duration: ROW_REVEAL_MS,
-      easing: Easing.out(Easing.cubic),
+      easing: nativeMotionEasings.outCubic,
       useNativeDriver: true,
     });
     animation.start();
@@ -323,7 +320,7 @@ function SidebarView({
   historyLoading = false,
   reduceMotion = false,
 }: SidebarProps) {
-  const { preference, theme } = useAppTheme();
+  const { theme } = useAppTheme();
   const styles = useThemeStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const appActive = useAppActive();
@@ -332,22 +329,6 @@ function SidebarView({
   // rather than per row, so the whole list shares one subscription.
   const rowsStill = !open || !appActive;
   const [appearanceOpen, setAppearanceOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  // Measured rather than computed: the chip row above scrolls horizontally and
-  // the select row's own height comes from the type inside it, so the only
-  // honest place to hang the menu from is where the row actually ended up.
-  const [menuTop, setMenuTop] = useState(0);
-
-  // Closing the drawer, or switching app, ends the menu.
-  //
-  // The drawer is only translated off screen, never unmounted, so an open menu
-  // survives both and is waiting on top of the history the next time the drawer
-  // is pulled out. Switching app matters twice over: the projects underneath it
-  // belong to the agent, so the list would silently become another agent's
-  // while open.
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [open, activeProviderId]);
 
   // The four derived lists below are memoised on what they actually read, not
   // because any one of them is slow on its own, but because of *when* they run.
@@ -375,6 +356,14 @@ function SidebarView({
     () => providers.filter((provider) => provider.available).length,
     [providers],
   );
+  const activeProvider = useMemo(
+    () => providers.find((provider) => provider.id === activeProviderId),
+    [providers, activeProviderId],
+  );
+  const agentMenu = useMemo(
+    () => agentChoices(orderedProviders, activeProviderId),
+    [orderedProviders, activeProviderId],
+  );
   const activityGroups = useMemo(() => groupActivitySessions(sessions), [sessions]);
   const activityCount =
     activityGroups.needsYou.length + activityGroups.working.length + activityGroups.ready.length;
@@ -389,6 +378,10 @@ function SidebarView({
     () => recentSessionsForProvider(sessionsInProject(sessions, selectedProject), activeProviderId),
     [sessions, selectedProject, activeProviderId],
   );
+  const projectMenu = useMemo(
+    () => projectChoices(projects, selectedProjectPath),
+    [projects, selectedProjectPath],
+  );
 
   // Stable, so the memoised rows below actually bail out. Built per render it
   // was a new function for every row on every render, which defeats the memo
@@ -402,8 +395,8 @@ function SidebarView({
     },
     [onOpenSession],
   );
-  // Spoken only. The dot beside the title carries this at a glance; a screen
-  // reader gets the sentence, including which computer it is about.
+  // The dot beside the title carries this at a glance; a screen reader gets
+  // the sentence, and Settings shows it in words under "This computer".
   const connectionLabel =
     connectionStatus === "online"
       ? "Healthy connection"
@@ -470,14 +463,20 @@ function SidebarView({
                 </View>
               )}
             </View>
+            {/* Settings, pushed to the far edge as a bar button is. The dot
+                says a new version is waiting without putting the notice in
+                the list itself. */}
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Appearance settings. Currently ${preference.mode} mode, ${preference.accent} accent.`}
+              // Same condition as the dot: a self-installing update needs nothing
+              // from the user, so it is neither badged nor announced here.
+              accessibilityLabel={update && !update.automatic ? "Settings. A pew2 update is available." : "Settings"}
               hitSlop={touchSlop(32, theme.size.touch)}
               onPress={() => { haptics.tap(); setAppearanceOpen(true); }}
-              style={({ pressed }) => [styles.headerAction, pressed && { opacity: 0.6 }]}
+              style={({ pressed }) => [styles.headerAction, pressed && { opacity: 0.4 }]}
             >
-              <Ionicons name="color-palette-outline" size={20} color={theme.color.textDim} />
+              <Icon name="settings-outline" size={21} color={theme.color.textDim} />
+              {update && !update.automatic ? <View style={styles.headerBadge} /> : null}
             </Pressable>
             {/* No button here. A "new chat" in the drawer header sits above the
                 app chips and the project selector both, so it could only mean
@@ -486,23 +485,31 @@ function SidebarView({
                 beside the project it applies to. */}
           </View>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            // Without an explicit height a horizontal ScrollView stretches to
-            // fill the remaining column space and pushes the history far down.
-            style={styles.agentScroller}
-            contentContainerStyle={styles.agentRow}
-          >
-            {orderedProviders.map((provider) => (
-              <AgentChip
-                key={provider.id}
-                provider={provider}
-                selected={provider.id === activeProviderId}
-                onPress={onSelectProvider}
+          {/* What the list below shows: which agent, which project. One grouped
+              block of two rows, each opening the system menu, where a strip of
+              chips (its end always cut off) sat beside a form-field dropdown. */}
+          {orderedProviders.length > 0 && (
+            <View style={styles.filterGroup}>
+              <MenuRow
+                caption="Agent"
+                value={activeProvider?.name ?? "Choose"}
+                choices={agentMenu}
+                onSelect={onSelectProvider}
+                accessibilityHint="Choose which agent to show conversations from and start new ones with"
+                valueMarker={activeProvider?.color ?? theme.color.textFaint}
               />
-            ))}
-          </ScrollView>
+              {projects.length > 0 && (
+                <MenuRow
+                  divided
+                  caption="Project"
+                  value={projectLabel(selectedProject)}
+                  choices={projectMenu}
+                  onSelect={(id) => onSelectProject(projectPathFromChoice(id))}
+                  accessibilityHint="Choose which project to show conversations from and start new ones in"
+                />
+              )}
+            </View>
+          )}
 
           <Pressable
             accessibilityRole="button"
@@ -542,25 +549,12 @@ function SidebarView({
                 </Text>
               </View>
             ) : null}
-            <Ionicons name="chevron-forward" size={18} color={theme.color.textFaint} />
+            <Icon name="chevron-forward" size={18} color={theme.color.textFaint} />
           </Pressable>
 
-          {/* Under the apps, above the history: it belongs to the app chosen
-              above and it governs the list below. */}
-          <ProjectSelect
-            selected={selectedProject}
-            count={projects.length}
-            open={menuOpen}
-            onToggle={() => setMenuOpen((was) => !was)}
-            onLayout={(event) => {
-              const { y, height } = event.nativeEvent.layout;
-              setMenuTop(y + height);
-            }}
-          />
-
-          {/* "Latest chats", not "Chat history": the list is capped at the
+          {/* "Recent sessions", not "Chat history": the list is capped at the
               newest conversations, and calling that history promises an archive
-              it does not have — the project selector above is what reaches the
+              it does not have — the Project row above is what reaches the
               rest. */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionLabel}>Recent sessions</Text>
@@ -617,95 +611,98 @@ function SidebarView({
             )}
           />
 
-          {/* Connection state is the dot beside the title now, so this row is
-              just the one action it always carried. The host name stays out of
-              sight and in the spoken label. */}
-          <View style={[styles.machine, update && styles.machineSplit]}>
-            {/* Left of Forget, on the row that is already about this computer,
-                so it reads as being about the machine rather than about this
-                app. The App Store handles the app; this is the daemon on the
-                desk, which has no screen of its own to say it with. */}
-            {update ? (
-              update.automatic ? (
-                // Installing itself, and it will restart at the next quiet
-                // moment. Said out loud so a restart is never a surprise, but
-                // with nothing to tap, because there is nothing to do.
-                <Text style={styles.updateNote}>Updating pew2…</Text>
-              ) : (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`pew2 ${update.latest} is available for ${machineLabel}. How to update.`}
-                  hitSlop={touchSlop(theme.size.touch)}
-                  onPress={() => {
-                    haptics.tap();
-                    Alert.alert(
-                      `pew2 ${update.latest} is available`,
-                      // The command itself, not a description of it: whoever
-                      // reads this is holding the phone and will be typing it
-                      // out on the other machine.
-                      `This computer can't update itself, so run this on ${machineLabel}:\n\n${INSTALL_COMMAND}`,
-                      [{ text: "OK" }],
-                    );
-                  }}
-                  style={({ pressed }) => pressed && styles.pressed}
-                >
-                  <Text style={styles.updateAction}>New pew2 version available</Text>
-                </Pressable>
-              )
-            ) : null}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Forget pairing with ${machineLabel}`}
-              hitSlop={touchSlop(theme.size.touch)}
-              onPress={() => {
-                haptics.tap();
-                Alert.alert(
-                  "Forget this computer?",
-                  "You'll need to scan or paste its pairing link to connect again.",
-                  [
-                    { text: "Cancel", style: "cancel" },
-                    {
-                      text: "Forget",
-                      style: "destructive",
-                      onPress: () => {
-                        haptics.warned();
-                        onUnpair();
-                      },
-                    },
-                  ],
-                );
-              }}
-              style={({ pressed }) => pressed && styles.pressed}
-            >
-              <Text style={styles.machineAction}>Forget</Text>
-            </Pressable>
-          </View>
-
-          {/* Last child, so it paints over the history it drops across. Inside
-              the panel rather than over the whole screen: it is the drawer's
-              own menu, and the panel's clip keeps it off the conversation. */}
-          <ProjectMenu
-            visible={menuOpen}
-            projects={projects}
-            selectedPath={selectedProjectPath}
-            top={menuTop}
-            onSelect={(path) => {
-              onSelectProject(path);
-              setMenuOpen(false);
+          {/* Always reachable, including offline and with no discovered agents.
+              Outside the scrolling list and Settings so recovery is easy to find. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Forget connection & reconnect"
+            accessibilityHint="Asks before disconnecting this phone and opening the pairing scanner."
+            onPress={() => {
+              haptics.tap();
+              const dialog = reconnectDialog(machineLabel, () => {
+                haptics.warned();
+                onUnpair();
+              });
+              Alert.alert(dialog.title, dialog.message, dialog.buttons);
             }}
-            onClose={() => setMenuOpen(false)}
-          />
+            style={({ pressed }) => [styles.reconnect, pressed && styles.settingsRowPressed]}
+          >
+            <Text style={styles.reconnectText}>Forget connection & reconnect</Text>
+          </Pressable>
+
+          {/* Appearance, computer details, and updates stay in Settings. */}
           <AppearanceSheet
             visible={appearanceOpen}
             onClose={() => setAppearanceOpen(false)}
-          />
+          >
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsLabel}>This computer</Text>
+              <View style={styles.settingsGroup}>
+                <View
+                  style={styles.settingsRow}
+                  accessibilityRole="text"
+                  accessibilityLabel={`${machineLabel}. ${connectionLabel}. ${
+                    machineRemote ? "Reachable from anywhere." : "Same network only."
+                  }`}
+                >
+                  <View style={[styles.connectionDot, { backgroundColor: connectionColor }]} />
+                  <View style={styles.settingsCopy}>
+                    <Text style={styles.settingsTitle} numberOfLines={1}>{machineLabel}</Text>
+                    <Text style={styles.settingsMeta} numberOfLines={1}>
+                      {connectionLabel} · {machineRemote ? "Reachable from anywhere" : "Same network only"}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* The App Store handles the app; this is the daemon on the desk,
+                    which has no screen of its own to say it with. */}
+                {update ? (
+                  update.automatic ? (
+                    // Installing itself, and it will restart at the next quiet
+                    // moment. Said so a restart is never a surprise, but with
+                    // nothing to tap, because there is nothing to do.
+                    <View style={[styles.settingsRow, styles.settingsRowDivided]}>
+                      <Text style={styles.settingsMeta}>Updating pew2…</Text>
+                    </View>
+                  ) : (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`pew2 ${update.latest} is available for ${machineLabel}. How to update.`}
+                      onPress={() => {
+                        haptics.tap();
+                        Alert.alert(
+                          `pew2 ${update.latest} is available`,
+                          // The command itself, not a description of it: whoever
+                          // reads this is holding the phone and will be typing it
+                          // out on the other machine.
+                          `This computer can't update itself, so run this on ${machineLabel}:\n\n${INSTALL_COMMAND}`,
+                          [{ text: "OK" }],
+                        );
+                      }}
+                      style={({ pressed }) => [
+                        styles.settingsRow,
+                        styles.settingsRowDivided,
+                        pressed && styles.settingsRowPressed,
+                      ]}
+                    >
+                      <Text style={[styles.settingsTitle, styles.settingsAccent]}>
+                        Update to pew2 {update.latest}
+                      </Text>
+                      <Icon name="chevron-forward" size={14} color={theme.color.textFaint} />
+                    </Pressable>
+                  )
+                ) : null}
+
+              </View>
+            </View>
+          </AppearanceSheet>
       </View>
     </View>
   );
 }
 
 /**
- * "+ New chat", beside the heading, once a project is chosen.
+ * "+ New conversation", beside the heading, once a project is chosen.
  *
  * It appears and disappears with the project selection, so it arrives rather
  * than pops: scale and fade from the right, anchored where it sits. An element
@@ -729,9 +726,7 @@ function NewChatChip({ project, onPress }: { project: Project; onPress: () => vo
     }
     const animation = Animated.spring(enter, {
       toValue: 1,
-      damping: 24,
-      stiffness: 300,
-      mass: 0.8,
+      ...motion.chipSpring,
       useNativeDriver: true,
     });
     animation.start();
@@ -750,51 +745,94 @@ function NewChatChip({ project, onPress }: { project: Project; onPress: () => vo
         ],
       }}
     >
-      <Glass radius={theme.radius.pill} interactive>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`New chat in ${project.name}`}
-          hitSlop={touchSlop(theme.space(1))}
-          onPress={() => {
-            haptics.tap();
-            onPress();
-          }}
-          style={({ pressed }) => [styles.newChip, pressed && styles.pressed]}
-        >
-          <Ionicons name="add" size={16} color={theme.color.text} />
-          <Text style={styles.newChipText}>New chat</Text>
-        </Pressable>
-      </Glass>
+      {/* A plain tinted text button, as a section action is on iOS. The glass
+          pill drew a third button shape into a drawer that already had two. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`New conversation in ${project.name}`}
+        hitSlop={touchSlop(theme.space(1))}
+        onPress={() => {
+          haptics.tap();
+          onPress();
+        }}
+        style={({ pressed }) => [styles.newChip, pressed && styles.newChipPressed]}
+      >
+        <Icon name="add" size={17} color={theme.color.accent} weight="semibold" />
+        <Text style={styles.newChipText}>New conversation</Text>
+      </Pressable>
     </Animated.View>
   );
 }
 
 function makeStyles(theme: AppTheme) {
   return StyleSheet.create({
-  machine: {
+  // "This computer" in Settings: an inset grouped list, matched to the accent
+  // list above it in the same sheet so the two read as one settings screen.
+  settingsSection: {
+    paddingHorizontal: theme.space(4),
+    paddingTop: theme.space(3),
+    paddingBottom: theme.space(4),
+  },
+  settingsLabel: {
+    color: theme.color.textDim,
+    fontSize: theme.font.small,
+    marginBottom: theme.space(2),
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  settingsGroup: {
+    overflow: "hidden",
+    borderRadius: theme.radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.color.separator,
+    backgroundColor: theme.color.groupedSurface,
+  },
+  settingsRow: {
+    minHeight: theme.size.touch,
     flexDirection: "row",
     alignItems: "center",
-    // Right-aligned: Forget keeps the edge it has always sat on, now that the
-    // status text that used to fill this row is gone.
-    justifyContent: "flex-end",
-    // Room for a two-line notice without pushing Forget off its edge.
-    gap: theme.space(2),
-    marginHorizontal: theme.gutter,
-    marginTop: theme.space(2),
-    paddingTop: theme.space(3),
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.color.border,
+    gap: theme.space(3),
+    paddingHorizontal: theme.space(3),
+    paddingVertical: theme.space(2),
   },
-  // Only when there is something on the left; otherwise Forget keeps the edge.
-  machineSplit: { justifyContent: "space-between" },
-  machineAction: { color: theme.color.danger, fontSize: 12, fontWeight: "600" },
-  // Same size and weight as Forget, so the row reads as one pair of controls.
-  // Deliberately not `danger`: being a version behind is not a problem, and a
-  // red line next to a red Forget would read as one warning about two things.
-  updateAction: { color: theme.color.accent, fontSize: 12, fontWeight: "600", flexShrink: 1 },
-  // Not a control, so it is dimmed to the weight of everything else that is
-  // merely telling you something.
-  updateNote: { color: theme.color.textDim, fontSize: 12, flexShrink: 1 },
+  settingsRowDivided: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.color.separator,
+  },
+  settingsRowPressed: { backgroundColor: theme.color.surfacePressed },
+  settingsCopy: { flex: 1, minWidth: 0, gap: 2 },
+  settingsTitle: { flex: 1, color: theme.color.text, fontSize: theme.font.body },
+  settingsMeta: { color: theme.color.textDim, fontSize: theme.font.tiny },
+  // Not `danger`: being a version behind is not a problem.
+  settingsAccent: { color: theme.color.accent },
+  reconnect: {
+    minHeight: theme.size.touch + theme.space(3),
+    marginHorizontal: theme.gutter,
+    marginTop: theme.space(3),
+    paddingHorizontal: theme.space(4),
+    paddingVertical: theme.space(3),
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.color.danger,
+    backgroundColor: theme.color.groupedSurface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reconnectText: {
+    color: theme.color.danger,
+    fontSize: theme.font.body,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  headerBadge: {
+    position: "absolute",
+    top: 4,
+    right: 3,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.color.accent,
+  },
 
   // The drawer is the lower layer: it stays put while the conversation slides
   // right to reveal it, so it needs no transform of its own.
@@ -857,6 +895,9 @@ function makeStyles(theme: AppTheme) {
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
+    // Pushed to the far edge as a bar button is, leaving the title and its
+    // status together on the left.
+    marginLeft: "auto",
   },
   // Colour is the whole message, so it needs no glyph and no label beside it.
   connectionDot: { width: 8, height: 8, borderRadius: 4 },
@@ -867,19 +908,29 @@ function makeStyles(theme: AppTheme) {
     letterSpacing: 0.4,
   },
 
-  agentScroller: { flexGrow: 0, height: theme.size.chip },
-  agentRow: {
-    paddingHorizontal: theme.gutter,
-    gap: theme.space(2),
-    alignItems: "center",
+  // The agent and project rows: one inset grouped block, as in Settings.
+  filterGroup: {
+    marginHorizontal: theme.gutter,
+    marginTop: theme.space(1),
+    overflow: "hidden",
+    borderRadius: theme.radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.color.separator,
+    backgroundColor: theme.color.groupedSurface,
   },
+  // Its own inset group, matching the Agent and Project block above it, so
+  // the drawer reads as one settings-style list rather than three styles.
   activityShortcut: {
     minHeight: theme.size.touch,
     marginHorizontal: theme.gutter,
-    marginTop: theme.sectionGap,
+    marginTop: theme.space(3),
     paddingHorizontal: theme.space(3),
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.color.separator,
+    paddingVertical: theme.space(2),
+    overflow: "hidden",
+    borderRadius: theme.radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.color.separator,
+    backgroundColor: theme.color.groupedSurface,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.space(3),
@@ -926,7 +977,10 @@ function makeStyles(theme: AppTheme) {
     alignItems: "center",
     justifyContent: "space-between",
     gap: theme.space(2),
-    paddingHorizontal: theme.gutter,
+    // On the text rail, not the box rail: "Recent sessions" lines up with the
+    // row titles under it and "New conversation" with the chevrons in the cards above,
+    // as a section header does in an iOS inset grouped list.
+    paddingHorizontal: theme.gutter + theme.space(3),
     paddingTop: theme.sectionGap,
     paddingBottom: theme.space(2),
     // Always the chip's height, whether or not the chip is there. Otherwise
@@ -939,25 +993,27 @@ function makeStyles(theme: AppTheme) {
     alignItems: "center",
     gap: theme.space(1),
     height: theme.size.control,
-    paddingHorizontal: theme.space(3),
   },
+  newChipPressed: { opacity: 0.4 },
   newChipText: {
-    color: theme.color.text,
-    fontSize: theme.font.small,
+    color: theme.color.accent,
+    fontSize: theme.font.body,
+    fontWeight: "600",
   },
 
   sessions: { flex: 1 },
-  // The row's own inset is subtracted from the list inset so session text lands
-  // on exactly the same left rail as the "Latest chats" label, while the
-  // selected-row highlight still extends past the text on both sides.
+  // Two rails, shared with the cards above (Agent, Project, Activity): every
+  // box edge, including the selected-row highlight, sits on the gutter, and
+  // every line of text sits one row inset (12pt) inside it.
   sessionsContent: {
-    paddingHorizontal: theme.gutter - theme.space(2),
+    paddingHorizontal: theme.gutter,
   },
+  // One continuous list, as in Messages or Mail: hairline dividers and no
+  // gaps; the selected row is a rounded fill on the same rail as the cards.
   session: {
-    marginBottom: theme.space(1),
     paddingHorizontal: theme.space(3),
-    paddingVertical: theme.space(3),
-    borderRadius: theme.radius.sm,
+    paddingVertical: theme.space(2.5),
+    borderRadius: theme.radius.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.color.separator,
     gap: 2,
@@ -982,7 +1038,7 @@ function makeStyles(theme: AppTheme) {
     color: theme.color.textDim,
     fontSize: theme.font.small,
     lineHeight: 20,
-    paddingHorizontal: theme.space(2),
+    paddingHorizontal: theme.space(3),
     paddingTop: theme.space(2),
   },
   });

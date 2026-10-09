@@ -36,7 +36,7 @@ function ApprovalSheetView({ permission, onAnswer }: ApprovalSheetProps) {
   const options = shown ? selectApprovalOptions(shown.options) : [];
 
   return (
-    <Sheet visible={permission !== undefined} title="Approval needed">
+    <Sheet visible={permission !== undefined} title="Approval needed" scrollContent>
       <View style={styles.body} accessibilityLiveRegion="assertive">
         <Text style={styles.request}>{shown?.title ?? ""}</Text>
 

@@ -20,7 +20,7 @@ function source(file: string): string {
   return readFileSync(join(import.meta.dir, file), "utf8");
 }
 
-test("every sheet clears the composer keyboard; text sheets opt into avoidance", () => {
+test("every sheet clears the composer keyboard; the system sheet avoids it after", () => {
   // Sheets rest on the bottom edge. Opening one from the composer put the whole
   // card behind the keyboard: invisible, with its rows unreachable.
   //
@@ -28,14 +28,14 @@ test("every sheet clears the composer keyboard; text sheets opt into avoidance",
   // the shared primitive: every sheet clears the composer's keyboard first.
   const sheet = source("Sheet.tsx");
   expect(sheet).toContain("Keyboard.dismiss()");
-  expect(sheet).toContain("avoidKeyboard");
-  expect(sheet).toContain("KeyboardAvoidingView");
+  // Avoidance for a field *inside* a sheet used to be an opt-in
+  // KeyboardAvoidingView. The system sheet (UISheetPresentationController) does
+  // it for every sheet, so there is nothing left for a caller to opt into.
+  expect(sheet).toContain("@lodev09/react-native-true-sheet");
 
-  // New chat deliberately owns a project-name field. It must opt into keyboard
-  // avoidance so the replacement keyboard cannot cover its primary action.
+  // New chat deliberately owns a project-name field; it relies on that.
   const newChat = source("NewChatSheet.tsx");
   expect(newChat).toContain("<TextInput");
-  expect(newChat).toContain("avoidKeyboard");
 
   // The remaining sheets still have no text field and inherit dismissal only.
   for (const file of [
@@ -61,14 +61,16 @@ test("tapping the transcript takes the keyboard down", () => {
   // the platform's now, the wrapper is gone, and the rule works unaided.
   //
   // What may remain is a *control*: a button occupying its own row, next to the
-  // message rather than over it. Two of them — the thought row, and the retry
-  // under a failed turn — plus the copy button, which is `CopyButton` and not
-  // written here at all. The count is asserted so that a third one has to be a
-  // deliberate addition; what it must never become again is a wrapper.
+  // message rather than over it: the thought row, retry under a failed turn,
+  // and cancel beside an unsent queued message. Copy lives in `CopyButton`.
+  // The count makes another control a deliberate addition; none may become
+  // a wrapper around the message body.
   const turn = source("Turn.tsx");
-  expect(turn.match(/<Pressable/g) ?? []).toHaveLength(2);
+  expect(turn.match(/<Pressable/g) ?? []).toHaveLength(3);
   expect(turn).toContain("Show thought process");
   expect(turn).toContain("Send this message again");
+  expect(turn).toContain("Cancel queued message");
+  expect(/<View style={styles.queuedRow}>[\s\S]*?<\/View>/.exec(turn)?.[0]).toContain("Cancel queued message");
 
   // The shape that is actually forbidden, in the two places a message body is
   // rendered: no `Pressable` may open before the markdown it would swallow.
@@ -77,12 +79,12 @@ test("tapping the transcript takes the keyboard down", () => {
   }
 });
 
-test("an anchored picker keeps the keyboard, on purpose", () => {
+test("a picker menu keeps the keyboard, on purpose", () => {
   // The opposite decision, and the more fragile one: it looks like an oversight,
   // so it is the one somebody would "fix". Switching model or project is not
   // leaving the conversation — dropping the keyboard there loses the draft's
   // focus and drops the composer mid-sentence.
-  for (const file of ["ConfigPicker.tsx", "ProjectMenu.tsx"]) {
+  for (const file of ["NativeMenu.tsx", "MenuRow.tsx"]) {
     expect(source(file)).not.toContain("Keyboard.dismiss");
   }
 });

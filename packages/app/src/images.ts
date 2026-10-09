@@ -86,6 +86,18 @@ export function isDisplayableImage(src: string): boolean {
   return IMAGE_EXTENSION.test(value.split("?")[0]!.split("#")[0]!);
 }
 
+/** The renderer's AST keeps markdown image descriptions in `content`, not alt. */
+export function imageFromMarkdown(node: {
+  attributes?: { src?: unknown; alt?: unknown };
+  content?: unknown;
+}): ChatImage | undefined {
+  const src = typeof node.attributes?.src === "string" ? node.attributes.src : "";
+  if (!isDisplayableImage(src)) return undefined;
+  const attributeAlt = typeof node.attributes?.alt === "string" ? node.attributes.alt.trim() : "";
+  const description = typeof node.content === "string" ? node.content.trim() : "";
+  return { src, alt: attributeAlt || description || undefined };
+}
+
 function imageFromBlock(block: any): ChatImage | undefined {
   if (!block || typeof block !== "object") return undefined;
 

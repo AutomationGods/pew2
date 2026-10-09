@@ -49,6 +49,12 @@ jobs:
       # needs no API key and no network.
       - run: npm test
 
+      # Real Worker forwarding and keepalives, not just admission helpers.
+      # Uses an ephemeral loopback port and in-memory state; no cloud credentials.
+      - name: Relay integration
+        run: npm run relay:test
+        timeout-minutes: 3
+
   # The daemon ships a Windows binary, and until this job existed nothing ever
   # ran a line of it on Windows.
   #

@@ -1,4 +1,5 @@
 import { expect, mock, test } from "bun:test";
+import { join } from "node:path";
 
 /** The three states that matter here; `AppState` reports others on Android. */
 type Status = "active" | "inactive" | "background";
@@ -125,3 +126,54 @@ test("an unsubscribed listener stops hearing about changes", () => {
   setAppState("background");
   expect(notifications).toBe(0);
 });
+
+test.each(["reduceMotion", "reduceTransparency"] as const)(
+  "%s prefers current events over an older initial snapshot",
+  setting => {
+    const cases = [
+      { order: "event-first", event: true, snapshot: false, expected: true },
+      // A false event must count even though false is also the initial default.
+      { order: "event-first", event: false, snapshot: true, expected: false },
+      { order: "query-first", event: false, snapshot: true, expected: false },
+      { order: "query-only", event: false, snapshot: true, expected: true },
+      { order: "during-query", event: true, snapshot: false, expected: true },
+      { order: "failed-query", event: true, snapshot: false, expected: true },
+    ];
+    for (const scenario of cases) {
+      // Isolate native/React boundary mocks from the other app-state tests.
+      const script = `
+        import { mock } from "bun:test";
+        const setting = ${JSON.stringify(setting)};
+        const scenario = ${JSON.stringify(scenario)};
+        const handlers = new Map();
+        let resolveQuery, rejectQuery;
+        const pending = new Promise((resolve, reject) => { resolveQuery = resolve; rejectQuery = reject; });
+        const query = name => {
+          if (name !== setting) return Promise.resolve(false);
+          if (scenario.order === "during-query") handlers.get(name + "Changed")(scenario.event);
+          return pending;
+        };
+        mock.module("react", () => ({ useSyncExternalStore: (_subscribe, read) => read() }));
+        mock.module("react-native", () => ({ AccessibilityInfo: {
+          isReduceMotionEnabled: () => query("reduceMotion"),
+          isReduceTransparencyEnabled: () => query("reduceTransparency"),
+          addEventListener: (event, handler) => { handlers.set(event, handler); return { remove() {} }; },
+        } }));
+        const store = await import(${JSON.stringify(join(import.meta.dir, "accessibilityState.ts"))});
+        const read = setting === "reduceMotion" ? store.useReducedMotion : store.useReduceTransparency;
+        const emit = () => handlers.get(setting + "Changed")(scenario.event);
+        if (scenario.order === "event-first" || scenario.order === "failed-query") emit();
+        if (scenario.order === "failed-query") rejectQuery(new Error("native query failed"));
+        else resolveQuery(scenario.snapshot);
+        await Promise.resolve();
+        await Promise.resolve();
+        if (scenario.order === "query-first") emit();
+        console.log(JSON.stringify(read()));
+      `;
+      const result = Bun.spawnSync([process.execPath, "--eval", script], { stdout: "pipe", stderr: "pipe" });
+      expect(new TextDecoder().decode(result.stderr)).toBe("");
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(new TextDecoder().decode(result.stdout))).toBe(scenario.expected);
+    }
+  },
+);

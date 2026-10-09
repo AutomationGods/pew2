@@ -18,6 +18,7 @@
  *
  * Pure and React-free so the adoption rules are directly testable.
  */
+import { NEW_CONVERSATION_TITLE } from "./conversationTitle";
 import type { Session } from "./useDaemon";
 
 /**
@@ -63,7 +64,7 @@ export function pendingSession(
     cwd,
     // The prompt is the title everywhere else in this app; using it here too
     // means adoption does not visibly rename the row the user just created.
-    title: firstPrompt?.trim().slice(0, 60) || "New conversation",
+    title: firstPrompt?.trim().slice(0, 60) || NEW_CONVERSATION_TITLE,
     startedAt: now,
     turns: [],
     configOptions: [],
@@ -106,7 +107,7 @@ export function adoptPendingSession(
     // no transcript, and the optimistic prompt rendered under it is the only
     // copy that exists until the agent replies.
     turns: waiting.turns.length > 0 ? waiting.turns : live.turns,
-    title: live.title === "New conversation" ? waiting.title : live.title,
+    title: live.title === NEW_CONVERSATION_TITLE ? waiting.title : live.title,
     startedAt: waiting.startedAt,
     busy: live.busy ?? waiting.busy,
   };

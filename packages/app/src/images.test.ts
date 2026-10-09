@@ -1,12 +1,62 @@
 import { expect, test } from "bun:test";
+import { createRequire } from "node:module";
 import {
   dedupeImages,
   imageSourceKind,
+  imageFromMarkdown,
   imagesFromAttachments,
   imagesFromContent,
   imagesFromToolCall,
   isDisplayableImage,
 } from "./images";
+
+test("markdown image descriptions survive the installed renderer's actual AST", () => {
+  interface MarkdownNode {
+    type: string;
+    attributes?: { src?: unknown; alt?: unknown };
+    content?: unknown;
+    children: MarkdownNode[];
+  }
+  const require = createRequire(import.meta.url);
+  const renderer = createRequire(require.resolve("react-native-markdown-renderer/package.json"));
+  const MarkdownIt = renderer("markdown-it");
+  const parse: (
+    text: string,
+    render: (nodes: MarkdownNode[]) => MarkdownNode[],
+    parser: object,
+  ) => MarkdownNode[] = renderer("./lib/commonjs/lib/parser.js").default;
+  const nodes = parse("![Architecture diagram](https://example.invalid/diagram.png)", nodes => nodes, new MarkdownIt());
+  const images: ReturnType<typeof imageFromMarkdown>[] = [];
+  function collect(nodes: MarkdownNode[]) {
+    for (const node of nodes) {
+      if (node.type === "image") {
+        expect(node.attributes?.alt).toBe("");
+        expect(node.content).toBe("Architecture diagram");
+        images.push(imageFromMarkdown(node));
+      }
+      collect(node.children);
+    }
+  }
+  collect(nodes);
+  expect(images).toEqual([{ src: "https://example.invalid/diagram.png", alt: "Architecture diagram" }]);
+});
+
+test("explicit image alt wins, empty descriptions keep the generic fallback", () => {
+  expect(imageFromMarkdown({ attributes: { src: "diagram.png", alt: "Explicit description" }, content: "Token description" }))
+    .toEqual({ src: "diagram.png", alt: "Explicit description" });
+  expect(imageFromMarkdown({ attributes: { src: "diagram.png", alt: "  " }, content: "Token description" }))
+    .toEqual({ src: "diagram.png", alt: "Token description" });
+  expect(imageFromMarkdown({ attributes: { src: "diagram.png" }, content: "" }))
+    .toEqual({ src: "diagram.png", alt: undefined });
+});
+
+test("markdown image extraction still rejects unrenderable sources and malformed fields", () => {
+  for (const src of ["notes.md", "diagram.svg", "data:image/svg+xml,example", "", 42]) {
+    expect(imageFromMarkdown({ attributes: { src }, content: "Description" })).toBeUndefined();
+  }
+  expect(imageFromMarkdown({ attributes: { src: "diagram.png", alt: 42 }, content: {} }))
+    .toEqual({ src: "diagram.png", alt: undefined });
+});
 
 test("inline image blocks become data URIs the app can paint", () => {
   expect(

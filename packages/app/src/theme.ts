@@ -1,6 +1,10 @@
 import { Easing, Platform } from "react-native";
 import type { AccentName } from "./appearancePreference";
 import { materialTokens, type MaterialMode } from "./materialTokens";
+import { motion, createMotionEasings } from "./motionTokens";
+
+export { motion } from "./motionTokens";
+export const nativeMotionEasings = createMotionEasings(Easing);
 
 export type ResolvedAppearanceMode = MaterialMode;
 
@@ -50,16 +54,21 @@ const metrics = {
   gutter: 20, sectionGap: 18, headerInset: 10,
   radius: { sm: 10, md: 16, lg: 20, composer: 26, pane: 24, pill: 999 },
   size: { control: 46, chip: 42, composerCollapsed: 64, composerButton: 42, composerInset: 11, orb: 42, touch: 44 },
-  font: { tiny: 11, small: 13, body: 15, title: 19, greeting: 30 },
+  // Body is iOS's own 17pt (UIFont.TextStyle.body). 15 read as a web page
+  // squeezed onto a phone; every native app the user switches from sets 17.
+  font: { tiny: 11, small: 13, body: 17, title: 19, greeting: 30 },
   display: {
     regular: "sans-serif",
+    monospace: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
     editorial: Platform.select({ ios: "Georgia", android: "serif", default: "Georgia" }),
     semibold: Platform.select({ android: "sans-serif-medium", default: "sans-serif" }),
     bold: Platform.select({ android: "sans-serif-medium", default: "sans-serif" }),
   },
-  line: { body: 22, greeting: 34 },
-  motion: { fast: 120, base: 180 },
-  easing: Easing.bezier(0.22, 1, 0.36, 1),
+  // 24 over 17 keeps the old 22-over-15 proportion; the composer, status rows
+  // and transcript all derive their heights from it.
+  line: { body: 24, greeting: 34 },
+  motion,
+  easing: nativeMotionEasings.standard,
 } as const;
 
 export function createTheme(mode: ResolvedAppearanceMode, accent: AccentName) {
