@@ -11,6 +11,70 @@ installs them separately, and what an app and a daemon must agree on is
 
 Dates are the day the tag was cut.
 
+## 0.9.19 — 2026-08-11
+
+### Added
+
+- The phone's sidebar shows when the paired computer has a newer pew2 release
+  available but cannot install it automatically.
+
+## 0.9.18 — 2026-08-11
+
+### Added
+
+- The daemon can update itself: it checks GitHub releases, verifies the download's
+  checksum, and restarts only when idle. Linux systemd and Windows Scheduled Task
+  supervisors join macOS launchd support.
+- Replies have copy and retry controls, links open in an in-app browser, and
+  transcript rows follow the system text size. Native text selection replaces
+  the hold-to-copy sheet.
+
+### Fixed
+
+- A chosen project survives a daemon restart, and updating a running daemon
+  restarts it so the new version actually takes effect.
+- Image caching and native bitmap lifetimes are bounded, and sessions blocked
+  on a permission no longer leave agents running indefinitely.
+- Windows updates clean up old binaries and Scheduled Tasks have the required
+  idle settings.
+- Release builds refuse a tag that disagrees with the daemon's package version,
+  preventing repeated self-update attempts after installing the same release.
+
+## 0.9.17 — 2026-08-10
+
+### Fixed
+
+- `pew2 pair` no longer claims the pairing it prints. It rotates the pairing
+  instead, leaving the new link available for the phone to claim.
+
+## 0.9.16 — 2026-08-10
+
+### Fixed
+
+- The compiled binary can run the daemon, not just the CLI. Release builds now
+  check that the Linux binary starts and answers its health endpoint.
+- Windows image handling and workspace folder labels are corrected. Windows CI
+  now exercises the daemon, protocol and CLI directly.
+
+## 0.9.15 — 2026-08-10
+
+### Added
+
+- An offline send queue preserves messages until the connection returns, and
+  pending approvals are shown again when catching up.
+- Replies arriving in another session stay in that session's transcript rather
+  than taking over the open conversation.
+- A local store-signed IPA build script checks the archive's version and
+  entitlements before accepting it.
+
+### Fixed
+
+- Refused sends keep the draft. Typing and wrapping in the composer are smoother,
+  and new sessions appear under the correct project.
+- Reconnecting no longer loses sessions or leaves sockets and spinners stuck.
+- Agent failures explain what went wrong, stale provider checks are refreshed,
+  and orphaned agent processes are cleaned up more reliably.
+
 ## 0.9.14 — 2026-08-08
 
 ### Fixed

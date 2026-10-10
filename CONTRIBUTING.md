@@ -6,25 +6,37 @@ is where it is — not ceremony, consequence.
 
 ## Getting it running
 
-```bash
-bun install
-bun run typecheck
-bun run test
-bun run lint
-```
-
-Then, in one terminal:
+Use **Bun 1.3.14**, the version pinned in CI and release builds, from the
+repository root:
 
 ```bash
-bun packages/daemon/src/cli/index.ts pair     # prints a QR code
-bun packages/daemon/src/cli/index.ts start
+bun install --frozen-lockfile
+npm run typecheck
+npm run lint
+npm test
+npm run relay:test
+npm run providers:validate
 ```
 
-and in another:
+Then, in one terminal, start the foreground daemon (do not start a second daemon
+on a port already occupied by the background service):
 
 ```bash
-cd packages/app && bun start
+npm run daemon
 ```
+
+In another terminal at the repository root:
+
+```bash
+bun run packages/daemon/src/cli/index.ts pair --no-wait
+cd packages/app && npm start
+```
+
+`pair` rotates the pairing key and prints a new QR; an existing phone must scan
+it again. There is no `start` CLI command: `serve` or the `daemon` script runs
+the server. The phone's pairing UI needs a real camera. See the
+[development guide](library/knowledge/private/operations/development-testing.md)
+for native requirements and simulator-only component harnesses.
 
 Bun is the runtime and the test runner. The `npm run …` scripts are the same
 scripts by another entry point — CI uses those — so either works; what is not
@@ -88,10 +100,16 @@ tagged `vX.Y.Z`. The release workflow builds from that tag and publishes a
 `.sha256` beside every binary — the installer now refuses a download without one,
 so a release that skips them installs nowhere.
 
-The phone app has a separate store version in `packages/app/app.json`, which store
-rules forbid moving backwards, and which `expo-updates` pins each update to. That
-file is the authority; the matching number in the app's `package.json` is left
-alone because Expo's tooling expects one, so move both together.
+The phone app has a separate store version in `packages/app/app.config.js`.
+Keep its version aligned with `packages/app/package.json`. EAS build numbers are
+managed remotely (`appVersionSource: remote` in `packages/app/eas.json`); the
+native build scripts validate the resulting archive rather than treating the
+placeholder iOS build number in app config as authoritative.
+
+The binary release requires quality checks and the required platform artifacts
+before publishing. Manual workflow runs are build-only, including dispatches
+against tags. See [release operations](library/knowledge/private/operations/releases.md)
+for binary, relay and store-build procedures.
 
 `protocol` and `relay` are internal and carry no version at all — nothing
 installs them separately, and a number nobody reads only drifts. What an app and
@@ -99,8 +117,16 @@ a daemon must agree on is `WIRE_VERSION`, checked on every connection.
 
 ## Adding an agent
 
-Drop a manifest in `providers/`. That is the whole integration — if it needs a
-code change, the manifest schema is probably the thing to fix.
+For a local integration, scaffold a user manifest with `pew2 providers add <id>`.
+For an integration that ships in the binary, add `providers/<id>.json` and its
+import/list entry in `packages/daemon/src/providers/bundled.ts`, then release a
+new daemon binary. A manifest that works from the checkout is not automatically
+embedded in an installed binary.
+
+Follow [Adding a provider](docs/ADDING_A_PROVIDER.md) and the
+[provider integration guide](library/knowledge/private/providers/integration.md).
+The [documentation library](library/README.md) covers the app, daemon, protocol,
+relay and their operational boundaries.
 
 ## Security
 

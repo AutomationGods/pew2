@@ -30,6 +30,78 @@ import { join, relative, resolve } from "node:path";
 // below, so moving this file fails loudly instead of quietly checking nothing.
 const repoRoot = resolve(import.meta.dir, "../../..");
 
+interface WorkflowJob {
+  if?: string;
+  needs?: string | string[];
+  permissions?: { contents?: string };
+  "continue-on-error"?: boolean;
+  steps?: {
+    uses?: string;
+    run?: string;
+    if?: string;
+    with?: Record<string, string>;
+    "continue-on-error"?: boolean;
+  }[];
+}
+
+interface Workflow {
+  permissions?: { contents?: string };
+  jobs: Record<string, WorkflowJob>;
+}
+
+async function workflow(name: string): Promise<Workflow> {
+  // These are repository-owned fixtures; the assertions below check their contract.
+  return Bun.YAML.parse(
+    await readFile(join(repoRoot, ".github/workflows", name), "utf8"),
+  ) as Workflow;
+}
+
+test("publishing requires successful checks of the release commit", async () => {
+  const release = await workflow("release.yml");
+  const quality = release.jobs.quality;
+  const publish = release.jobs.publish;
+  if (!quality || !publish) throw new Error("release needs quality and publish jobs");
+
+  expect(release.permissions?.contents).toBe("read");
+  expect(quality.permissions?.contents).not.toBe("write");
+  expect(quality.if).toBeUndefined();
+  expect(quality["continue-on-error"]).toBeUndefined();
+  expect(publish.needs).toEqual(["quality", "build"]);
+  // always() tolerates the optional Linux ARM build, not a failed quality gate.
+  expect(publish.if).toBe(
+    "always() && !cancelled() && needs.quality.result == 'success' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')",
+  );
+  const steps = quality.steps ?? [];
+  const checkout = steps.find((step) => step.uses?.startsWith("actions/checkout@"));
+  expect(checkout).toBeDefined();
+  expect(checkout?.with?.ref).toBeUndefined(); // Default checkout is the triggering commit.
+  expect(steps.flatMap((step) => (step.run ? [step.run] : []))).toEqual([
+    "bun install --frozen-lockfile",
+    "npm run typecheck",
+    "npm run lint",
+    "npm test",
+    "npm run relay:test",
+  ]);
+  for (const step of steps) {
+    expect(step.if).toBeUndefined();
+    expect(step["continue-on-error"]).toBeUndefined();
+  }
+});
+
+test("CI and release jobs use the documented, pinned Bun version", async () => {
+  const readme = await readFile(join(repoRoot, "README.md"), "utf8");
+  const version = readme.match(/Bun (\d+\.\d+\.\d+) \(the version pinned/)?.[1];
+  expect(version).toBeDefined();
+  for (const name of ["ci.yml", "release.yml"]) {
+    const config = await workflow(name);
+    const setups = Object.values(config.jobs).flatMap((job) =>
+      (job.steps ?? []).filter((step) => step.uses?.startsWith("oven-sh/setup-bun@")),
+    );
+    expect(setups.length).toBeGreaterThan(0);
+    for (const setup of setups) expect(setup.with?.["bun-version"]).toBe(version);
+  }
+});
+
 async function testScript(): Promise<string> {
   const manifest = JSON.parse(await readFile(join(repoRoot, "package.json"), "utf8")) as {
     name?: string;

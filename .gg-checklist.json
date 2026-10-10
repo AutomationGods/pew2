@@ -21,6 +21,26 @@
         "Not checked: device keyboard/visible focus, modal focus handling, VoiceOver/TalkBack, rendered contrast, scaling/reflow, full monorepo tests or hosted CI. Not a legal conformance determination."
       ]
     },
+    "build-release": {
+      "checkedAt": "2026-10-09T00:34:09.433Z",
+      "commit": "e5d9db0",
+      "uncommittedChanges": true,
+      "result": "pass",
+      "summary": "All four recorded findings fixed and locally verified: release gate, Bun pin, setup path and changelog. Full local checks pass; clean-clone/native builds and GitHub workflow execution remain unverified.",
+      "findings": [],
+      "evidence": [
+        "Scope: Rechecked all four build-release findings in the working tree; release/CI configuration, setup docs, changelog, full local checks and in-memory bundles.",
+        "Not checked: Fresh-clone install/build, native/store builds/signing, deployment, all-platform binaries or GitHub execution of changed workflows. Actionlint unavailable.",
+        "npm run typecheck — passed across daemon/protocol, relay and app; npm run lint — 0 errors, 9 warnings in unchanged app files.",
+        "npm test — 1,314 passed, 0 failed across 123 files, including new release-gate and Bun-version regression tests.",
+        "npm run relay:test — all 8 checks passed; npm run providers:validate — all 13 manifests valid.",
+        "Bun.build without outdir — daemon/relay passed, zero diagnostics; bash -n install.sh and both app build scripts — passed.",
+        "README path transition checked; CHANGELOG.md 0.9.15–0.9.19 entries verified against adjacent tag histories with git log and published release dates.",
+        "Read final CI/release diff: Bun 1.3.14 throughout; publish requires successful tag-commit checks and a push event. Manual runs cannot publish; existing guards retained.",
+        "git diff --check — passed; final git status showed only the five intended files and checklist record. No packages installed, commits, publishing or deployment.",
+        "Skills: bulletproof and ci-release-stinger (fix phase). Read-only security/quality reviews checked gate behavior and CI parity; final review found no scoped issues."
+      ]
+    },
     "ci": {
       "checkedAt": "2026-10-08T05:59:44.002Z",
       "commit": "45a6de1",
