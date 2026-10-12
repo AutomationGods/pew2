@@ -13,7 +13,7 @@ engine: "@deeplake/hivemind"
 engine_version: "0.7.160"
 graph_snapshot_sha256: "c010a51a5f79351284c36fcf9be5fd035a4dee2c22220af04506def96336cc5d"
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-12
 last_commit_hash: e5d9db0b528545d143711a7be3a1ca49294cc42a
 git_metadata_scope: repository HEAD baseline, not a working-tree content hash
 extraction: automated-tree-sitter-reference-plus-preserved-curated-prose
@@ -24,7 +24,7 @@ tags:
   - coverage
 related: []
 sources:
-  - packages/app/App.tsx:459-475
+  - packages/app/App.tsx:217-228
   - packages/app/src/useDaemon.ts:599-716
   - packages/daemon/src/index.ts:2080-2117
   - packages/protocol/src/channel.ts:122-174
@@ -57,7 +57,9 @@ After extraction changes, use the new snapshot path; the optional `--expect-sha2
 
 ### Limits of automation
 
-- One parser warning: `packages/app/src/ui/Sidebar.tsx:630`. Relevant extracted declarations may be incomplete; no completeness claim beyond emitted graph nodes is made.
+- 2026-10-12: the generated catalog predates today's uncommitted splits (`acp/connect.ts` → `config-options.ts`/`launch.ts`/`session-types.ts`; `Sidebar.tsx` → `SessionRow.tsx`/`sidebarStyles.ts`; `App.tsx` → `PairingGate.tsx`/`useKeyboardLift.ts`/`appStyles.ts`; new `untyped.ts` in app and daemon). Generated pages, counts and hashes are unchanged and need re-extraction after commit; curated pages already cite the new locations.
+
+- One parser warning: `packages/app/src/ui/Sidebar.tsx:630` (pre-split line in the pinned snapshot; `Sidebar.tsx` is now 569 lines after its row/styles moved to `SessionRow.tsx`/`sidebarStyles.ts`, so this coordinate does not map to current bytes). Relevant extracted declarations may be incomplete; no completeness claim beyond emitted graph nodes is made.
 - Edges retain their actual confidence (`EXTRACTED` in this snapshot). External/unresolved endpoints are plain text, not invented wiki targets. Citations locate declarations; they do not promise exact call-expression coordinates.
 - No behavior inference, ADR generation, or domain-role classification. `type_alias` normalizes to `type`; nonexported declarations without an exact canonical entity subtype retain a null `entity_type` and explicit graph kind.
 - Real extraction and deterministic rendering are completed operations, **not canonical wiki-driver orchestration/global reconciliation**. `partial_scan: true` and `graph_reconciled: false` remain intentional. No reserved global index/hash state was changed.

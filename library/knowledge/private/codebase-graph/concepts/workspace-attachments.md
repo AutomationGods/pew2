@@ -3,7 +3,7 @@ type: concept
 title: Workspace and attachment delivery
 status: developing
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-10-12
 last_commit_hash: e5d9db0b528545d143711a7be3a1ca49294cc42a
 git_metadata_scope: repository HEAD baseline, not a working-tree content hash
 extraction: manual-source-read
@@ -17,7 +17,7 @@ sources:
   - packages/daemon/src/workspace.ts:21-34
   - packages/protocol/src/wire.ts:447-475
   - packages/daemon/src/attachments.ts:70-106
-  - packages/daemon/src/acp/connect.ts:834-861
+  - packages/daemon/src/acp/connect.ts:429-448
   - packages/daemon/src/index.ts:1028-1037
 ---
 
@@ -28,7 +28,7 @@ sources:
 
 ## Attachment boundary
 - The [[library/knowledge/private/codebase-graph/entities/wire-contract]] defines attachment shape and count/byte ceilings. The daemon checks attachment counts and estimates decoded sizes from base64 length and padding before storage. This limit calculation is not validation of decoded file contents. (`packages/protocol/src/wire.ts:447-475`, `packages/daemon/src/attachments.ts:70-106`)
-- The [[library/knowledge/private/codebase-graph/entities/acp-connection]] reads negotiated prompt capabilities from initialization. Do not infer that every provider accepts the same image/resource representation. (`packages/daemon/src/acp/connect.ts:834-861`)
+- The [[library/knowledge/private/codebase-graph/entities/acp-connection]] reads negotiated prompt capabilities from initialization. Do not infer that every provider accepts the same image/resource representation. (`packages/daemon/src/acp/connect.ts:429-448`)
 - [[library/knowledge/private/codebase-graph/entities/daemon]] discards temporary attachment files when closing the session handle. These files are delivery artifacts, not a durable user document store. (`packages/daemon/src/index.ts:1028-1037`)
 
 ## Evidence limits

@@ -12,6 +12,77 @@
  * Expo-free so it can be tested directly.
  */
 import type { PermissionRequest } from "./useDaemon";
+import { field, isRecord } from "./untyped";
+
+/** One choice in a GG Coder desktop question, as the desktop sends it. */
+export interface DesktopOption {
+  label: string;
+  value?: string;
+  hint?: string;
+  recommended?: boolean;
+}
+
+/** One question in a GG Coder desktop question card. */
+export interface DesktopQuestion {
+  id: string;
+  question: string;
+  kind: "confirm" | "choice" | "multi" | "text";
+  detail?: string;
+  options?: DesktopOption[];
+  allowOther?: boolean;
+}
+
+/** A card's answers, keyed by question id: text or a pick, or a list for multi. */
+export type DesktopAnswers = Record<string, string | string[]>;
+
+const KINDS = new Set(["confirm", "choice", "multi", "text"]);
+const text = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+
+function readOption(raw: unknown): DesktopOption | undefined {
+  const label = text(field(raw, "label"));
+  if (!label) return undefined;
+  const value = text(field(raw, "value"));
+  const hint = text(field(raw, "hint"));
+  return {
+    label,
+    ...(value !== undefined ? { value } : {}),
+    ...(hint ? { hint } : {}),
+    ...(field(raw, "recommended") === true ? { recommended: true } : {}),
+  };
+}
+
+function readQuestion(raw: unknown): DesktopQuestion | undefined {
+  const id = text(field(raw, "id"));
+  const question = text(field(raw, "question"));
+  const kind = text(field(raw, "kind"));
+  if (!id || !question || !kind || !KINDS.has(kind)) return undefined;
+  const rawOptions = field(raw, "options");
+  const options = Array.isArray(rawOptions)
+    ? (rawOptions as unknown[]).map(readOption).filter((o): o is DesktopOption => o !== undefined)
+    : undefined;
+  const detail = text(field(raw, "detail"));
+  const allowOther = field(raw, "allowOther");
+  return {
+    id,
+    question,
+    kind: kind as DesktopQuestion["kind"],
+    ...(detail ? { detail } : {}),
+    ...(options && options.length > 0 ? { options } : {}),
+    ...(typeof allowOther === "boolean" ? { allowOther } : {}),
+  };
+}
+
+/**
+ * The question card a GG Coder desktop ask carries, or undefined for any other
+ * request. All or nothing: a card with an unreadable question is not shown as
+ * a card at all, because answering part of it would be refused anyway.
+ */
+export function readDesktopQuestions(params: unknown): DesktopQuestion[] | undefined {
+  const raw = field(field(field(params, "_meta"), "ggDesktopAsk"), "questions");
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const questions = (raw as unknown[]).map(readQuestion);
+  return questions.every((q): q is DesktopQuestion => q !== undefined) ? questions : undefined;
+}
 
 /** The shape an agent sends, of which everything is optional in practice. */
 interface PermissionParams {
@@ -32,7 +103,8 @@ const DEFAULT_OPTIONS = [
 
 /** One open request, from its `requestId` and the agent's raw params. */
 export function toPermissionRequest(requestId: string, params: unknown): PermissionRequest {
-  const fields = (params ?? {}) as PermissionParams;
+  const fields = (isRecord(params) ? params : {}) as PermissionParams;
+  const questions = readDesktopQuestions(params);
   return {
     requestId,
     title: fields.toolCall?.title ?? "The agent needs your approval",
@@ -40,6 +112,7 @@ export function toPermissionRequest(requestId: string, params: unknown): Permiss
       Array.isArray(fields.options) && fields.options.length > 0
         ? fields.options
         : DEFAULT_OPTIONS,
+    ...(questions ? { questions } : {}),
   };
 }
 

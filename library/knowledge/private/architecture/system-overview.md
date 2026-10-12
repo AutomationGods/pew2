@@ -7,7 +7,7 @@ human_description: >-
 
 # System architecture
 
-**Category:** Engineering | **Version:** 1.0 | **Date:** 2026-10-08 | **Status:** Active
+**Category:** Engineering | **Version:** 1.0 | **Date:** 2026-10-12 | **Status:** Active
 
 ```text
 Expo phone -- sealed WebSocket frames --> Bun daemon -- ACP stdio --> agent
@@ -48,7 +48,7 @@ The relay is an alternative transport, not an agent runtime, history database, o
 ## Source evidence
 
 - [packages/daemon/src/handler.ts](../../../../packages/daemon/src/handler.ts) — shared validated message handler.
-- [packages/daemon/src/acp/connect.ts](../../../../packages/daemon/src/acp/connect.ts) — ACP process lifecycle.
+- [packages/daemon/src/acp/connect.ts](../../../../packages/daemon/src/acp/connect.ts) — ACP process lifecycle (launch details in [launch.ts](../../../../packages/daemon/src/acp/launch.ts), session types in [session-types.ts](../../../../packages/daemon/src/acp/session-types.ts)).
 - [packages/daemon/src/session/log.ts:30](../../../../packages/daemon/src/session/log.ts#L30) and [batched trimming:52](../../../../packages/daemon/src/session/log.ts#L52) and [packages/daemon/src/index.ts](../../../../packages/daemon/src/index.ts) — event storage and subscription.
 - [packages/relay/src/index.ts](../../../../packages/relay/src/index.ts) — forwarding without event persistence.
 - [packages/daemon/src/device-claim.ts](../../../../packages/daemon/src/device-claim.ts) — identity gate.

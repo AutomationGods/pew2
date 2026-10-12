@@ -497,7 +497,7 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
       }
 
       case "session.permission": {
-        daemon.answerPermission(message.sessionId, message.requestId, message.optionId);
+        daemon.answerPermission(message.sessionId, message.requestId, message.optionId, message.answers);
         break;
       }
 

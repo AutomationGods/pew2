@@ -507,3 +507,14 @@ test("an event for a conversation the drawer does not hold changes nothing", () 
     before,
   );
 });
+test("Ken's verdict is its own row, never merged into the agent's reply", () => {
+  const turns: Turn[] = [];
+  applyChunk(turns, "s1:1", { role: "agent", text: "Fixed it." });
+  applyChunk(turns, "s1:2", { role: "agent", text: "That does the job. No complaints.", ken: true });
+  applyChunk(turns, "s1:3", { role: "agent", text: "Next step." });
+  expect(turns.map((turn) => [turn.text, turn.ken === true])).toEqual([
+    ["Fixed it.", false],
+    ["That does the job. No complaints.", true],
+    ["Next step.", false],
+  ]);
+});

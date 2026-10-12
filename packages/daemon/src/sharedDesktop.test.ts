@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { Daemon } from "./index.js";
 import { SessionLog } from "./session/log.js";
-import { SHARED_DESKTOP_PROVIDER, readDesktopState } from "./acp/sharedDesktop.js";
+import { SHARED_DESKTOP_PROVIDER, kenNeedsYou, readDesktopState } from "./acp/sharedDesktop.js";
 import type { AcpSessionHandle } from "./acp/connect.js";
 import { PromptGate } from "../../app/src/promptGate.js";
 
@@ -127,4 +127,27 @@ test("other ACP providers cannot change liveness with desktop-only metadata", ()
   expect(session.working).toBe(false);
   expect(session.log.since(-1)).toHaveLength(1);
   expect(readDesktopState({ update: { _meta: { ggDesktopWorking: "yes" } } })).toBeUndefined();
+});
+
+test("only a live verdict where Ken hands the decision back notifies", () => {
+  const verdict = (phase: string, live?: true) => ({
+    sessionId: "desktop-chat",
+    update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "x" }, _meta: { ggKen: { phase, ...(live ? { live } : {}) } } },
+  });
+  expect(kenNeedsYou(verdict("human", true))).toBe(true);
+  expect(kenNeedsYou(verdict("capped", true))).toBe(true);
+  // An all-clear is not news, and a replayed verdict was already seen.
+  expect(kenNeedsYou(verdict("done", true))).toBe(false);
+  expect(kenNeedsYou(verdict("human"))).toBe(false);
+  expect(kenNeedsYou({ update: { sessionUpdate: "agent_message_chunk" } })).toBe(false);
+});
+
+test("a desktop card's answers reach the connection with the request", () => {
+  const { daemon, session } = setup();
+  const calls: unknown[] = [];
+  session.permissions.set("perm-1", {});
+  session.handle = { answerPermission: (...args: unknown[]) => { calls.push(args); return true; } } as unknown as AcpSessionHandle;
+  expect(daemon.answerPermission("phone-chat", "perm-1", "answer", { q: ["a", "b"] })).toBe(true);
+  expect(calls).toEqual([["perm-1", "answer", { q: ["a", "b"] }]]);
+  expect(session.permissions.size).toBe(0);
 });

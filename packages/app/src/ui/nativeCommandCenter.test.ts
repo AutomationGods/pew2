@@ -37,11 +37,11 @@ test("reconnect is a large always-available drawer action with confirmation", ()
   expect(action).toContain("reconnectDialog(machineLabel, () => {");
   expect(action).toContain("Alert.alert(dialog.title, dialog.message, dialog.buttons)");
   expect(action).toContain("onUnpair();");
-  expect(drawer).toContain("minHeight: theme.size.touch + theme.space(3)");
+  expect(source("sidebarStyles.ts")).toContain("minHeight: theme.size.touch + theme.space(3)");
 });
 
 test("forgetting clears local pairing and opens the native scanner", () => {
-  const app = source("../../App.tsx");
+  const app = source("PairingGate.tsx");
   const start = app.indexOf("  const unpair =");
   expect(start).toBeGreaterThan(-1);
   const unpair = app.slice(start, app.indexOf("  if (!checked)", start));
@@ -164,7 +164,7 @@ test("shared motion profiles preserve the existing rhythms and spring tuning", (
 test("app-owned timing stays in profiles while keyboard timing stays platform-owned", () => {
   for (const name of [
     "ActivityLine.tsx", "ActivityScreen.tsx", "ChatThread.tsx", "CommandToken.tsx",
-    "Composer.tsx", "NewChatSheet.tsx", "Sheet.tsx", "Sidebar.tsx", "Skeleton.tsx",
+    "Composer.tsx", "NewChatSheet.tsx", "Sheet.tsx", "SessionRow.tsx", "Sidebar.tsx", "Skeleton.tsx",
     "ShimmerText.tsx", "TurnReceipt.tsx",
   ]) {
     const text = source(name);
@@ -174,7 +174,7 @@ test("app-owned timing stays in profiles while keyboard timing stays platform-ow
   }
   const root = source("../../App.tsx");
   expect(root).toContain("const DRAWER_SETTLE = motion.drawerSpring");
-  expect(root).toContain("duration: event.duration, easing: KEYBOARD_CURVE");
+  expect(source("useKeyboardLift.ts")).toContain("duration: event.duration, easing: KEYBOARD_CURVE");
   expect(source("Composer.tsx")).toContain("createMotionEasings(ReanimatedEasing)");
   expect(source("Sheet.tsx")).toContain("createMotionEasings(Easing)");
 });

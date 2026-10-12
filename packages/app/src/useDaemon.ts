@@ -11,7 +11,7 @@ import { SecureChannel, e2e, envelopeHeader, wire } from "@pew2/protocol";
 
 const { WIRE_VERSION } = wire;
 import { USE_FIXTURES, isFixtureSession, sampleSessions } from "./fixtures";
-import { mergeAgentSessions, needsResume, replaceAgentSessionStub } from "./agentHistory";
+import { findAgentSession, mergeAgentSessions, needsResume, replaceAgentSessionStub } from "./agentHistory";
 import { receiptOnOpen, receiptOnReplay, recordReceipt } from "./turnReceipts";
 import {
   adoptPendingSession,
@@ -79,7 +79,7 @@ import {
   withError,
   type ReplayEvent,
 } from "./replayFold";
-import { readPermissionRequest } from "./permissions";
+import { readPermissionRequest, type DesktopAnswers, type DesktopQuestion } from "./permissions";
 import { NEW_CONVERSATION_TITLE } from "./conversationTitle";
 
 export type Status = "connecting" | "online" | "offline";
@@ -125,6 +125,11 @@ export interface PermissionRequest {
   requestId: string;
   title: string;
   options: { optionId: string; name: string }[];
+  /**
+   * A GG Coder desktop question card, drawn as the desktop draws it. Answered
+   * with the whole card's answers rather than one of `options`.
+   */
+  questions?: DesktopQuestion[];
 }
 
 export interface Turn {
@@ -141,6 +146,8 @@ export interface Turn {
   key?: string;
   role: "user" | "agent" | "thought" | "system";
   text: string;
+  /** A verdict from GG Coder's reviewer, Ken, shown under his name. */
+  ken?: boolean;
   /**
    * Pictures the agent sent with this message, in order. Kept beside the text
    * rather than spliced into it: the bytes may be inline base64 (megabytes of
@@ -1842,9 +1849,11 @@ export function useDaemon(
               // this live session *replaces* it — prepending both would list
               // the same conversation twice.
               const agentSessionId = message.agentSessionId as string | undefined;
-              const resumedFrom = agentSessionId
-                ? prev.sessions.find((s) => s.agentSessionId === agentSessionId)
-                : undefined;
+              const resumedFrom = findAgentSession(
+                prev.sessions,
+                message.providerId ?? prev.activeProviderId,
+                agentSessionId,
+              );
               // Same array when nothing is dropped, which is the common case: a
               // fresh identity re-renders the whole transcript for no change,
               // seen as the first prompt flickering the instant the session
@@ -2549,10 +2558,24 @@ export function useDaemon(
       },
 
       /** Answer an approval in the visible conversation, or one named by the activity screen. */
-      answer: (requestId: string, optionId: string, to?: string): boolean => {
+      answer: (
+        requestId: string,
+        optionId: string,
+        to?: string,
+        answers?: DesktopAnswers,
+      ): boolean => {
         const sessionId = to ?? sessionRef.current;
         if (!sessionId) return false;
-        if (!post({ t: "session.permission", sessionId, requestId, optionId })) return false;
+        if (
+          !post({
+            t: "session.permission",
+            sessionId,
+            requestId,
+            optionId,
+            ...(answers ? { answers } : {}),
+          })
+        )
+          return false;
         const answeringVisible = sessionId === sessionRef.current;
         setState((s) => {
           const answeredVisible =

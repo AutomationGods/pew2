@@ -7,7 +7,7 @@ human_description: >-
 
 # Daemon and CLI lifecycle
 
-**Category:** Engineering | **Version:** 1.0 | **Date:** 2026-10-08 | **Status:** Active
+**Category:** Engineering | **Version:** 1.0 | **Date:** 2026-10-12 | **Status:** Active
 
 ## Entry points
 
@@ -52,7 +52,7 @@ Automatic replacement requires an eligible compiled build and installed supervis
 - [packages/daemon/src/server.ts](../../../../packages/daemon/src/server.ts) — startup/orphan sweep; [packages/daemon/src/server.ts](../../../../packages/daemon/src/server.ts) — shutdown.
 - [packages/daemon/src/cli/service.ts](../../../../packages/daemon/src/cli/service.ts) — platform dispatch.
 - [packages/daemon/src/workspace.ts](../../../../packages/daemon/src/workspace.ts) and [packages/daemon/src/handler.ts](../../../../packages/daemon/src/handler.ts) — cwd rules.
-- [packages/daemon/src/acp/connect.ts](../../../../packages/daemon/src/acp/connect.ts) — ACP connection; [packages/daemon/src/acp/sharedDesktop.ts](../../../../packages/daemon/src/acp/sharedDesktop.ts) — shared extensions.
+- [packages/daemon/src/acp/connect.ts](../../../../packages/daemon/src/acp/connect.ts) — ACP connection; [packages/daemon/src/acp/launch.ts](../../../../packages/daemon/src/acp/launch.ts) — process launch; [packages/daemon/src/acp/sharedDesktop.ts](../../../../packages/daemon/src/acp/sharedDesktop.ts) — shared extensions.
 - [packages/daemon/src/session/log.ts:30](../../../../packages/daemon/src/session/log.ts#L30) and [batched trimming:52](../../../../packages/daemon/src/session/log.ts#L52) — replay bound; [packages/daemon/src/index.ts](../../../../packages/daemon/src/index.ts) — subscribe.
 - [packages/daemon/src/index.ts](../../../../packages/daemon/src/index.ts) — lifecycle constants; [packages/daemon/src/index.ts](../../../../packages/daemon/src/index.ts) — centralized close.
 - [packages/daemon/src/update/scheduler.ts](../../../../packages/daemon/src/update/scheduler.ts) — update gate.

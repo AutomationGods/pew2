@@ -216,6 +216,13 @@ function TurnView({ turn, onOpenThought, retryPrompt, onRetry, onCancelQueued }:
 
   return (
     <View style={styles.agentRow}>
+      {/* Ken is GG Coder's reviewer: his verdict is a second voice in the same
+          reply area, so it carries his name the way the desktop's row does. */}
+      {turn.ken && (
+        <Text style={styles.kenLabel} accessibilityRole="header">
+          Ken
+        </Text>
+      )}
       {hasText && <MarkdownText text={text} />}
       <ChatImages images={images} />
       {/* A row rather than a lone button, because that is the shape this ends
@@ -259,6 +266,7 @@ export const Turn = memo(
     before.turn.cancelled === after.turn.cancelled &&
     before.turn.text === after.turn.text &&
     before.turn.role === after.turn.role &&
+    before.turn.ken === after.turn.ken &&
     // The one flag that is drawn: without it the label would outlive the
     // message going out, which is the moment it stops being true.
     before.turn.queued === after.turn.queued &&
@@ -306,6 +314,12 @@ function makeStyles(theme: AppTheme) {
     color: theme.color.textDim,
     fontSize: theme.font.small,
     fontWeight: "600",
+  },
+  kenLabel: {
+    color: theme.color.textDim,
+    fontSize: theme.font.small,
+    fontWeight: "600",
+    marginBottom: theme.space(1),
   },
   systemRow: { width: "100%", gap: theme.space(2) },
   // Reads as a control rather than as more of the error text: the failure is

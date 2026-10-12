@@ -232,7 +232,9 @@ function PermissionCard({
       >
         <SessionIdentity provider={provider} busy={false} />
         <View style={styles.cardCopy}>
-          <Text style={styles.cardTitle}>Permission needed</Text>
+          <Text style={styles.cardTitle}>
+            {permission.questions ? "Question for you" : "Permission needed"}
+          </Text>
           <Text style={styles.metadata} numberOfLines={1}>
             {providerLabel(session, provider)}
           </Text>
@@ -242,14 +244,27 @@ function PermissionCard({
         </View>
       </Pressable>
       <View style={styles.permissionActions}>
-        {options.map((option) => (
+        {permission.questions ? (
+          // A question card needs its own screen: opening the conversation
+          // brings it up whole, rather than offering a fragment of it here.
           <PermissionAction
-            key={option.optionId}
-            option={option}
+            option={{ optionId: "open", name: "Answer" }}
             disabled={disabled}
-            onPress={() => onAnswer(permission.requestId, option)}
+            onPress={() => {
+              haptics.tap();
+              onOpen();
+            }}
           />
-        ))}
+        ) : (
+          options.map((option) => (
+            <PermissionAction
+              key={option.optionId}
+              option={option}
+              disabled={disabled}
+              onPress={() => onAnswer(permission.requestId, option)}
+            />
+          ))
+        )}
       </View>
     </View>
   );

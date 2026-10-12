@@ -241,3 +241,39 @@ posixTest("a spawned agent is its own process group, and close() ends the group"
     else process.env.PEW2_HOME = previousHome;
   }
 });
+
+/** Runs one prompt against the echo agent under `providerId`, answering its question card. */
+async function answerCard(providerId: string): Promise<string> {
+  const previousHome = process.env.PEW2_HOME;
+  process.env.PEW2_HOME = mkdtempSync(join(tmpdir(), "pew2-connect-"));
+  const said: string[] = [];
+  try {
+    // Answered from inside the callback, which only fires after connect returns.
+    const handle: Awaited<ReturnType<typeof connectProvider>> = await connectProvider({
+      provider: { ...echoProvider, manifest: { ...echoProvider.manifest, id: providerId } },
+      cwd: tmpdir(),
+      onUpdate: (payload) => {
+        const text = (payload as { update?: { content?: { text?: string } } }).update?.content?.text;
+        if (text?.startsWith("answers:")) said.push(text);
+      },
+      onPermissionRequest: ({ requestId }) => {
+        handle.answerPermission(requestId, "answer", { q: "the blue one" });
+      },
+    });
+    await handle.prompt("desktop question");
+    handle.close();
+    return said.join("");
+  } finally {
+    if (previousHome === undefined) delete process.env.PEW2_HOME;
+    else process.env.PEW2_HOME = previousHome;
+  }
+}
+
+test("a desktop question card's answers go back to the GG Coder desktop with the reply", async () => {
+  expect(await answerCard("ggcoder-desktop")).toBe('answers:{"ggDesktopAnswers":{"q":"the blue one"}}');
+});
+
+test("card answers are never sent to an agent that is not the GG Coder desktop", async () => {
+  // Another agent copying the desktop's metadata must not receive what the user typed.
+  expect(await answerCard("echo")).toBe("answers:null");
+});

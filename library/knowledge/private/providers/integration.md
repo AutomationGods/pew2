@@ -7,7 +7,7 @@ human_description: >-
 
 # Provider integration
 
-**Category:** Engineering / Providers | **Version:** 1.0 | **Date:** 2026-10-08 | **Status:** Active
+**Category:** Engineering / Providers | **Version:** 1.0 | **Date:** 2026-10-12 | **Status:** Active
 
 ## Discover and diagnose
 
@@ -47,5 +47,5 @@ See [configuration](../operations/configuration-data.md), [conversations](../../
 - [Registry](../../../../packages/daemon/src/providers/registry.ts) — `userProvidersDir()`, executable resolution and `loadProviders()`.
 - [Bundled manifests](../../../../packages/daemon/src/providers/bundled.ts) — explicit imports and `BUNDLED_MANIFESTS`.
 - [CLI](../../../../packages/daemon/src/cli/index.ts) — provider command dispatch and enable/disable behavior.
-- [ACP connection](../../../../packages/daemon/src/acp/connect.ts) — agent launch and initialization.
+- [ACP connection](../../../../packages/daemon/src/acp/connect.ts) — initialization; [launch](../../../../packages/daemon/src/acp/launch.ts) — launch spec and provider environment; [config options](../../../../packages/daemon/src/acp/config-options.ts) — model/mode options and available commands.
 - [Shared desktop](../../../../packages/daemon/src/acp/sharedDesktop.ts) and [bridge manifest](../../../../providers/ggcoder-desktop.json) — specialized integration.

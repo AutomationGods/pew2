@@ -8,7 +8,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { AppearanceProvider } from "../appearance";
-import { PairingGate } from "../../App";
+import { PairingGate } from "./PairingGate";
 import { loadPairing, savePairing, type Pairing } from "../pairing";
 import { loadCachedProviders, saveCachedProviders } from "../preferences";
 import { Sidebar } from "./Sidebar";

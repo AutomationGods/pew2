@@ -7,7 +7,7 @@ human_description: >-
 
 # What is pew2?
 
-**Category:** User guide | **Version:** 1.0 | **Date:** 2026-10-08 | **Status:** Active
+**Category:** User guide | **Version:** 1.0 | **Date:** 2026-10-12 | **Status:** Active
 
 pew2 lets you prompt desktop coding agents, read their streamed replies, and answer permission requests from a phone. It is a remote control, not an AI model, hosted development machine, or replacement for the agent's own account.
 
@@ -35,7 +35,7 @@ Next: [get started](../guides/getting-started.md).
 
 ## Source evidence
 
-- [packages/daemon/src/acp/connect.ts](../../../../packages/daemon/src/acp/connect.ts) — process launch and ACP initialization.
+- [packages/daemon/src/acp/connect.ts](../../../../packages/daemon/src/acp/connect.ts) — ACP initialization; [packages/daemon/src/acp/launch.ts](../../../../packages/daemon/src/acp/launch.ts) — process launch.
 - [packages/daemon/src/acp/sharedDesktop.ts](../../../../packages/daemon/src/acp/sharedDesktop.ts) — shared-desktop provider distinction.
 - [packages/protocol/src/wire.ts](../../../../packages/protocol/src/wire.ts) — provider information supplied to clients.
 - [packages/daemon/src/push.ts](../../../../packages/daemon/src/push.ts) — notification content leaves the sealed-session boundary.

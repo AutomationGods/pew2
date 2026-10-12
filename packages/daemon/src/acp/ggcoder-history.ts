@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { createGunzip, gunzip } from "node:zlib";
 import type { AgentSession } from "./connect.js";
 import { historyImages } from "../images.js";
+import { field } from "../untyped.js";
 
 const gunzipAsync = promisify(gunzip);
 
@@ -47,24 +48,29 @@ async function countFile(filePath: string, expectedSessionId: string): Promise<n
 
   try {
     for await (const line of lines) {
-      let entry: any;
+      let entry: unknown;
       try {
         entry = JSON.parse(line);
       } catch {
         continue;
       }
-      if (entry?.type === "session") {
-        sessionId = entry.id;
-        leafId = entry.leafId;
-      } else if (entry?.type === "message" && typeof entry.id === "string") {
-        lastMessageId = entry.id;
-        messages.set(entry.id, {
-          parentId: typeof entry.parentId === "string" ? entry.parentId : null,
-          role:
-            entry.message?.role === "user" || entry.message?.role === "assistant"
-              ? entry.message.role
-              : undefined,
-          hasText: hasVisibleText(entry.message?.content),
+      const type = field(entry, "type");
+      const id = field(entry, "id");
+      if (type === "session") {
+        // Only a string can equal the expected id, so checking changes nothing.
+        sessionId = typeof id === "string" ? id : undefined;
+        // Left unchecked as before: a corrupt leaf must find no lineage, not fall
+        // back to the last message.
+        leafId = field(entry, "leafId") as string | undefined;
+      } else if (type === "message" && typeof id === "string") {
+        lastMessageId = id;
+        const parentId = field(entry, "parentId");
+        const message = field(entry, "message");
+        const role = field(message, "role");
+        messages.set(id, {
+          parentId: typeof parentId === "string" ? parentId : null,
+          role: role === "user" || role === "assistant" ? role : undefined,
+          hasText: hasVisibleText(field(message, "content")),
         });
       }
     }
@@ -177,27 +183,36 @@ async function readCheckpoint(filePath: string): Promise<DisplayCheckpoint | und
 
   for (const line of text.split("\n")) {
     if (!line) continue;
-    let entry: any;
+    let entry: unknown;
     try {
       entry = JSON.parse(line);
     } catch {
       continue;
     }
-    if (entry?.type === "session" && typeof entry.id === "string") {
-      header = {
-        id: entry.id,
-        conversationId: typeof entry.conversationId === "string" ? entry.conversationId : undefined,
-        parentSessionId:
-          typeof entry.parentSessionId === "string" ? entry.parentSessionId : undefined,
-        leafId: typeof entry.leafId === "string" ? entry.leafId : undefined,
+    const type = field(entry, "type");
+    const id = field(entry, "id");
+    if (type === "session" && typeof id === "string") {
+      const text = (key: string) => {
+        const value = field(entry, key);
+        return typeof value === "string" ? value : undefined;
       };
-    } else if (entry?.type === "message" && typeof entry.id === "string") {
-      lastMessageId = entry.id;
-      messages.set(entry.id, {
-        parentId: typeof entry.parentId === "string" ? entry.parentId : null,
-        role: entry.message?.role,
-        content: entry.message?.content,
-        provenance: entry.message?.provenance,
+      header = {
+        id,
+        conversationId: text("conversationId"),
+        parentSessionId: text("parentSessionId"),
+        leafId: text("leafId"),
+      };
+    } else if (type === "message" && typeof id === "string") {
+      lastMessageId = id;
+      const parentId = field(entry, "parentId");
+      const message = field(entry, "message");
+      // Role and provenance are read as stored, unchecked, exactly as before;
+      // `visibility()` compares them against known values.
+      messages.set(id, {
+        parentId: typeof parentId === "string" ? parentId : null,
+        role: field(message, "role") as DisplayStoredMessage["role"],
+        content: field(message, "content"),
+        provenance: field(message, "provenance") as DisplayStoredMessage["provenance"],
       });
     }
   }

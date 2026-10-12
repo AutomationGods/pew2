@@ -7,9 +7,9 @@ human_description: >-
 
 # Phone client architecture
 
-**Category:** Engineering | **Version:** 1.0 | **Date:** 2026-10-08 | **Status:** Active
+**Category:** Engineering | **Version:** 1.0 | **Date:** 2026-10-12 | **Status:** Active
 
-`App.tsx` composes pairing, drawer, conversation/composer, sheets, appearance, and native event handlers. `src/useDaemon.ts` owns the long-lived connection and session-facing state. Protocol data is transformed into renderable messages rather than rendering raw ACP directly.
+`App.tsx` composes pairing (`src/ui/PairingGate.tsx`), drawer, conversation/composer, sheets, appearance, and native event handlers. `src/useDaemon.ts` owns the long-lived connection and session-facing state. Protocol data is transformed into renderable messages rather than rendering raw ACP directly.
 
 ## State ownership
 
@@ -42,7 +42,7 @@ See [development tests](../operations/development-testing.md), [release operatio
 
 ## Source evidence
 
-- [packages/app/App.tsx](../../../../packages/app/App.tsx) — composition entry.
+- [packages/app/App.tsx](../../../../packages/app/App.tsx) — composition entry; [src/ui/PairingGate.tsx](../../../../packages/app/src/ui/PairingGate.tsx), [src/ui/useKeyboardLift.ts](../../../../packages/app/src/ui/useKeyboardLift.ts), [src/ui/appStyles.ts](../../../../packages/app/src/ui/appStyles.ts) — extracted gate, keyboard lift and styles; [src/ui/Sidebar.tsx](../../../../packages/app/src/ui/Sidebar.tsx) with [SessionRow.tsx](../../../../packages/app/src/ui/SessionRow.tsx) and [sidebarStyles.ts](../../../../packages/app/src/ui/sidebarStyles.ts) — drawer.
 - [packages/app/src/useDaemon.ts](../../../../packages/app/src/useDaemon.ts) — connection/session hook; [packages/app/src/outbox.ts](../../../../packages/app/src/outbox.ts) — queue limits.
 - [packages/app/src/pairing.ts](../../../../packages/app/src/pairing.ts) — generated identity and persistence.
 - [packages/app/src/ui/push.ts](../../../../packages/app/src/ui/push.ts) — registration; [packages/app/src/ui/accessibilityState.ts](../../../../packages/app/src/ui/accessibilityState.ts) — accessibility signals.

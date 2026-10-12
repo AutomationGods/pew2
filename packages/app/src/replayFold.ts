@@ -85,7 +85,15 @@ export function applyChunk(turns: Turn[], key: string, chunk: Chunk): void {
     // evidence, and a bubble must never keep the label after the agent has it.
     const { queued: _queued, ...adopted } = turns[optimistic]!;
     turns[optimistic] = { ...adopted, id: key };
-  } else if (last && last.role === chunk.role && chunk.role !== "user") {
+  } else if (
+    last &&
+    last.role === chunk.role &&
+    chunk.role !== "user" &&
+    // Ken's line is a speaker of its own: never merged into the agent's reply,
+    // nor the reply into it.
+    !last.ken &&
+    !chunk.ken
+  ) {
     // Coalesce consecutive chunks of the same role into one bubble.
     turns[boundary - 1] = mergeChunk(last, chunk);
   } else {
@@ -147,13 +155,14 @@ export function turnFromChunk(id: string, chunk: Chunk): Turn {
     role: chunk.role,
     text: chunk.text,
     ...(chunk.images ? { images: chunk.images } : {}),
+    ...(chunk.ken ? { ken: true } : {}),
   };
 }
 
 export interface ReplayEvent {
   sessionId?: string;
   seq?: number;
-  payload?: any;
+  payload?: unknown;
 }
 
 interface FoldState {

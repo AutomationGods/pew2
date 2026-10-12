@@ -17,6 +17,7 @@
  * `hapticsPolicy.ts`, and for the same reason — `bun test` cannot parse React
  * Native's Flow syntax.
  */
+import { field } from "./untyped";
 
 export interface SlashCommand {
   name: string;
@@ -95,18 +96,25 @@ function normalise(name: string): string {
  */
 export function offeredCommands(raw: unknown): SlashCommand[] {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((command: any) => typeof command?.name === "string" && command.name.trim())
-    .map((command: any) => ({
-      name: normalise(command.name),
-      description: typeof command.description === "string" ? command.description : "",
-      ...(typeof command.hint === "string"
-        ? { hint: command.hint }
-        : typeof command.input?.hint === "string"
-          ? { hint: command.input.hint }
+  const commands: SlashCommand[] = [];
+  for (const command of raw as unknown[]) {
+    const name = field(command, "name");
+    if (typeof name !== "string" || !name.trim()) continue;
+    const description = field(command, "description");
+    const hint = field(command, "hint");
+    const inputHint = field(field(command, "input"), "hint");
+    const offered: SlashCommand = {
+      name: normalise(name),
+      description: typeof description === "string" ? description : "",
+      ...(typeof hint === "string"
+        ? { hint }
+        : typeof inputHint === "string"
+          ? { hint: inputHint }
           : {}),
-    }))
-    .filter((command: SlashCommand) => isOfferedCommand(command.name));
+    };
+    if (isOfferedCommand(offered.name)) commands.push(offered);
+  }
+  return commands;
 }
 
 /**
@@ -115,11 +123,12 @@ export function offeredCommands(raw: unknown): SlashCommand[] {
  * Returns undefined for every other payload so a caller can keep its previous
  * list: the agent sends this once and does not repeat it per turn.
  */
-export function readAvailableCommands(payload: any): SlashCommand[] | undefined {
-  const update = payload?.update;
-  if (update?.sessionUpdate !== "available_commands_update") return undefined;
-  if (!Array.isArray(update.availableCommands)) return undefined;
-  return offeredCommands(update.availableCommands);
+export function readAvailableCommands(payload: unknown): SlashCommand[] | undefined {
+  const update = field(payload, "update");
+  if (field(update, "sessionUpdate") !== "available_commands_update") return undefined;
+  const available = field(update, "availableCommands");
+  if (!Array.isArray(available)) return undefined;
+  return offeredCommands(available);
 }
 
 /**

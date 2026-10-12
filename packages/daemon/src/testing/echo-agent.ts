@@ -258,6 +258,24 @@ const app = agent({ name: "pew2-echo" })
       });
     }
 
+    // Exercise a GG Coder desktop question card, and say what came back with it.
+    if (text.toLowerCase().includes("desktop question")) {
+      const result = (await ctx.client.request("session/request_permission", {
+        sessionId,
+        _meta: { ggDesktopAskId: "ask-1", ggDesktopAsk: { questions: [{ id: "q", question: "Which?", kind: "text" }] } },
+        toolCall: { toolCallId: "ask-1", title: "Which?" },
+        options: [{ optionId: "desktop", name: "Answer on the desktop", kind: "reject_once" }],
+      })) as { _meta?: unknown };
+      await ctx.client.notify("session/update", {
+        sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: `answers:${JSON.stringify(result?._meta ?? null)}` },
+        },
+      });
+      return { stopReason: "end_turn" };
+    }
+
     // Exercise the approval path on demand.
     if (text.toLowerCase().includes("permission")) {
       const result = (await ctx.client.request("session/request_permission", {

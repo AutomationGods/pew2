@@ -68,6 +68,29 @@ test("a live prompt echo still maps to a user turn", () => {
   });
 });
 
+test("a text field that is not a string reads as no text", () => {
+  // Agents are outside this app's control; a number here would otherwise reach
+  // `.trim()` in the activity fold and throw.
+  expect(
+    readChunk({ update: { sessionUpdate: "agent_message_chunk", content: { text: 42 } } }),
+  ).toEqual({ role: "agent", text: "" });
+  expect(
+    readChunk({
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: [
+          { type: "text", text: "kept" },
+          { type: "text", text: { nested: true } },
+        ],
+      },
+    }),
+  ).toEqual({ role: "agent", text: "kept" });
+  expect(readChunk({ kind: "user_message", text: { nested: true } })).toEqual({
+    role: "user",
+    text: "",
+  });
+});
+
 test("a clean exit is silent, a crash is a system line", () => {
   expect(readChunk({ kind: "exit", code: null })).toBeUndefined();
   expect(readChunk({ kind: "exit", code: 0 })).toBeUndefined();
@@ -159,4 +182,12 @@ test("a user message with no attachments has no images key", () => {
     role: "user",
     text: "plain",
   });
+});
+
+test("a GG Coder reviewer verdict is marked as Ken's", () => {
+  expect(
+    readChunk({
+      update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "All clear." }, _meta: { ggKen: { phase: "done" } } },
+    }),
+  ).toEqual({ role: "agent", text: "All clear.", ken: true });
 });

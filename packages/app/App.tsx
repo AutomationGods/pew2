@@ -8,7 +8,7 @@
  * The approval sheet is the reason this app exists, so it is a blocking,
  * unmissable surface rather than an inline row that can scroll away.
  */
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -23,10 +23,9 @@ import {
 } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { KeyboardProvider, useKeyboardHandler } from "react-native-keyboard-controller";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import Reanimated, {
   cancelAnimation,
-  Easing,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -35,7 +34,7 @@ import Reanimated, {
 } from "react-native-reanimated";
 import { StatusBar } from "expo-status-bar";
 import { Icon } from "./src/ui/Icon";
-import { motion, nativeMotionEasings, type AppTheme } from "./src/theme";
+import { motion, nativeMotionEasings } from "./src/theme";
 import { AppearanceProvider, useAppTheme, useThemeStyles } from "./src/appearance";
 import { useDaemon, type Provider, type TurnFinished } from "./src/useDaemon";
 import { foregroundState } from "./src/connectionRecovery";
@@ -67,6 +66,9 @@ import { applyCommand, type SlashCommand } from "./src/slashCommands";
 import { BarButton, CircleButton } from "./src/ui/controls";
 import { haptics } from "./src/ui/haptics";
 import { Sidebar, DRAWER_WIDTH } from "./src/ui/Sidebar";
+import { PairingGate } from "./src/ui/PairingGate";
+import { useKeyboardLift } from "./src/ui/useKeyboardLift";
+import { makeStyles } from "./src/ui/appStyles";
 import { projectsForProvider, projectSourceKey } from "./src/projects";
 import { greetingFor, hashSeed } from "./src/greeting";
 import { showsStop } from "./src/composerState";
@@ -75,12 +77,8 @@ import { configMenuSections, parseChoiceId } from "./src/ui/configMenu";
 import { ConfigSelector } from "./src/ui/ConfigSelector";
 import { useReducedMotion } from "./src/ui/useReducedMotion";
 import { CanvasCover } from "./src/ui/CanvasCover";
-import { PairingScreen } from "./src/ui/PairingScreen";
-import { LaunchScreen } from "./src/ui/LaunchScreen";
-import { clearPairing, loadPairing, savePairing, type Pairing } from "./src/pairing";
-import { clearCachedProviders } from "./src/preferences";
-import { forgetConnection, withPairingStorageWarning } from "./src/reconnect";
-import * as SplashScreen from "expo-splash-screen";
+import type { Pairing } from "./src/pairing";
+import type { DesktopAnswers } from "./src/permissions";
 import { clearCrash, readCrash } from "./src/crashLog";
 import * as Clipboard from "expo-clipboard";
 
@@ -152,112 +150,6 @@ function AppWithAppearance() {
 }
 
 /**
- * Pairing gate.
- *
- * The daemon's address is a secret held in the keychain, so it is not known
- * until an async read completes. Rendering the conversation before then would
- * open a socket to nowhere, so this holds a neutral screen for the frame it
- * takes, and shows the pairing screen when nothing is stored.
- */
-/** The connected surface is separate so native harnesses never start a daemon socket. */
-export function PairingGate({ connected }: {
-  connected: (pairing: Pairing, onUnpair: () => void) => ReactNode;
-}): ReactNode {
-  const { theme: appTheme } = useAppTheme();
-  const [pairing, setPairing] = useState<Pairing | null>(null);
-  const [checked, setChecked] = useState(false);
-  // Whether the user has moved past the launch screen. Not persisted: it only
-  // exists between opening the app and pairing, and a stored pairing skips it
-  // entirely.
-  const [connecting, setConnecting] = useState<false | "manual" | "scan">(false);
-
-  useEffect(() => {
-    let alive = true;
-    void loadPairing()
-      .catch(() => {
-        // The same reasoning `pair` uses below, which already guards the write
-        // side: a locked or unavailable keychain has to read as "not paired",
-        // not as a rejection. Without this the promise rejects, `setChecked`
-        // never runs, and the app sits on its loading screen with no way out.
-        return null;
-      })
-      .then((stored) => {
-        if (!alive) return;
-        setPairing(stored);
-        setChecked(true);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // Lift the splash only once there is a real screen behind it.
-  //
-  // This is the first moment the app knows which screen it is: the conversation
-  // for a paired device, the launch screen otherwise. `index.ts` holds the
-  // splash from launch, and every path that sets `checked` — including the
-  // keychain failures above, which resolve to "not paired" rather than
-  // rejecting — arrives here, so there is no route that leaves it up.
-  //
-  // One frame later, not immediately: `hideAsync` takes effect straight away,
-  // and calling it during the commit that renders the first screen can uncover
-  // the window before that screen has been drawn into it — a flash of empty
-  // canvas, which is the exact thing the splash is being held to prevent.
-  useEffect(() => {
-    if (!checked) return;
-    const frame = requestAnimationFrame(() => {
-      void SplashScreen.hideAsync().catch(() => {});
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [checked]);
-
-  const pair = useCallback((next: Pairing) => {
-    // Connect regardless of whether the keychain accepted it. A locked or
-    // unavailable keychain costs the user a re-pair next launch; blocking on it
-    // would strand them on this screen with a spinner and no way forward.
-    return withPairingStorageWarning("save", () => savePairing(next), Alert.alert)
-      .then(() => setPairing(next));
-  }, []);
-
-  const unpair = useCallback(() => {
-    // Same reasoning inverted: forget it locally even if the delete failed, or
-    // the confirmed "Forget" action would appear to do nothing.
-    //
-    // The remembered agent list goes with it. It describes one specific machine,
-    // so keeping it would offer the next computer agents it may not have — and
-    // "Forget this computer" ought to mean it.
-    void withPairingStorageWarning("forget", () => forgetConnection({
-      clearPairing,
-      clearProviders: clearCachedProviders,
-      openPairing: () => {
-        setPairing(null);
-        // A deliberate reconnect goes straight to scanning, even offline.
-        setConnecting("scan");
-      },
-    }), Alert.alert);
-  }, []);
-
-  if (!checked) return <View style={{ flex: 1, backgroundColor: appTheme.color.bg }} />;
-  // A paired device never sees the launch screen: it has a machine already, and
-  // an extra tap on every cold start would be pure friction.
-  if (pairing) return connected(pairing, unpair);
-  if (!connecting) return <LaunchScreen onConnect={() => setConnecting("manual")} />;
-  return <PairingScreen onPaired={pair} onBack={() => setConnecting(false)} startScanning={connecting === "scan"} />;
-}
-
-/**
- * The mark's diameter on an empty conversation, with nothing to compete with.
- *
- * Large enough to be the subject of the screen rather than an icon above a
- * sentence, and it reaches the densest grid the geometry offers — so the
- * drifting light has the most cells to travel across.
- */
-const ORB_REST_SIZE = 96;
-
-/** What it settles back to once the keyboard is up, as a fraction of that. */
-const ORB_SETTLED_SCALE = 56 / ORB_REST_SIZE;
-
-/**
  * How the drawer finishes a movement it was handed.
  *
  * Barely underdamped, unlike the sheets: the drawer stops against the screen
@@ -274,139 +166,6 @@ const DRAWER_SETTLE = motion.drawerSpring;
  * per millisecond, so the old `0.4` is this.
  */
 const FLICK = 400;
-
-/**
- * The curve iOS moves its keyboard along.
- *
- * UIKit animates the keyboard with a private curve — `UIViewAnimationCurve(7)`,
- * which has no public constant and is not any of the four documented ones. This
- * bezier is the long-standing community match for it, and it only matters when
- * the pane is animating itself because the platform has not reported the
- * keyboard's real position; when frames do arrive they overwrite this anyway.
- */
-const KEYBOARD_CURVE = Easing.bezier(0.17, 0.59, 0.4, 0.77);
-
-/**
- * Raises the thread and the composer by exactly the visible keyboard's height,
- * and returns a second style for content that is centred rather than
- * bottom-anchored.
- *
- * Written from a worklet on the keyboard's own animation, so the two move in
- * perfect step. No JS re-render can land halfway through and move things a
- * second time.
- *
- * A transform, deliberately, not a height. The thread is a recycling list, and
- * `RecyclerView` answers any container resize with a full layout pass in JS — so
- * shortening the pane per frame queued sixty of them across the keyboard's
- * animation, which is the stutter. Translating moves the same pixels on the UI
- * thread and lays out nothing.
- *
- * Cross-platform by construction rather than by branch: `useKeyboardHandler`
- * calls the library's `useResizeMode`, which sets Android to `adjustResize`, and
- * `KeyboardProvider` puts it in edge-to-edge — a pairing that stops Android
- * resizing the window at all. So on both platforms nothing but this transform
- * moves, and neither needs a `softwareKeyboardLayoutMode` in app.json.
- *
- * The keyboard is measured from the physical screen edge, so the home-indicator
- * clearance the dock keeps is handed back while it is open, and the composer
- * keeps the same gap above either boundary.
- *
- * @returns `pane` for bottom-anchored content, `centred` to cancel half of it,
- *   `settled` for content that gives up room while the keyboard is open.
- */
-function useKeyboardLift(bottomInset: number) {
-  const height = useSharedValue(0);
-  const progress = useSharedValue(0);
-
-  useKeyboardHandler(
-    {
-      // Start the movement on the platform's own terms before a single frame
-      // has been reported.
-      //
-      // `onMove` is the good path and stays the good path — it is the keyboard's
-      // real position, sampled per frame. But it is *not guaranteed to arrive*.
-      // iOS 26 stopped delivering those frames to release builds: the library
-      // finds the keyboard by walking the window hierarchy for private UIKit
-      // class names (`UIInputSetHostView` and friends) and driving a
-      // `CADisplayLink` off the view it finds, and when that lookup comes back
-      // empty there is no per-frame anything. `onStart`/`onEnd` still fire,
-      // because those are ordinary keyboard notifications. So the pane sat
-      // still for the whole animation and then snapped — in TestFlight only,
-      // while every development build looked perfect, which is exactly the
-      // shape of the bug that was so maddening to chase.
-      //
-      // Animating here removes the dependency. `event.duration` is what the
-      // system says the keyboard will take, so the pane covers the same
-      // distance in the same time whether or not a single frame is ever
-      // reported. When they are reported, the assignment in `onMove` simply
-      // takes over — assigning to a shared value cancels whatever animation is
-      // running on it — and the exact path wins. Degrading, not branching:
-      // there is no version check to go stale.
-      onStart: (event) => {
-        "worklet";
-        const target = Math.max(0, event.height - bottomInset * event.progress);
-        if (event.duration <= 0) {
-          height.value = target;
-          progress.value = event.progress;
-          return;
-        }
-        const timing = { duration: event.duration, easing: KEYBOARD_CURVE };
-        height.value = withTiming(target, timing);
-        progress.value = withTiming(event.progress, timing);
-      },
-      onMove: (event) => {
-        "worklet";
-        height.value = Math.max(0, event.height - bottomInset * event.progress);
-        progress.value = event.progress;
-      },
-      // The keyboard has stopped, so this is the authoritative position — but
-      // only assign it if it is not already there. On the fallback path the
-      // timing started in `onStart` is still running toward this exact value,
-      // and overwriting it lands the last few points as a cut instead of the
-      // end of the movement.
-      onEnd: (event) => {
-        "worklet";
-        const target = Math.max(0, event.height - bottomInset * event.progress);
-        if (Math.abs(height.value - target) > 0.5) {
-          height.value = target;
-        }
-        progress.value = event.progress;
-      },
-    },
-    [bottomInset],
-  );
-
-  const pane = useAnimatedStyle(() => ({
-    transform: [{ translateY: -height.value }],
-  }));
-
-  // The empty state is centred in the pane rather than anchored to its bottom
-  // edge, so the full lift would carry it up by a whole keyboard — twice what
-  // re-centring needs, and far enough to push the greeting under the nav. Half
-  // the lift keeps it centred in what is left of the screen.
-  const centred = useAnimatedStyle(() => ({
-    transform: [{ translateY: height.value / 2 }],
-  }));
-
-  // At rest the mark is the screen: nothing else is there, so it should own it.
-  // Once you start typing the screen belongs to the sentence you are writing,
-  // and the mark steps back to being an emblem above it.
-  //
-  // A scale, not a smaller `size`: the grid resolution is chosen from the size,
-  // so animating that would rebuild the whole dot matrix mid-keyboard — exactly
-  // the per-frame relayout the pane transform exists to avoid. Reserved layout
-  // stays at full size for the same reason: nothing reflows on the keyboard's
-  // clock, and the greeting keeps one still centre to scale about.
-  //
-  // Held in a local because a worklet runs in its own runtime, where this
-  // file's module scope does not exist — only closed-over values cross over.
-  const shrinkBy = 1 - ORB_SETTLED_SCALE;
-  const settled = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 - shrinkBy * progress.value }],
-  }));
-
-  return { pane, centred, settled };
-}
 
 function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void }) {
   const { resolvedMode, theme } = useAppTheme();
@@ -1215,6 +974,16 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
     [answerDaemon],
   );
 
+  // The option id is only a placeholder here: the desktop reads the card's
+  // answers, and an id an older bridge does not know is refused, not guessed.
+  const answerQuestions = useCallback(
+    (requestId: string, answers: DesktopAnswers) => {
+      if (!answerDaemon(requestId, "answer", undefined, answers)) return;
+      haptics.sent();
+    },
+    [answerDaemon],
+  );
+
   const answerActivityPermission = useCallback(
     (sessionId: string, requestId: string, optionId: string, deny: boolean) => {
       if (!answerDaemon(requestId, optionId, sessionId)) return;
@@ -1609,6 +1378,7 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
       <ApprovalSheet
         permission={activityOpen ? undefined : daemon.permission}
         onAnswer={answerPermission}
+        onAnswerQuestions={answerQuestions}
       />
 
       {/* While the drawer is open the pane itself is the way back: tapping
@@ -1638,177 +1408,4 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
     </View>
     </ImageResolverProvider>
   );
-}
-
-
-function makeStyles(theme: AppTheme) {
-  return StyleSheet.create({
-  // The drawer paints its own panel. Matching the conversation canvas here
-  // removes the stray drawer-coloured band beneath the closed pane/home area.
-  root: { flex: 1, backgroundColor: theme.color.bg },
-  // Rounded on all corners: once it slides it is a card over the drawer, and
-  // the curve is what makes the two planes legible.
-  pane: {
-    flex: 1,
-    backgroundColor: theme.color.bg,
-    borderRadius: theme.radius.pane,
-    overflow: "hidden",
-    // Must sit above the drawer, which is absolutely positioned and would
-    // otherwise paint over this pane and swallow its touches.
-    zIndex: 1,
-    // A cast shadow is what stops the two dark planes merging into one at the
-    // seam once the pane slides clear.
-    shadowColor: "#000",
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
-    shadowOffset: { width: -8, height: 0 },
-    elevation: 16,
-  },
-  paneInner: { flex: 1 },
-  body: { flex: 1 },
-
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.space(1),
-    // Bar buttons are full touch targets with the glyph centred inside, so the
-    // inset is narrower than the gutter: the glyph lands back on the gutter
-    // rail the drawer header uses.
-    paddingHorizontal: theme.gutter - (theme.size.touch - 22) / 2,
-    paddingVertical: theme.headerInset,
-    // No hairline: the frosted CanvasCover already separates bar from thread,
-    // and iOS drops the bar's shadow line while content scrolls under it.
-    backgroundColor: theme.color.bg,
-  },
-  topBarOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 3,
-  },
-  navFade: { zIndex: 2 },
-  conversationIdentity: { flex: 1, minWidth: 0, alignItems: "center" },
-  // Fills the menu's invisible button so the whole title is the target, not
-  // only the glyphs; the 44pt floor keeps a short title easy to hit.
-  titleContent: { minHeight: theme.size.touch, alignItems: "center", justifyContent: "center" },
-  titleRow: { flexDirection: "row", alignItems: "center", gap: theme.space(1), maxWidth: "100%" },
-  // Shrinks before the chevron does, so a long title truncates instead of
-  // pushing the menu cue off the end.
-  conversationTitle: {
-    color: theme.color.text,
-    fontSize: theme.font.body,
-    fontWeight: "600",
-    flexShrink: 1,
-  },
-  conversationContext: {
-    color: theme.color.textDim,
-    fontSize: theme.font.tiny,
-    marginTop: 1,
-  },
-  barSlot: { width: theme.size.touch, height: theme.size.touch },
-  topBarSpacer: { flex: 1 },
-  // On the glyph's top-right corner: the button box is a 44pt target around a
-  // 22pt glyph, so the box's own corner would float the dot off the icon.
-  statusDot: {
-    position: "absolute",
-    top: (theme.size.touch - 22) / 2 - 3,
-    right: (theme.size.touch - 22) / 2 - 3,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    borderWidth: 2,
-    borderColor: theme.color.bg,
-  },
-
-
-  greetingLift: { flex: 1 },
-  conversationLoading: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: theme.space(3),
-    paddingHorizontal: theme.gutter,
-    paddingBottom: theme.size.composerCollapsed,
-  },
-  greeting: {
-    flex: 1,
-    alignItems: "stretch",
-    justifyContent: "flex-end",
-    gap: theme.space(3),
-    paddingHorizontal: theme.gutter,
-    paddingBottom: theme.size.composerCollapsed + theme.space(36),
-  },
-  workspaceContext: {
-    minHeight: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.space(3),
-    paddingHorizontal: theme.space(3),
-    paddingVertical: theme.space(2),
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.color.groupedSurface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.separator,
-  },
-  workspaceMarker: { width: 8, height: 28, borderRadius: 4 },
-  workspaceCopy: { flex: 1, minWidth: 0 },
-  workspaceProvider: { color: theme.color.text, fontSize: theme.font.body, fontWeight: "600" },
-  workspaceProject: { color: theme.color.textDim, fontSize: theme.font.small, marginTop: 2 },
-  workspaceStatus: { fontSize: theme.font.tiny, fontWeight: "600" },
-  greetingText: {
-    color: theme.color.textDim,
-    fontSize: theme.font.body,
-    lineHeight: theme.line.body,
-    textAlign: "left",
-  },
-  greetingHeadline: {
-    color: theme.color.text,
-    fontFamily: theme.display.editorial,
-    fontSize: theme.font.greeting,
-    lineHeight: theme.line.greeting,
-    letterSpacing: -0.4,
-  },
-
-  // One consistent gap between the thread and the composer, kept when the
-  // keyboard is open so the last message never hides behind the input.
-  dock: {
-    paddingHorizontal: theme.gutter,
-    paddingTop: theme.space(2),
-  },
-  dockOverlay: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    zIndex: 3,
-  },
-  // Behind the composer, filling the wrapper it shares with it.
-  dockCover: { zIndex: 0 },
-
-  // Rides above the composer it belongs to, at the gutter it shares with the
-  // thread, so it lands over the conversation rather than over the input.
-
-  jumpToEnd: {
-    position: "absolute",
-    right: theme.gutter,
-    bottom: "100%",
-    marginBottom: theme.space(2),
-    zIndex: 1,
-    // Opaque disc behind the glass. Every other glass control sits over the
-    // dock's blur; this one floats on the bare transcript, so without a fill
-    // the words it covers read straight through the arrow.
-    backgroundColor: theme.color.surfaceRaised,
-    borderRadius: theme.size.chip / 2,
-  },
-
-  // A narrow strip: wide enough to catch a deliberate edge swipe, too narrow to
-  // interfere with anything the conversation itself does.
-  edgeSwipe: {
-    position: "absolute",
-    left: 0,
-    bottom: 0,
-    width: theme.space(5),
-    zIndex: 4,
-  },
-  });
 }

@@ -15,6 +15,7 @@
  *
  * Pure and Expo-free, so `bun test` can load it.
  */
+import { field } from "./untyped";
 
 /** The tokens an agent reported. Absent for agents that never send it. */
 export interface ContextUsage {
@@ -32,10 +33,11 @@ export interface ContextUsage {
  * are validated rather than trusted — this crosses a wire from a process this
  * app does not control, and a string `size` would render "NaN%".
  */
-export function readUsage(payload: any): ContextUsage | undefined {
-  const update = payload?.update;
-  if (update?.sessionUpdate !== "usage_update") return undefined;
-  const { used, size } = update;
+export function readUsage(payload: unknown): ContextUsage | undefined {
+  const update = field(payload, "update");
+  if (field(update, "sessionUpdate") !== "usage_update") return undefined;
+  const used = field(update, "used");
+  const size = field(update, "size");
   if (typeof used !== "number" || typeof size !== "number") return undefined;
   if (!Number.isFinite(used) || !Number.isFinite(size)) return undefined;
   return { used, size };

@@ -6,292 +6,48 @@
  * the same way, and resolved later by id when the phone answers.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, win32 } from "node:path";
-import { noTrace, type Trace } from "../trace.js";
+import { noTrace } from "../trace.js";
 import { Readable, Writable } from "node:stream";
-import { client, ndJsonStream, type ClientConnection } from "@agentclientprotocol/sdk";
-import { findOnPath, type LoadedProvider } from "../providers/registry.js";
+import { client, ndJsonStream } from "@agentclientprotocol/sdk";
 import { humanError } from "../errors.js";
 import { desktopAskId, readDesktopState, SHARED_DESKTOP_PROVIDER } from "./sharedDesktop.js";
 import type { StoredAttachment } from "../attachments.js";
 import { promptBlocks, type PromptCapabilities } from "./promptBlocks.js";
 import { SESSION_HISTORY_LIMIT } from "../session-history.js";
 import { hydrateMessageCounts } from "./messageCounts.js";
-import { foldProjects, type AgentProject } from "../projects.js";
+import { foldProjects } from "../projects.js";
 import { DETACH_CHILDREN, registerChild, terminateChild, unregisterChild } from "../children.js";
+import {
+  applyConfigUpdate,
+  MODE_CONFIG_ID,
+  MODEL_CONFIG_ID,
+  modelsAsConfigOption,
+  normaliseConfigOptions,
+  readAvailableCommands,
+  type AvailableCommand,
+  type ConfigOption,
+  type SessionModelState,
+} from "./config-options.js";
+import { prepareProviderLaunch, providerEnvironment } from "./launch.js";
+import type {
+  AcpSessionHandle,
+  AdoptOptions,
+  PermissionAnswer,
+  AgentSession,
+  AgentSessionList,
+  ConnectOptions,
+} from "./session-types.js";
 
-/**
- * A session-level selector advertised by the agent: model, thinking level, mode.
- * pew2 never hardcodes model names — each agent reports its own, so connecting a
- * new app automatically brings its models and reasoning levels with it.
- * https://agentclientprotocol.com/protocol/v1/session-config-options
- */
-export interface ConfigOption {
-  id: string;
-  name: string;
-  description?: string;
-  /** 'model' | 'thought_level' | 'mode' | 'model_config', or a custom '_' name. */
-  category?: string;
-  type: string;
-  currentValue: string | boolean;
-  options?: { value: string; name: string; description?: string }[];
-}
-
-/**
- * Agents differ on the identifier field: ACP v1 uses `id`, the v2 draft uses
- * `configId`. Accept either so a mixed-version fleet works, and emit `id`.
- */
-function normaliseConfigOptions(raw: unknown): ConfigOption[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.flatMap((entry) => {
-    const option = entry as Record<string, unknown>;
-    const id = (option.id ?? option.configId) as string | undefined;
-    if (!id || typeof option.name !== "string") return [];
-    return [
-      {
-        id,
-        name: option.name,
-        description: option.description as string | undefined,
-        category: (option.category ?? undefined) as string | undefined,
-        type: typeof option.type === "string" ? option.type : "select",
-        currentValue: option.currentValue as string | boolean,
-        options: Array.isArray(option.options)
-          ? (option.options as ConfigOption["options"])
-          : undefined,
-      },
-    ];
-  });
-}
-
-/**
- * The `models` block `session/new` may return, alongside or instead of
- * `configOptions`. Claude Code's adapter reports its live model list this way —
- * the set is whatever that install currently offers, so it tracks agent updates
- * on its own and pew2 must never carry a model list of its own.
- */
-interface SessionModelState {
-  availableModels?: { modelId: string; name: string; description?: string }[];
-  currentModelId?: string;
-}
-
-/** Present the agent's `models` block as the same selector shape as the rest. */
-function modelsAsConfigOption(models: SessionModelState | undefined): ConfigOption[] {
-  const available = models?.availableModels;
-  if (!Array.isArray(available) || available.length === 0) return [];
-  return [
-    {
-      id: MODEL_CONFIG_ID,
-      name: "Model",
-      category: "model",
-      type: "select",
-      currentValue: models?.currentModelId ?? available[0]!.modelId,
-      options: available.map((model) => ({
-        value: model.modelId,
-        name: model.name,
-        description: model.description,
-      })),
-    },
-  ];
-}
-
-/**
- * Synthetic id for the selector built from `models`.
- *
- * That block has no config id of its own, so setting it routes to
- * `session/set_model` rather than `session/set_config_option`.
- */
-export const MODEL_CONFIG_ID = "__acp_model";
-
-/**
- * Synthetic id for the selector built from `modes`.
- *
- * Same story as the model: the legacy `modes` block carries no config id, so
- * setting it routes to `session/set_mode`. Sending `session/set_config_option`
- * for an id the agent never advertised is silently accepted and does nothing —
- * which is exactly what "I picked a mode and nothing happened" looks like.
- */
-export const MODE_CONFIG_ID = "__acp_mode";
-
-/**
- * A conversation the agent already has on disk.
- *
- * Coding agents keep their own history, so a phone should see the work started
- * at the desk, not just what it started itself.
- * https://agentclientprotocol.com/protocol/v1/session-listing
- */
-export interface AgentSession {
-  sessionId: string;
-  cwd: string;
-  title?: string;
-  /** ISO 8601 timestamp of last activity, when the agent tracks one. */
-  updatedAt?: string;
-  /** Number of message rows the app will render before this session is opened. */
-  messageCount?: number;
-}
-
-/**
- * What one `session/list` call yields.
- *
- * Three views of the same answer because they serve different screens: the
- * capped `sessions` are the drawer's recent history (the only ones whose
- * message counts are worth reading from disk up front), `projects` is the
- * complete set of places this agent has worked, and `all` is kept so choosing
- * one of those projects can be answered without asking the agent again.
- */
-export interface AgentSessionList {
-  sessions: AgentSession[];
-  projects: AgentProject[];
-  all: AgentSession[];
-}
-
-/** A slash command the agent offers, as advertised over ACP. */
-export interface AvailableCommand {
-  name: string;
-  description: string;
-  /** Placeholder for the argument it expects, when it takes one. */
-  hint?: string;
-}
-
-/**
- * Normalise an `available_commands_update` payload.
- *
- * Nothing is filtered here: which commands make sense on a phone is a client
- * decision, and the daemon also serves clients that are not this app.
- */
-function readAvailableCommands(raw: unknown): AvailableCommand[] {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter((command: any) => typeof command?.name === "string" && command.name.trim())
-    .map((command: any) => ({
-      name: command.name.trim(),
-      description: typeof command.description === "string" ? command.description : "",
-      ...(typeof command.input?.hint === "string" ? { hint: command.input.hint } : {}),
-    }));
-}
-
-export interface AcpSessionHandle {
-  connection: ClientConnection;
-  child: ChildProcessWithoutNullStreams;
-  /** The session prompts currently target. Changes when `adopt` opens another. */
-  readonly sessionId: string;
-  /** Selectors for the current session. Empty when it offers none. */
-  readonly configOptions: ConfigOption[];
-  /**
-   * Slash commands the agent advertised for the current session.
-   *
-   * Sent as a notification shortly after `session/new`, not as part of its
-   * result, so this fills in a moment after the session opens. The set depends
-   * on the project's own `commands/` directories, so it is per session rather
-   * than a property of the agent.
-   */
-  readonly availableCommands: AvailableCommand[];
-  /** True when the agent can replay a past session via `session/load`. */
-  canLoadSession: boolean;
-  /**
-   * The agent's own stored conversations, newest first.
-   *
-   * Empty when the agent does not advertise `session/list` — not every agent
-   * persists history, and asking one that doesn't is an error, not an empty list.
-   */
-  listSessions(): Promise<AgentSessionList>;
-  /**
-   * Open another session on this same agent process.
-   *
-   * Booting the process is the expensive part of a connection — GG Coder
-   * takes ~5s while `session/load` itself answers in ~30ms — so the daemon
-   * keeps a warm handle per provider and adopts it for the next conversation
-   * instead of spawning again.
-   */
-  adopt(options: AdoptOptions): Promise<void>;
-  /**
-   * What this agent accepts in a prompt besides text.
-   *
-   * Undefined when it advertised nothing, which means text only: sending an
-   * image block to an agent that never claimed `image` is a protocol error,
-   * not a graceful degradation.
-   */
-  readonly promptCapabilities?: PromptCapabilities;
-  prompt(text: string, attachments?: readonly StoredAttachment[]): Promise<unknown>;
-  cancel(): Promise<void>;
-  setConfigOption(configId: string, value: string | boolean): Promise<ConfigOption[]>;
-  answerPermission(requestId: string, optionId: string): boolean;
-  close(): void;
-}
-
-export interface AdoptOptions {
-  /** Resume this stored session; a fresh one is created when omitted. */
-  loadSessionId?: string;
-  /**
-   * The project this conversation opens in.
-   *
-   * Required, and not optional with a fallback: a warm process was spawned for
-   * whatever workspace the capability probe happened to use, which under
-   * launchd is the home directory. Reusing that for a session the user opened
-   * against a chosen project is what made the agent report the wrong `cwd` —
-   * so every adopt has to say where it is going.
-   */
-  cwd: string;
-  /** As on {@link ConnectOptions}: skip the replay, keep the agent context. */
-  haveHistory?: boolean;
-  onUpdate: (payload: unknown) => void;
-  onPermissionRequest: (request: { requestId: string; params: unknown }) => void;
-  onConfigOptions?: (options: ConfigOption[]) => void;
-  onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
-}
-
-export interface ConnectOptions {
-  trace?: Trace;
-  provider: LoadedProvider;
-  cwd: string;
-  /** Called for every ACP `session/update` notification, in arrival order. */
-  onUpdate: (payload: unknown) => void;
-  /**
-   * Called when the agent asks the user to approve something. Resolve the
-   * returned promise by calling `answerPermission` with one of the option ids.
-   */
-  onPermissionRequest: (request: { requestId: string; params: unknown }) => void;
-  /**
-   * The agent changed the session's selectors on its own.
-   *
-   * Not every change comes from `setConfigOption`: the option set is
-   * model-dependent, so switching model adds or removes the thinking-level
-   * selector, and `/model` typed as a prompt changes it with no request at all.
-   * Without this the pills keep describing the model that was current when the
-   * session opened.
-   */
-  onConfigOptions?: (options: ConfigOption[]) => void;
-  onStderr?: (line: string) => void;
-  onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
-  /**
-   * Resume one of the agent's own sessions instead of starting a fresh one.
-   *
-   * `session/load` replays the whole conversation through `onUpdate` before it
-   * resolves, which is how a phone picks up a thread started at the desk.
-   */
-  loadSessionId?: string;
-  /**
-   * The caller already has this conversation's history and does not want it
-   * replayed — only the agent-side context back.
-   *
-   * Set when the daemon painted the thread from its own cache, which it does
-   * for every provider. Without it the agent replays a transcript the user is
-   * already looking at, and the daemon drops every message of it: 8,354
-   * notifications and 938ms, measured against GG Coder, to arrive at the screen
-   * that was already drawn.
-   *
-   * Only a hint. An agent that does not advertise `session/resume` still gets a
-   * `session/load`, and the duplicate replay is still discarded as before.
-   */
-  haveHistory?: boolean;
-  /**
-   * How long to wait for the agent to answer `initialize`.
-   *
-   * Overridable mainly so tests do not have to wait out the real budget.
-   */
-  handshakeTimeoutMs?: number;
-}
+// Re-exported so callers keep importing the connection's API from one place.
+export { MODE_CONFIG_ID, MODEL_CONFIG_ID, type AvailableCommand, type ConfigOption } from "./config-options.js";
+export { launchSpec, prepareProviderLaunch, providerEnvironment } from "./launch.js";
+export type {
+  AcpSessionHandle,
+  AdoptOptions,
+  AgentSession,
+  AgentSessionList,
+  ConnectOptions,
+} from "./session-types.js";
 
 /**
  * How long an agent may take to answer `initialize` before we give up.
@@ -390,174 +146,6 @@ function toWebStreams(child: ChildProcessWithoutNullStreams) {
     input: Readable.toWeb(child.stdout) as unknown as ReadableStream<Uint8Array>,
     output: Writable.toWeb(child.stdin) as unknown as WritableStream<Uint8Array>,
   };
-}
-
-/**
- * The selector list after an update the agent sent unprompted, or undefined
- * when this notification does not carry one.
- *
- * Two shapes, because two protocol generations are live. `config_option_update`
- * resends the whole list and so replaces it — an option can legitimately
- * disappear, which is exactly what happens to the thinking level on a model
- * that does not support one. The legacy `current_mode_update` carries only an
- * id, so the selector synthesised from the `modes` block is edited in place.
- */
-function applyConfigUpdate(
-  currentOptions: ConfigOption[],
-  update: { sessionUpdate?: string; configOptions?: unknown; currentModeId?: unknown } | undefined,
-): ConfigOption[] | undefined {
-  if (update?.sessionUpdate === "config_option_update") {
-    const announced = normaliseConfigOptions(update.configOptions);
-    // An empty list is a malformed notification, not "this session has no
-    // selectors": treating it as truth would blank every pill.
-    return announced.length > 0 ? announced : undefined;
-  }
-  if (update?.sessionUpdate === "current_mode_update" && typeof update.currentModeId === "string") {
-    const modeId = update.currentModeId;
-    // Agents that advertise a real `configOptions` mode entry announce it via
-    // `config_option_update` above; this only touches the synthetic one, so
-    // nothing changes when the session has none.
-    if (!currentOptions.some((option) => option.id === MODE_CONFIG_ID)) return undefined;
-    return currentOptions.map((option) =>
-      option.id === MODE_CONFIG_ID ? { ...option, currentValue: modeId } : option,
-    );
-  }
-  return undefined;
-}
-
-/**
- * Characters cmd.exe treats as syntax rather than text — including the space,
- * which is why a path can be escaped instead of quoted.
- *
- * Taken from cross-spawn, which is the de-facto implementation of this problem
- * and has had a decade of Windows bug reports filed against it.
- */
-const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
-
-/**
- * One argument, as the target program's C runtime will parse it back.
- *
- * Two layers, and they are not the same layer. First MSVCRT quoting, which is
- * what the receiving program applies: a backslash is literal *except* directly
- * before a quote, so those runs are doubled and the quote escaped. Then cmd's
- * own layer on top, since with `windowsVerbatimArguments` this text reaches
- * cmd.exe unaltered — including the quotes we just added, which have to be
- * `^`-escaped or cmd eats them as delimiters.
- */
-function escapeArgument(arg: string): string {
-  const quoted = `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1")}"`;
-  return quoted.replace(CMD_META, "^$1");
-}
-
-/**
- * How to actually launch what `findOnPath` found.
- *
- * On POSIX, unchanged: the command is spawned as given.
- *
- * On Windows, two things are true that are not true anywhere else. The command
- * has to be resolved to a real file first — libuv only ever appends `.com` and
- * `.exe`, so a bare `npx` never finds the `npx.cmd` that npm actually installed.
- * And since CVE-2024-27980 (Node 18.20.2 / 20.12.2 / 21.7.3) spawning a `.cmd`
- * or `.bat` without a shell is refused outright with EINVAL, because argument
- * quoting for those is a command-injection surface.
- *
- * So a batch shim goes through `cmd.exe` explicitly — never `shell: true`, which
- * hands an unescaped line to a parser and is the vulnerability itself.
- *
- * The escaping is not optional decoration. Passing the parts as ordinary argv
- * entries looks right and is wrong: Node quotes them MSVCRT-style, then `/s`
- * strips the *first and last* quote of everything after `/c` — which unquotes
- * the program path. `C:\Program Files\nodejs\npx.cmd`, the default location of
- * the launcher five bundled providers run through, would split at the space and
- * fail with a syntax error nobody could act on. So the line is built here,
- * escaped for both parsers, and handed over verbatim — the same shape npm,
- * nodemon and cross-spawn all settled on.
- */
-export function launchSpec(
-  command: string,
-  args: string[],
-  env: NodeJS.ProcessEnv = process.env,
-): { command: string; args: string[]; windowsVerbatimArguments?: boolean } {
-  // Same override the resolver honours, so the Windows path is reachable from a
-  // Linux CI run — the only reason this behaviour is testable at all.
-  const windows = env.PEW2_FAKE_PLATFORM
-    ? env.PEW2_FAKE_PLATFORM === "win32"
-    : process.platform === "win32";
-  if (!windows) return { command, args };
-
-  // Never fall back to a bare name: Windows would search the repository again.
-  const resolved = findOnPath(command, env);
-  if (!resolved) {
-    throw new Error(`'${command}' was not found on PATH. Install it, or point the manifest at an absolute path.`);
-  }
-  const lower = resolved.toLowerCase();
-  if (!lower.endsWith(".cmd") && !lower.endsWith(".bat")) {
-    return { command: resolved, args };
-  }
-
-  // The program is `^`-escaped rather than quoted, so a space in the path is
-  // literal without opening a quote that `/s` would later strip.
-  const line = [resolved.replace(CMD_META, "^$1"), ...args.map(escapeArgument)].join(" ");
-
-  // `/d` skips AutoRun commands from the registry — without it, whatever a user
-  // or their IT department set there runs before every agent. `/s` makes the
-  // outer quotes mean exactly "strip these two", which is what the line is
-  // built to expect.
-  return {
-    command: env.COMSPEC && win32.isAbsolute(env.COMSPEC)
-      ? env.COMSPEC
-      : win32.join(env.SystemRoot ?? env.WINDIR ?? "C:\\Windows", "System32", "cmd.exe"),
-    args: ["/d", "/s", "/c", `"${line}"`],
-    windowsVerbatimArguments: true,
-  };
-}
-
-/** Keep a Windows batch shim's own interpreter lookup out of the workspace too. */
-export function providerEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const windows = env.PEW2_FAKE_PLATFORM
-    ? env.PEW2_FAKE_PLATFORM === "win32"
-    : process.platform === "win32";
-  if (!windows) return { ...env };
-  const path = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] ?? "";
-  const absolutePath = path.split(";")
-    .map((dir) => dir.replace(/^"(.*)"$/, "$1"))
-    .filter((dir) => isAbsolute(dir) || win32.isAbsolute(dir))
-    .join(";");
-  // Windows environment names are case-insensitive. Drop aliases so Node cannot
-  // select an older value, and force cmd's documented no-implicit-cwd policy.
-  const inherited = Object.fromEntries(Object.entries(env).filter(([key]) =>
-    !["path", "nodefaultcurrentdirectoryinexepath"].includes(key.toLowerCase()),
-  ));
-  return { ...inherited, PATH: absolutePath, NoDefaultCurrentDirectoryInExePath: "1" };
-}
-
-/**
- * npx is a bootstrapper, not the agent. Starting it in a repository lets npm
- * consume that repository's .npmrc, script-shell and local executable entries
- * before ACP has even started. Keep bootstrap in a private empty directory;
- * the real project still reaches the agent through session/new and load.
- */
-export async function prepareProviderLaunch(
-  command: string,
-  args: string[],
-  cwd: string,
-  env: NodeJS.ProcessEnv = process.env,
-) {
-  const name = basename(command.replaceAll("\\", "/")).toLowerCase();
-  if (!["npx", "npx.cmd", "npx.bat", "npx.exe"].includes(name)) {
-    return { ...launchSpec(command, args, env), cwd, cleanup: async () => {} };
-  }
-  const executable = findOnPath(command, env);
-  if (!executable) throw new Error(`'${command}' was not found on PATH. Install it, or point the manifest at an absolute path.`);
-  const bootstrap = await mkdtemp(join(tmpdir(), "pew2-bootstrap-"));
-  const cleanup = () => rm(bootstrap, { recursive: true, force: true });
-  try {
-    // Explicit prefix prevents npm walking into any ancestor project's config.
-    return { ...launchSpec(executable, ["--prefix", bootstrap, ...args], env), cwd: bootstrap, cleanup };
-  } catch (error) {
-    await cleanup();
-    throw error;
-  }
 }
 
 export async function connectProvider(options: ConnectOptions): Promise<AcpSessionHandle> {
@@ -685,7 +273,7 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
   // awaits a promise nobody can ever fulfil — which retains the request, its
   // handler and the closure around this whole connection for the life of the
   // daemon process.
-  const pending = new Map<string, (optionId: string | null) => void>();
+  const pending = new Map<string, (answer: PermissionAnswer | null) => void>();
   let permissionCounter = 0;
   const desktopAsks = new Map<string, { askId: string; sessionId: string | undefined }>();
 
@@ -763,7 +351,7 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
       const requestId = `perm_${++permissionCounter}`;
       // Register the resolver *before* notifying, otherwise a caller that answers
       // synchronously finds no pending entry and the agent waits forever.
-      const answered = new Promise<string | null>((resolve) => {
+      const answered = new Promise<PermissionAnswer | null>((resolve) => {
         pending.set(requestId, resolve);
       });
       const sid = (ctx.params as { sessionId?: string })?.sessionId;
@@ -774,13 +362,18 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
         pendingRoute?.onPermissionRequest ??
         options.onPermissionRequest;
       handler({ requestId, params: ctx.params });
-      const optionId = await answered;
+      const answer = await answered;
       desktopAsks.delete(requestId);
       // Null means the connection went away with the question unanswered. ACP
       // has a word for that, and saying it lets the agent unwind instead of
       // sitting on a request whose client no longer exists.
-      if (optionId === null) return { outcome: { outcome: "cancelled" } };
-      return { outcome: { outcome: "selected", optionId } };
+      if (answer === null) return { outcome: { outcome: "cancelled" } };
+      // A question card's answers ride in _meta, and only to the GG Coder
+      // desktop, which is the one agent that asked for them.
+      return {
+        outcome: { outcome: "selected", optionId: answer.optionId },
+        ...(askId && answer.answers ? { _meta: { ggDesktopAnswers: answer.answers } } : {}),
+      };
     });
 
   const connection = app.connect(stream);
@@ -1146,11 +739,11 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
       }),
     cancel: () =>
       connection.agent.notify("session/cancel", { sessionId: current.sessionId }),
-    answerPermission(requestId, optionId) {
+    answerPermission(requestId, optionId, answers) {
       const resolve = pending.get(requestId);
       if (!resolve) return false;
       pending.delete(requestId);
-      resolve(optionId);
+      resolve({ optionId, ...(answers ? { answers } : {}) });
       return true;
     },
     close() {

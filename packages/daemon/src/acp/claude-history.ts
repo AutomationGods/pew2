@@ -4,6 +4,7 @@ import path from "node:path";
 import readline from "node:readline";
 import type { AgentSession } from "./connect.js";
 import { historyImages, type ImageBlock } from "../images.js";
+import { field } from "../untyped.js";
 
 export interface ClaudeDisplayMessage {
   role: "user" | "assistant";
@@ -57,19 +58,21 @@ async function readDisplayMessages(filePath: string): Promise<ClaudeDisplayMessa
 
   try {
     for await (const line of lines) {
-      let entry: any;
+      let entry: unknown;
       try {
         entry = JSON.parse(line);
       } catch {
         continue;
       }
-      const role = entry?.message?.role;
+      const message = field(entry, "message");
+      const role = field(message, "role");
       if (role !== "user" && role !== "assistant") continue;
       // Match the official adapter: local-command metadata and subagent text are
       // not part of the top-level ACP conversation replay.
-      if (entry.isMeta === true || entry.isSidechain === true) continue;
-      const text = visibleText(entry.message?.content, role).trim();
-      const images = historyImages(entry.message?.content);
+      if (field(entry, "isMeta") === true || field(entry, "isSidechain") === true) continue;
+      const content = field(message, "content");
+      const text = visibleText(content, role).trim();
+      const images = historyImages(content);
       // A message may be nothing but an image, so emptiness is judged on both.
       if (!text && images.length === 0) continue;
       if (role === "assistant" && text.includes("Please run /login")) continue;

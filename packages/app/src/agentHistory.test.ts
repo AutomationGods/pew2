@@ -51,6 +51,81 @@ test("conversations from the agent's disk appear in the list", () => {
   expect(merged[0]!.messageCount).toBe(12);
 });
 
+for (const [firstProvider, secondProvider] of [
+  ["ggcoder", "ggcoder-desktop"],
+  ["ggcoder-desktop", "ggcoder"],
+] as const) {
+  test(`shared history stays visible when ${firstProvider} arrives first`, () => {
+    const history = [{ sessionId: "shared-id", cwd: "/repo", title: "Desktop work" }];
+    const first = mergeAgentSessions([], firstProvider, history, true, NOW);
+    const both = mergeAgentSessions(first, secondProvider, history, true, NOW);
+
+    expect(both.map((session) => session.providerId)).toEqual([firstProvider, secondProvider]);
+    expect(both.map((session) => session.id)).toEqual([
+      agentSessionKey(firstProvider, "shared-id"),
+      agentSessionKey(secondProvider, "shared-id"),
+    ]);
+    expect(mergeAgentSessions(both, secondProvider, history, true, NOW)).toBe(both);
+  });
+}
+
+test("resuming Desktop Live preserves the other provider's conversation and metadata", () => {
+  const native: Session = {
+    ...local,
+    id: agentSessionKey("ggcoder", "shared-id"),
+    providerId: "ggcoder",
+    agentSessionId: "shared-id",
+    cwd: "/native",
+    messageCount: 2,
+  };
+  const desktop: Session = {
+    ...local,
+    id: agentSessionKey("ggcoder-desktop", "shared-id"),
+    providerId: "ggcoder-desktop",
+    agentSessionId: "shared-id",
+    cwd: "/desktop",
+    messageCount: 8,
+  };
+  const live: Session = {
+    ...local,
+    id: "desktop-live",
+    providerId: "ggcoder-desktop",
+    agentSessionId: "shared-id",
+  };
+
+  const resumed = replaceAgentSessionStub([native, desktop], live);
+
+  expect(resumed).toHaveLength(2);
+  expect(resumed[0]?.cwd).toBe("/desktop");
+  expect(resumed[0]?.messageCount).toBe(8);
+  expect(resumed[1]).toBe(native);
+});
+
+test("resuming without a matching provider never borrows another provider's metadata", () => {
+  const native: Session = {
+    ...local,
+    providerId: "ggcoder",
+    agentSessionId: "shared-id",
+    cwd: "/native",
+    messageCount: 2,
+    receipt: { verb: "Answered", duration: "5s", tools: 0, failed: 0 },
+  };
+  const live: Session = {
+    ...local,
+    id: "desktop-live",
+    providerId: "ggcoder-desktop",
+    agentSessionId: "shared-id",
+  };
+
+  const resumed = replaceAgentSessionStub([native], live);
+
+  expect(resumed).toHaveLength(2);
+  expect(resumed[0]?.cwd).toBeUndefined();
+  expect(resumed[0]?.messageCount).toBeUndefined();
+  expect(resumed[0]?.receipt).toBeUndefined();
+  expect(resumed[1]).toBe(native);
+});
+
 test("a session started here is not listed again as the agent's own", () => {
   // The daemon reports the agent's id for sessions this app started, so the
   // next history probe recognises the conversation already on screen. Without

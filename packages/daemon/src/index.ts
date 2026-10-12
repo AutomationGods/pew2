@@ -26,7 +26,7 @@ import { readDisabled } from "./providers/enabled.js";
 import { discardAttachments, storeAttachments } from "./attachments.js";
 import { folderName, resolveWorkspace } from "./workspace.js";
 import { PushRegistry, pushAgentNotice, pushFinishedTurn } from "./push.js";
-import { desktopAskId, readDesktopState, SHARED_DESKTOP_PROVIDER } from "./acp/sharedDesktop.js";
+import { desktopAskId, kenNeedsYou, readDesktopState, SHARED_DESKTOP_PROVIDER } from "./acp/sharedDesktop.js";
 import { readProbeCache, writeProbeCache } from "./probe-cache.js";
 import { readKnownProjects, rememberKnownProject } from "./known-projects.js";
 import { hydrateMessageCounts } from "./acp/messageCounts.js";
@@ -41,6 +41,7 @@ import { readConfigPrefs, writeConfigPref, type ConfigPrefs } from "./config-pre
 import { readSessionPrefs, writeSessionPrefs } from "./session-prefs.js";
 import { readCommandDirs } from "./commands/from-disk.js";
 import { wire } from "@pew2/protocol";
+type DesktopAnswers = wire.DesktopAnswers;
 
 interface ActiveSession {
   handle?: AcpSessionHandle;
@@ -727,7 +728,18 @@ export class Daemon {
     loadSessionId: string | undefined,
   ): Promise<void> {
     const callbacks = {
-      onUpdate: (payload: unknown) => this.record(session, payload),
+      onUpdate: (payload: unknown) => {
+        this.record(session, payload);
+        // Ken handing a decision back is as blocking as a question, so it
+        // reaches the phone the same way, even with the app closed.
+        if (provider.manifest.id === SHARED_DESKTOP_PROVIDER && kenNeedsYou(payload)) {
+          void pushAgentNotice(this.pushTargets, {
+            sessionId: session.log.sessionId,
+            kind: "input",
+            ...this.sessionNotice(session.log.sessionId),
+          });
+        }
+      },
       onPermissionRequest: ({ requestId, params }: { requestId: string; params: unknown }) => {
         // Held before the event goes out: an immediate answer must find it here.
         (session.permissions ??= new Map()).set(requestId, params);
@@ -1996,9 +2008,9 @@ export class Daemon {
     await session.handle!.cancel();
   }
 
-  answerPermission(sessionId: string, requestId: string, optionId: string) {
+  answerPermission(sessionId: string, requestId: string, optionId: string, answers?: DesktopAnswers) {
     const session = this.require(sessionId);
-    const answered = session.handle?.answerPermission(requestId, optionId) ?? false;
+    const answered = session.handle?.answerPermission(requestId, optionId, answers) ?? false;
     // Only on a real answer. A `false` means the connection had no such request
     // — a stale sheet from a previous turn, or a second client answering one
     // that was already resolved — and forgetting it here on that basis would
