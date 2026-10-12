@@ -219,22 +219,25 @@ Three pieces, and only one of them is doing anything clever.
 | **App** | Runs on your phone. A remote control, not a client. |
 | **Relay** | Optional. A dumb pipe on Cloudflare for when you are not home. |
 
-The daemon holds the state, so both ends can drop off the network and pick up
-again without losing a conversation. Agents are spoken to over
-[ACP](https://agentclientprotocol.com), which is why adding one is a JSON
-manifest and no code.
+The daemon holds live session state, so a phone can reconnect and catch up on
+retained events while the session stays alive. This is bounded replay, not a
+guarantee against every restart or data loss. Agents are spoken to over
+[ACP](https://agentclientprotocol.com): local integrations use a JSON manifest;
+shipping a built-in also requires a bundled entry and a new daemon release.
+See [provider integration](library/knowledge/private/providers/integration.md).
 
 ---
 
 ## 👨‍💻 Build it yourself
 
-Everything above is the shipped path. If you want to hack on it:
+Everything above is the shipped path. If you want to hack on it, use
+Bun 1.3.14 (the version pinned in CI and release builds):
 
 ```bash
 git clone https://github.com/KenKaiii/pew2.git
 cd pew2
-bun install
-cd packages/daemon && bun link     # puts `pew2` on your PATH
+bun install --frozen-lockfile
+(cd packages/daemon && bun link)   # puts `pew2` on your PATH; keeps you at the repo root
 ```
 
 From a checkout, `pew2 setup` does not add a background service, because it
@@ -305,6 +308,10 @@ Being straight with you:
 2. **`pty` transport is reserved but unimplemented.** `verify` skips it.
 
 ---
+
+## Documentation
+
+See the [pew2 documentation library](library/README.md) for user guides, architecture, configuration, troubleshooting, and development/release operations.
 
 ## 👥 Community
 

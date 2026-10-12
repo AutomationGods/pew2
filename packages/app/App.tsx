@@ -10,6 +10,7 @@
  */
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   AppState,
@@ -22,10 +23,9 @@ import {
 } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { KeyboardProvider, useKeyboardHandler } from "react-native-keyboard-controller";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import Reanimated, {
   cancelAnimation,
-  Easing,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
@@ -33,10 +33,11 @@ import Reanimated, {
   withTiming,
 } from "react-native-reanimated";
 import { StatusBar } from "expo-status-bar";
-import Ionicons from "@expo/vector-icons/Ionicons";
-import type { AppTheme } from "./src/theme";
+import { Icon } from "./src/ui/Icon";
+import { motion, nativeMotionEasings } from "./src/theme";
 import { AppearanceProvider, useAppTheme, useThemeStyles } from "./src/appearance";
 import { useDaemon, type Provider, type TurnFinished } from "./src/useDaemon";
+import { foregroundState } from "./src/connectionRecovery";
 import { currentTool } from "./src/activity";
 import { dockHeightFor, recordDockHeight, type DockHeights } from "./src/dockHeight";
 import { finishedNotice } from "./src/notificationPolicy";
@@ -62,21 +63,22 @@ import { useDictation } from "./src/ui/useDictation";
 import { ApprovalSheet } from "./src/ui/ApprovalSheet";
 import { ThoughtSheet } from "./src/ui/ThoughtSheet";
 import { applyCommand, type SlashCommand } from "./src/slashCommands";
-import { CircleButton } from "./src/ui/controls";
+import { BarButton, CircleButton } from "./src/ui/controls";
 import { haptics } from "./src/ui/haptics";
 import { Sidebar, DRAWER_WIDTH } from "./src/ui/Sidebar";
+import { PairingGate } from "./src/ui/PairingGate";
+import { useKeyboardLift } from "./src/ui/useKeyboardLift";
+import { makeStyles } from "./src/ui/appStyles";
 import { projectsForProvider, projectSourceKey } from "./src/projects";
 import { greetingFor, hashSeed } from "./src/greeting";
 import { showsStop } from "./src/composerState";
-import { ConfigPicker } from "./src/ui/ConfigPicker";
+import { summarise, valueName } from "./src/ui/configSlots";
+import { configMenuSections, parseChoiceId } from "./src/ui/configMenu";
+import { ConfigSelector } from "./src/ui/ConfigSelector";
 import { useReducedMotion } from "./src/ui/useReducedMotion";
 import { CanvasCover } from "./src/ui/CanvasCover";
-import { withLayoutX, type PillX } from "./src/ui/pillAnchor";
-import { PairingScreen } from "./src/ui/PairingScreen";
-import { LaunchScreen } from "./src/ui/LaunchScreen";
-import { clearPairing, loadPairing, savePairing, type Pairing } from "./src/pairing";
-import { clearCachedProviders } from "./src/preferences";
-import * as SplashScreen from "expo-splash-screen";
+import type { Pairing } from "./src/pairing";
+import type { DesktopAnswers } from "./src/permissions";
 import { clearCrash, readCrash } from "./src/crashLog";
 import * as Clipboard from "expo-clipboard";
 
@@ -139,7 +141,7 @@ function AppWithAppearance() {
             it. Coordinating two animation systems made the thread land twice. */}
         <KeyboardProvider>
           <SafeAreaProvider>
-            <Root />
+            <PairingGate connected={(pairing, onUnpair) => <Pew2 pairing={pairing} onUnpair={onUnpair} />} />
           </SafeAreaProvider>
         </KeyboardProvider>
       </GestureHandlerRootView>
@@ -148,116 +150,13 @@ function AppWithAppearance() {
 }
 
 /**
- * Pairing gate.
- *
- * The daemon's address is a secret held in the keychain, so it is not known
- * until an async read completes. Rendering the conversation before then would
- * open a socket to nowhere, so this holds a neutral screen for the frame it
- * takes, and shows the pairing screen when nothing is stored.
- */
-function Root() {
-  const { theme: appTheme } = useAppTheme();
-  const [pairing, setPairing] = useState<Pairing | null>(null);
-  const [checked, setChecked] = useState(false);
-  // Whether the user has moved past the launch screen. Not persisted: it only
-  // exists between opening the app and pairing, and a stored pairing skips it
-  // entirely.
-  const [connecting, setConnecting] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    void loadPairing()
-      .catch(() => {
-        // The same reasoning `pair` uses below, which already guards the write
-        // side: a locked or unavailable keychain has to read as "not paired",
-        // not as a rejection. Without this the promise rejects, `setChecked`
-        // never runs, and the app sits on its loading screen with no way out.
-        return null;
-      })
-      .then((stored) => {
-        if (!alive) return;
-        setPairing(stored);
-        setChecked(true);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // Lift the splash only once there is a real screen behind it.
-  //
-  // This is the first moment the app knows which screen it is: the conversation
-  // for a paired device, the launch screen otherwise. `index.ts` holds the
-  // splash from launch, and every path that sets `checked` — including the
-  // keychain failures above, which resolve to "not paired" rather than
-  // rejecting — arrives here, so there is no route that leaves it up.
-  //
-  // One frame later, not immediately: `hideAsync` takes effect straight away,
-  // and calling it during the commit that renders the first screen can uncover
-  // the window before that screen has been drawn into it — a flash of empty
-  // canvas, which is the exact thing the splash is being held to prevent.
-  useEffect(() => {
-    if (!checked) return;
-    const frame = requestAnimationFrame(() => {
-      void SplashScreen.hideAsync().catch(() => {});
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [checked]);
-
-  const pair = useCallback((next: Pairing) => {
-    // Connect regardless of whether the keychain accepted it. A locked or
-    // unavailable keychain costs the user a re-pair next launch; blocking on it
-    // would strand them on this screen with a spinner and no way forward.
-    void savePairing(next)
-      .catch(() => {})
-      .then(() => setPairing(next));
-  }, []);
-
-  const unpair = useCallback(() => {
-    // Same reasoning inverted: forget it locally even if the delete failed, or
-    // the confirmed "Forget" action would appear to do nothing.
-    //
-    // The remembered agent list goes with it. It describes one specific machine,
-    // so keeping it would offer the next computer agents it may not have — and
-    // "Forget this computer" ought to mean it.
-    void Promise.all([clearPairing(), clearCachedProviders()])
-      .catch(() => {})
-      .then(() => {
-        setPairing(null);
-        // Back to the launch screen rather than straight to the form, so
-        // disconnecting lands somewhere deliberate.
-        setConnecting(false);
-      });
-  }, []);
-
-  if (!checked) return <View style={{ flex: 1, backgroundColor: appTheme.color.bg }} />;
-  // A paired device never sees the launch screen: it has a machine already, and
-  // an extra tap on every cold start would be pure friction.
-  if (pairing) return <Pew2 pairing={pairing} onUnpair={unpair} />;
-  if (!connecting) return <LaunchScreen onConnect={() => setConnecting(true)} />;
-  return <PairingScreen onPaired={pair} onBack={() => setConnecting(false)} />;
-}
-
-/**
- * The mark's diameter on an empty conversation, with nothing to compete with.
- *
- * Large enough to be the subject of the screen rather than an icon above a
- * sentence, and it reaches the densest grid the geometry offers — so the
- * drifting light has the most cells to travel across.
- */
-const ORB_REST_SIZE = 96;
-
-/** What it settles back to once the keyboard is up, as a fraction of that. */
-const ORB_SETTLED_SCALE = 56 / ORB_REST_SIZE;
-
-/**
  * How the drawer finishes a movement it was handed.
  *
  * Barely underdamped, unlike the sheets: the drawer stops against the screen
  * edge with a full conversation riding on it, and visible overshoot there reads
  * as the whole app sloshing rather than as a panel arriving.
  */
-const DRAWER_SETTLE = { duration: 340, dampingRatio: 0.95 } as const;
+const DRAWER_SETTLE = motion.drawerSpring;
 
 /**
  * A flick worth committing to, in points per second.
@@ -267,139 +166,6 @@ const DRAWER_SETTLE = { duration: 340, dampingRatio: 0.95 } as const;
  * per millisecond, so the old `0.4` is this.
  */
 const FLICK = 400;
-
-/**
- * The curve iOS moves its keyboard along.
- *
- * UIKit animates the keyboard with a private curve — `UIViewAnimationCurve(7)`,
- * which has no public constant and is not any of the four documented ones. This
- * bezier is the long-standing community match for it, and it only matters when
- * the pane is animating itself because the platform has not reported the
- * keyboard's real position; when frames do arrive they overwrite this anyway.
- */
-const KEYBOARD_CURVE = Easing.bezier(0.17, 0.59, 0.4, 0.77);
-
-/**
- * Raises the thread and the composer by exactly the visible keyboard's height,
- * and returns a second style for content that is centred rather than
- * bottom-anchored.
- *
- * Written from a worklet on the keyboard's own animation, so the two move in
- * perfect step. No JS re-render can land halfway through and move things a
- * second time.
- *
- * A transform, deliberately, not a height. The thread is a recycling list, and
- * `RecyclerView` answers any container resize with a full layout pass in JS — so
- * shortening the pane per frame queued sixty of them across the keyboard's
- * animation, which is the stutter. Translating moves the same pixels on the UI
- * thread and lays out nothing.
- *
- * Cross-platform by construction rather than by branch: `useKeyboardHandler`
- * calls the library's `useResizeMode`, which sets Android to `adjustResize`, and
- * `KeyboardProvider` puts it in edge-to-edge — a pairing that stops Android
- * resizing the window at all. So on both platforms nothing but this transform
- * moves, and neither needs a `softwareKeyboardLayoutMode` in app.json.
- *
- * The keyboard is measured from the physical screen edge, so the home-indicator
- * clearance the dock keeps is handed back while it is open, and the composer
- * keeps the same gap above either boundary.
- *
- * @returns `pane` for bottom-anchored content, `centred` to cancel half of it,
- *   `settled` for content that gives up room while the keyboard is open.
- */
-function useKeyboardLift(bottomInset: number) {
-  const height = useSharedValue(0);
-  const progress = useSharedValue(0);
-
-  useKeyboardHandler(
-    {
-      // Start the movement on the platform's own terms before a single frame
-      // has been reported.
-      //
-      // `onMove` is the good path and stays the good path — it is the keyboard's
-      // real position, sampled per frame. But it is *not guaranteed to arrive*.
-      // iOS 26 stopped delivering those frames to release builds: the library
-      // finds the keyboard by walking the window hierarchy for private UIKit
-      // class names (`UIInputSetHostView` and friends) and driving a
-      // `CADisplayLink` off the view it finds, and when that lookup comes back
-      // empty there is no per-frame anything. `onStart`/`onEnd` still fire,
-      // because those are ordinary keyboard notifications. So the pane sat
-      // still for the whole animation and then snapped — in TestFlight only,
-      // while every development build looked perfect, which is exactly the
-      // shape of the bug that was so maddening to chase.
-      //
-      // Animating here removes the dependency. `event.duration` is what the
-      // system says the keyboard will take, so the pane covers the same
-      // distance in the same time whether or not a single frame is ever
-      // reported. When they are reported, the assignment in `onMove` simply
-      // takes over — assigning to a shared value cancels whatever animation is
-      // running on it — and the exact path wins. Degrading, not branching:
-      // there is no version check to go stale.
-      onStart: (event) => {
-        "worklet";
-        const target = Math.max(0, event.height - bottomInset * event.progress);
-        if (event.duration <= 0) {
-          height.value = target;
-          progress.value = event.progress;
-          return;
-        }
-        const timing = { duration: event.duration, easing: KEYBOARD_CURVE };
-        height.value = withTiming(target, timing);
-        progress.value = withTiming(event.progress, timing);
-      },
-      onMove: (event) => {
-        "worklet";
-        height.value = Math.max(0, event.height - bottomInset * event.progress);
-        progress.value = event.progress;
-      },
-      // The keyboard has stopped, so this is the authoritative position — but
-      // only assign it if it is not already there. On the fallback path the
-      // timing started in `onStart` is still running toward this exact value,
-      // and overwriting it lands the last few points as a cut instead of the
-      // end of the movement.
-      onEnd: (event) => {
-        "worklet";
-        const target = Math.max(0, event.height - bottomInset * event.progress);
-        if (Math.abs(height.value - target) > 0.5) {
-          height.value = target;
-        }
-        progress.value = event.progress;
-      },
-    },
-    [bottomInset],
-  );
-
-  const pane = useAnimatedStyle(() => ({
-    transform: [{ translateY: -height.value }],
-  }));
-
-  // The empty state is centred in the pane rather than anchored to its bottom
-  // edge, so the full lift would carry it up by a whole keyboard — twice what
-  // re-centring needs, and far enough to push the greeting under the nav. Half
-  // the lift keeps it centred in what is left of the screen.
-  const centred = useAnimatedStyle(() => ({
-    transform: [{ translateY: height.value / 2 }],
-  }));
-
-  // At rest the mark is the screen: nothing else is there, so it should own it.
-  // Once you start typing the screen belongs to the sentence you are writing,
-  // and the mark steps back to being an emblem above it.
-  //
-  // A scale, not a smaller `size`: the grid resolution is chosen from the size,
-  // so animating that would rebuild the whole dot matrix mid-keyboard — exactly
-  // the per-frame relayout the pane transform exists to avoid. Reserved layout
-  // stays at full size for the same reason: nothing reflows on the keyboard's
-  // clock, and the greeting keeps one still centre to scale about.
-  //
-  // Held in a local because a worklet runs in its own runtime, where this
-  // file's module scope does not exist — only closed-over values cross over.
-  const shrinkBy = 1 - ORB_SETTLED_SCALE;
-  const settled = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 - shrinkBy * progress.value }],
-  }));
-
-  return { pane, centred, settled };
-}
 
 function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void }) {
   const { resolvedMode, theme } = useAppTheme();
@@ -478,8 +244,11 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
   // a banner, which is the more delicate of the two orderings.
   const resumeDaemon = daemon.resumeNow;
   useEffect(() => {
-    const subscription = AppState.addEventListener("change", (next) => {
-      if (next === "active") resumeDaemon();
+    let backgrounded = AppState.currentState === "background";
+    const subscription = AppState.addEventListener("change", (state) => {
+      const next = foregroundState(backgrounded, state);
+      backgrounded = next.backgrounded;
+      if (state === "active") resumeDaemon(next.refresh);
     });
     return () => subscription.remove();
   }, [resumeDaemon]);
@@ -513,9 +282,6 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
   const [attachOpen, setAttachOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
-  // Which pill's menu is open, and where that pill sits, so the menu opens
-  // under it instead of always at the gutter.
-  const [picker, setPicker] = useState<"model" | "mode" | null>(null);
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [newChatOpen, setNewChatOpen] = useState(false);
   // The reasoning currently being read, if any. Held here rather than per turn
@@ -558,10 +324,6 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
   const [atBottom, setAtBottom] = useState(true);
   const jumpOpacity = useRef(new Animated.Value(0)).current;
 
-  const [pillX, setPillX] = useState<PillX>({
-    model: theme.gutter,
-    mode: theme.gutter,
-  });
   const reduceMotion = useReducedMotion();
   // How far the drawer is uncovered, 0 to 1.
   //
@@ -599,7 +361,7 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
   // are chosen in `pew2 setup`, and nothing on screen said so.
   const emptyReason = (providerCount: number): string =>
     providerCount === 0
-      ? "Getting the list of agents..."
+      ? "Getting the list of agents…"
       : "No agents are turned on. Run pew2 setup on your computer to choose some.";
 
   const active: Provider | undefined =
@@ -630,13 +392,16 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
   const selectedProject = projects.find((project) => project.path === selectedProjectPath);
   const currentSession = daemonSessions.find((session) => session.id === daemon.sessionId);
   const conversationTitle = currentSession?.title || selectedProject?.name || "New conversation";
-  const conversationContext = `${active?.name ?? "No agent"} · ${
-    daemon.status === "online"
-      ? "Connected"
-      : daemon.status === "connecting"
-        ? "Connecting"
-        : "Offline"
-  }`;
+  // Under the title, like the contact line in Messages: which agent, on which
+  // model. Connection state only when it is not the normal case, since a
+  // permanent "Connected" is noise the dot on the menu button already covers.
+  const modelName = valueName(summarise(daemon.configOptions).model);
+  const conversationContext = [
+    active?.name ?? "No agent",
+    daemon.status === "online" ? modelName : daemon.status === "connecting" ? "Connecting" : "Offline",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const selectProject = useCallback(
     (path?: string) => {
       if (activeId) selectDaemonProject(activeId, path);
@@ -696,6 +461,23 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
     () => greetingFor(active?.name, hashSeed(`${greetingRound}:${active?.id ?? ""}`)),
     [greetingRound, active?.id, active?.name],
   );
+  // One message for sighted and screen-reader users, including failure states.
+  const emptyMessage = daemon.fatal
+    ? daemon.fatal
+    : daemon.unreachable
+      ? "Can't reach your machine."
+      : daemon.status !== "online"
+        ? "Connecting to your machine…"
+        : active
+          ? greeting
+          : emptyReason(daemon.providers.length);
+  const emptyAccessibilityLabel = [
+    active?.name ?? "No agent available",
+    selectedProject?.name ?? pairing.label,
+    daemon.status === "online" ? "Connected" : "Offline",
+    emptyMessage,
+    "Dismiss keyboard",
+  ].join("\n");
 
   useEffect(() => {
     // Every transcript opens on its newest message, so it starts at the bottom
@@ -805,6 +587,7 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
     const animation = Animated.timing(jumpOpacity, {
       toValue: atBottom ? 0 : 1,
       duration: reduceMotion ? 0 : theme.motion.fast,
+      easing: nativeMotionEasings.nativeTiming,
       useNativeDriver: true,
     });
     animation.start();
@@ -1191,6 +974,16 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
     [answerDaemon],
   );
 
+  // The option id is only a placeholder here: the desktop reads the card's
+  // answers, and an id an older bridge does not know is refused, not guessed.
+  const answerQuestions = useCallback(
+    (requestId: string, answers: DesktopAnswers) => {
+      if (!answerDaemon(requestId, "answer", undefined, answers)) return;
+      haptics.sent();
+    },
+    [answerDaemon],
+  );
+
   const answerActivityPermission = useCallback(
     (sessionId: string, requestId: string, optionId: string, deny: boolean) => {
       if (!answerDaemon(requestId, optionId, sessionId)) return;
@@ -1200,7 +993,20 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
     [answerDaemon],
   );
 
-  const closePicker = useCallback(() => setPicker(null), []);
+  // The title's menu: every selector the agent advertises, model first.
+  const configSections = useMemo(
+    () => configMenuSections(daemon.configOptions),
+    [daemon.configOptions],
+  );
+  const setConfig = daemon.setConfig;
+  const selectConfig = useCallback(
+    (id: string) => {
+      const choice = parseChoiceId(id);
+      // Section headers carry ids too, but iOS never reports a tap on one.
+      if (choice) setConfig(choice.configId, choice.value);
+    },
+    [setConfig],
+  );
 
   // Images the agent named by path live on the desktop, and the socket is the
   // only way to them. Provided here rather than passed down because pictures
@@ -1272,12 +1078,12 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
         onLayout={(e) => setNavHeight(e.nativeEvent.layout.height)}
       >
         <View>
-          <CircleButton
+          <BarButton
             label={`Open menu. Daemon ${daemon.status}.`}
             onPress={() => setMenuOpen(true)}
           >
-            <Ionicons name="menu" size={20} color={theme.color.text} />
-          </CircleButton>
+            <Icon name="menu" size={22} color={theme.color.text} />
+          </BarButton>
           {/* Connection state as a dot on the menu button: always visible, but
               it never competes with the model name for space. */}
           {daemon.status !== "online" && (
@@ -1295,27 +1101,48 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
           )}
         </View>
 
-        <View style={styles.conversationIdentity}>
-          <Text style={styles.conversationTitle} numberOfLines={1}>{conversationTitle}</Text>
-          <Text style={styles.conversationContext} numberOfLines={1}>{conversationContext}</Text>
-        </View>
-
-        {daemon.configOptions.length > 0 && (
-          <View onLayout={(e) => setPillX(withLayoutX(e, "model"))}>
-            <CircleButton label="Session settings" onPress={() => setPicker("model")}>
-              <Ionicons name="options-outline" size={19} color={theme.color.text} />
-            </CircleButton>
+        {/* Model and thinking choices: scrollable lists on Android, the
+            system title menu on iOS. Both share the same saved config path. */}
+        {configSections.length > 0 ? (
+          <ConfigSelector
+            style={styles.conversationIdentity}
+            sections={configSections}
+            onSelect={selectConfig}
+            accessibilityLabel={`${conversationTitle}. ${conversationContext}.`}
+            accessibilityHint="Change model, thinking, and mode"
+          >
+            <View style={styles.titleContent}>
+              <View style={styles.titleRow}>
+                <Text style={styles.conversationTitle} numberOfLines={1}>{conversationTitle}</Text>
+                <Icon name="chevron-down" size={11} color={theme.color.textDim} weight="semibold" />
+              </View>
+              <Text style={styles.conversationContext} numberOfLines={1}>{conversationContext}</Text>
+            </View>
+          </ConfigSelector>
+        ) : (
+          <View
+            style={[styles.conversationIdentity, styles.titleContent]}
+            accessible
+            accessibilityRole="header"
+            accessibilityLabel={`${conversationTitle}. ${conversationContext}.`}
+          >
+            <Text style={styles.conversationTitle} numberOfLines={1}>{conversationTitle}</Text>
+            <Text style={styles.conversationContext} numberOfLines={1}>{conversationContext}</Text>
           </View>
         )}
 
-        {inThread && (
-          // Asks where, rather than starting one immediately: the old behaviour
-          // always landed wherever the agent happened to be, which is the wrong
-          // project as often as the right one and was unfixable from the phone.
-          <CircleButton label="New conversation" onPress={() => setNewChatOpen(true)}>
-            <Ionicons name="create-outline" size={18} color={theme.color.text} />
-          </CircleButton>
-        )}
+        {/* Holds the right-hand slot even outside a thread, so the title stays
+            centred instead of drifting when the compose button comes and goes. */}
+        <View style={styles.barSlot}>
+          {inThread && (
+            // Asks where, rather than starting one immediately: the old behaviour
+            // always landed wherever the agent happened to be, which is the wrong
+            // project as often as the right one and was unfixable from the phone.
+            <BarButton label="New conversation" onPress={() => setNewChatOpen(true)}>
+              <Icon name="create-outline" size={21} color={theme.color.text} />
+            </BarButton>
+          )}
+        </View>
       </View>
 
       {/* Frosted cover for the nav zone only — it ends exactly at the nav's
@@ -1353,8 +1180,22 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
             onRefresh={daemon.refreshNow}
             onOpenThought={openThought}
             onRetry={retrySend}
+            onCancelQueued={daemon.sessionId ? daemon.cancelQueued : undefined}
           />
-        ) : !daemon.loadingSession ? (
+        ) : daemon.loadingSession ? (
+          <Reanimated.View style={[styles.greetingLift, keyboard.centred]}>
+            <View
+              style={styles.conversationLoading}
+              accessible
+              accessibilityLabel="Loading conversation"
+              accessibilityState={{ busy: true }}
+              accessibilityLiveRegion="polite"
+            >
+              <ActivityIndicator color={theme.color.textDim} />
+              <Text style={styles.greetingText}>Loading conversation…</Text>
+            </View>
+          </Reanimated.View>
+        ) : (
           // Cancels half the pane's lift, so the greeting settles in the middle
           // of the shrunken screen instead of riding the composer all the way up.
           <Reanimated.View style={[styles.greetingLift, keyboard.centred]}>
@@ -1364,7 +1205,7 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
             <Pressable
               style={styles.greeting}
               accessibilityRole="button"
-              accessibilityLabel="Dismiss keyboard"
+              accessibilityLabel={emptyAccessibilityLabel}
               onPress={Keyboard.dismiss}
             >
               <Reanimated.View style={[styles.workspaceContext, keyboard.settled]}>
@@ -1395,19 +1236,11 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
                     advice most of the times they are read, and unfollowable
                     anyway from wherever the user is standing. What can be done
                     from here is keep typing, which the composer now says. */}
-                {daemon.fatal
-                  ? daemon.fatal
-                  : daemon.unreachable
-                    ? "Can't reach your machine."
-                    : daemon.status !== "online"
-                      ? "Connecting to your machine..."
-                      : active
-                        ? greeting
-                        : emptyReason(daemon.providers.length)}
+                {emptyMessage}
               </Text>
             </Pressable>
           </Reanimated.View>
-        ) : null}
+        )}
 
         <View style={[styles.dockOverlay, { bottom: 0 }]}>
           {/* Only ever a way back down: there is no jump-to-top, because the top
@@ -1427,7 +1260,7 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
               }}
               size={theme.size.chip}
             >
-              <Ionicons name="arrow-down" size={18} color={theme.color.text} />
+              <Icon name="arrow-down" size={18} color={theme.color.text} />
             </CircleButton>
           </Animated.View>
           {dockHeight > 0 && (
@@ -1479,15 +1312,15 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
             editable={!daemon.fatal}
             placeholder={
               dictation.listening
-                ? "Listening..."
+                ? "Listening…"
                 : // Kept to one line: the collapsed pill is a single line tall,
                   // and a placeholder that wraps pushes its own second line out
                   // of the box — the state reads as broken rather than as calm.
                   daemon.status !== "online"
                   ? "Offline — sends when you reconnect"
                   : active
-                    ? "Ask me anything..."
-                    : "Waiting for an agent..."
+                    ? "Ask me anything…"
+                    : "Waiting for an agent…"
             }
             attachments={attachments}
             onAttach={openAttach}
@@ -1538,13 +1371,6 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
 
       <ThoughtSheet visible={thought !== null} text={thought ?? ""} onClose={closeThought} />
 
-      <ConfigPicker
-        visible={picker !== null}
-        onClose={closePicker}
-        anchorX={pillX.model}
-        options={daemon.configOptions}
-        onSelect={daemon.setConfig}
-      />
 
       {/* Last of every overlay on purpose. All the sheets share one zIndex, so
           paint order is sibling order — and an approval the agent is blocked on
@@ -1552,6 +1378,7 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
       <ApprovalSheet
         permission={activityOpen ? undefined : daemon.permission}
         onAnswer={answerPermission}
+        onAnswerQuestions={answerQuestions}
       />
 
       {/* While the drawer is open the pane itself is the way back: tapping
@@ -1581,159 +1408,4 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
     </View>
     </ImageResolverProvider>
   );
-}
-
-
-function makeStyles(theme: AppTheme) {
-  return StyleSheet.create({
-  // The drawer paints its own panel. Matching the conversation canvas here
-  // removes the stray drawer-coloured band beneath the closed pane/home area.
-  root: { flex: 1, backgroundColor: theme.color.bg },
-  // Rounded on all corners: once it slides it is a card over the drawer, and
-  // the curve is what makes the two planes legible.
-  pane: {
-    flex: 1,
-    backgroundColor: theme.color.bg,
-    borderRadius: theme.radius.pane,
-    overflow: "hidden",
-    // Must sit above the drawer, which is absolutely positioned and would
-    // otherwise paint over this pane and swallow its touches.
-    zIndex: 1,
-    // A cast shadow is what stops the two dark planes merging into one at the
-    // seam once the pane slides clear.
-    shadowColor: "#000",
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
-    shadowOffset: { width: -8, height: 0 },
-    elevation: 16,
-  },
-  paneInner: { flex: 1 },
-  body: { flex: 1 },
-
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.space(2),
-    // Shares theme.gutter and theme.headerInset with the drawer header, so the
-    // hamburger and the "Connected Apps" title it reveals sit on one rail and
-    // one baseline.
-    paddingHorizontal: theme.gutter,
-    paddingVertical: theme.headerInset,
-    backgroundColor: theme.color.bg,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.color.separator,
-  },
-  topBarOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 3,
-  },
-  navFade: { zIndex: 2 },
-  conversationIdentity: { flex: 1, minWidth: 0 },
-  conversationTitle: {
-    color: theme.color.text,
-    fontSize: theme.font.body,
-    fontWeight: "600",
-  },
-  conversationContext: {
-    color: theme.color.textDim,
-    fontSize: theme.font.tiny,
-    marginTop: 1,
-  },
-  topBarSpacer: { flex: 1 },
-  statusDot: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    borderWidth: 2,
-    borderColor: theme.color.bg,
-  },
-
-
-  greetingLift: { flex: 1 },
-  greeting: {
-    flex: 1,
-    alignItems: "stretch",
-    justifyContent: "flex-end",
-    gap: theme.space(3),
-    paddingHorizontal: theme.gutter,
-    paddingBottom: theme.size.composerCollapsed + theme.space(36),
-  },
-  workspaceContext: {
-    minHeight: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.space(3),
-    paddingHorizontal: theme.space(3),
-    paddingVertical: theme.space(2),
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.color.groupedSurface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.separator,
-  },
-  workspaceMarker: { width: 8, height: 28, borderRadius: 4 },
-  workspaceCopy: { flex: 1, minWidth: 0 },
-  workspaceProvider: { color: theme.color.text, fontSize: theme.font.body, fontWeight: "600" },
-  workspaceProject: { color: theme.color.textDim, fontSize: theme.font.small, marginTop: 2 },
-  workspaceStatus: { fontSize: theme.font.tiny, fontWeight: "600" },
-  greetingText: {
-    color: theme.color.textDim,
-    fontSize: theme.font.body,
-    lineHeight: theme.line.body,
-    textAlign: "left",
-  },
-  greetingHeadline: {
-    color: theme.color.text,
-    fontFamily: theme.display.editorial,
-    fontSize: theme.font.greeting,
-    lineHeight: theme.line.greeting,
-    letterSpacing: -0.4,
-  },
-
-  // One consistent gap between the thread and the composer, kept when the
-  // keyboard is open so the last message never hides behind the input.
-  dock: {
-    paddingHorizontal: theme.gutter,
-    paddingTop: theme.space(2),
-  },
-  dockOverlay: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    zIndex: 3,
-  },
-  // Behind the composer, filling the wrapper it shares with it.
-  dockCover: { zIndex: 0 },
-
-  // Rides above the composer it belongs to, at the gutter it shares with the
-  // thread, so it lands over the conversation rather than over the input.
-
-  jumpToEnd: {
-    position: "absolute",
-    right: theme.gutter,
-    bottom: "100%",
-    marginBottom: theme.space(2),
-    zIndex: 1,
-    // Opaque disc behind the glass. Every other glass control sits over the
-    // dock's blur; this one floats on the bare transcript, so without a fill
-    // the words it covers read straight through the arrow.
-    backgroundColor: theme.color.surfaceRaised,
-    borderRadius: theme.size.chip / 2,
-  },
-
-  // A narrow strip: wide enough to catch a deliberate edge swipe, too narrow to
-  // interfere with anything the conversation itself does.
-  edgeSwipe: {
-    position: "absolute",
-    left: 0,
-    bottom: 0,
-    width: theme.space(5),
-    zIndex: 4,
-  },
-  });
 }

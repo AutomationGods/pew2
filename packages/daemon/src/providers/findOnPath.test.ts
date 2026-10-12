@@ -174,7 +174,7 @@ test("windows: a batch shim is launched through cmd.exe, not spawned directly", 
 
   // Since CVE-2024-27980, Node refuses to spawn .cmd/.bat without a shell —
   // EINVAL, not ENOENT — so this is the only way a .cmd agent starts at all.
-  expect(spec.command).toBe("cmd.exe");
+  expect(spec.command).toBe("C:\\Windows\\System32\\cmd.exe");
   // `/d` suppresses registry AutoRun; `/s` makes the outer quotes mean exactly
   // "strip these two", which is the shape the line below is built for.
   expect(spec.args.slice(0, 3)).toEqual(["/d", "/s", "/c"]);
@@ -235,15 +235,36 @@ test("windows: a real executable is spawned directly, at its resolved path", asy
   });
 });
 
-test("windows: an unresolvable command still reaches spawn, to fail as ENOENT", async () => {
+test("windows: an unresolvable command fails closed before implicit cwd lookup", async () => {
   const dir = await bin();
+  expect(() => launchSpec("absent", ["--acp"], win(dir))).toThrow("was not found on PATH");
+});
 
-  // Refusing here would report "not installed" for something the user may have
-  // put on PATH since the registry last looked; a real spawn gives a real error.
-  expect(launchSpec("absent", ["--acp"], win(dir))).toEqual({
-    command: "absent",
-    args: ["--acp"],
-  });
+test("windows: repository impersonators cannot shadow PATH or supply missing executables", async () => {
+  const original = process.cwd();
+  const repo = await bin();
+  const installed = await bin();
+  await writeFile(join(repo, "agent.exe"), "");
+  await writeFile(join(repo, "missing.exe"), "");
+  await writeFile(join(installed, "agent.exe"), "");
+  try {
+    process.chdir(repo);
+    expect(findOnPath("agent", win(installed))).toBe(join(installed, "agent.exe"));
+    expect(findOnPath("agent", win('.;".";relative-bin;'))).toBeUndefined();
+    expect(findOnPath("missing", win(installed))).toBeUndefined();
+    expect(() => launchSpec("missing", [], win(installed))).toThrow("was not found on PATH");
+    // An explicit operator-selected path remains supported, resolved before cwd changes.
+    expect(findOnPath("./agent.exe", win(installed))).toBe(join(process.cwd(), "agent.exe"));
+  } finally {
+    process.chdir(original);
+  }
+});
+
+test("windows: batch launch never implicitly searches cwd for cmd.exe", async () => {
+  const dir = await bin();
+  await npmShim(dir, "agent");
+  expect(launchSpec("agent", [], win(dir, { COMSPEC: "cmd.exe", SystemRoot: "D:\\Windows" })).command)
+    .toBe("D:\\Windows\\System32\\cmd.exe");
 });
 
 test("windows: COMSPEC is honoured when set", async () => {

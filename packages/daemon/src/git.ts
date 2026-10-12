@@ -48,7 +48,9 @@ export function countPorcelain(stdout: string): number {
 export async function workspaceStatus(cwd: string): Promise<WorkspaceStatus> {
   const folder = basename(cwd) || cwd;
   try {
-    const { stdout } = await run("git", ["status", "--porcelain"], {
+    // Empty disables fsmonitor on modern Git and cannot name an executable on
+    // older versions (which treated the literal `false` as a hook pathname).
+    const { stdout } = await run("git", ["-c", "core.fsmonitor=", "status", "--porcelain"], {
       cwd,
       // A pathological repo must not hold the socket open; the bar simply says
       // nothing about git in that case.

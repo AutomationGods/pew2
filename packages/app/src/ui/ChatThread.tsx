@@ -29,7 +29,7 @@ import {
 } from "react-native";
 import { FlashList, type FlashListRef, type ListRenderItemInfo } from "@shopify/flash-list";
 import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { motion, nativeMotionEasings, type AppTheme } from "../theme";
 import { Turn } from "./Turn";
 import { ActivityLine } from "./ActivityLine";
 import { TurnReceipt } from "./TurnReceipt";
@@ -67,6 +67,7 @@ type Props = {
   onOpenThought: (text: string) => void;
   /** Sends a failed prompt again. Must be stable: cells memo on it. */
   onRetry: (text: string) => void;
+  onCancelQueued?: (turnKey: string) => void;
 };
 
 function ChatThreadView(
@@ -84,10 +85,11 @@ function ChatThreadView(
     onRefresh,
     onOpenThought,
     onRetry,
+    onCancelQueued,
   }: Props,
   ref: React.Ref<ChatThreadRef>,
 ) {
-  const { theme } = useAppTheme();
+  useAppTheme();
   const styles = useThemeStyles(makeStyles);
   // Never while the agent is working: a turn in flight is not a turn that
   // failed, and the tail is a system line for as long as the next prompt takes
@@ -105,7 +107,7 @@ function ChatThreadView(
       // An agent turn is committed empty and filled by later chunks. Rendering
       // its cell would reserve the gap below the reply before there is anything
       // in it, which the reader sees as the thread twitching.
-      if (!item.text.trim()) return null;
+      if (!item.text.trim() && !item.images?.length) return null;
       // Spacing and the side rails live on the cell: cells are positioned
       // individually, so a container `gap` would never apply, and horizontal
       // padding on the scroll content is not part of the list's layout math.
@@ -116,11 +118,12 @@ function ChatThreadView(
             onOpenThought={onOpenThought}
             retryPrompt={keyExtractor(item) === retryKey ? retryPrompt : undefined}
             onRetry={onRetry}
+            onCancelQueued={onCancelQueued}
           />
         </View>
       );
     },
-    [onOpenThought, onRetry, retryKey, retryPrompt],
+    [onOpenThought, onRetry, onCancelQueued, retryKey, retryPrompt],
   );
 
   // Mirrored into a ref so the inset effect below can read "is the reader at the
@@ -385,10 +388,10 @@ function Working() {
     const loops = dots.map((dot, index) =>
       Animated.loop(
         Animated.sequence([
-          Animated.delay(index * 160),
-          Animated.timing(dot, { toValue: 1, duration: 320, useNativeDriver: true }),
-          Animated.timing(dot, { toValue: 0.25, duration: 320, useNativeDriver: true }),
-          Animated.delay((2 - index) * 160),
+          Animated.delay(index * motion.workingStagger),
+          Animated.timing(dot, { toValue: 1, duration: motion.workingPulse, easing: nativeMotionEasings.nativeTiming, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0.25, duration: motion.workingPulse, easing: nativeMotionEasings.nativeTiming, useNativeDriver: true }),
+          Animated.delay((2 - index) * motion.workingStagger),
         ]),
       ),
     );

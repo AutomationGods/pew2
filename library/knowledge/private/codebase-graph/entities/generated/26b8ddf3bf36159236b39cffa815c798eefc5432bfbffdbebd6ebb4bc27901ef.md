@@ -1,0 +1,60 @@
+---
+type: "entity"
+title: "packages/app/src/configTruth.test.ts"
+status: "developing"
+created: "2026-10-09"
+updated: "2026-10-09"
+tags:
+  - "entity"
+  - "automated-graph"
+related: []
+sources:
+  - "packages/app/src/configTruth.test.ts:1"
+generated_by: "pew2-ast-reference-v1"
+extraction: "hivemind-tree-sitter"
+graph_snapshot_sha256: "c010a51a5f79351284c36fcf9be5fd035a4dee2c22220af04506def96336cc5d"
+graph_commit_hash: "e5d9db0b528545d143711a7be3a1ca49294cc42a"
+engine: "@deeplake/hivemind"
+engine_version: "0.7.160"
+partial_scan: true
+graph_reconciled: false
+entity_type: "module"
+graph_kind: "module"
+symbol_kind: "module"
+classification_note: "Graph declaration classification only; no domain-role inference"
+path: "packages/app/src/configTruth.test.ts"
+language: "ts"
+graph_language: "typescript"
+graph_node_id: "packages/app/src/configTruth.test.ts::module"
+source_location: "L1"
+source_sha256: "e92498b83b2f08a0b2feb3a6796a1ae1f0be2b3cd175610dbfb8aacd9be2d5c8"
+last_commit_hash: "e5d9db0b528545d143711a7be3a1ca49294cc42a"
+last_commit_author: "AutomationGod"
+last_commit_date: "2026-10-08T20:10:31-04:00"
+exported: false
+depends_on: []
+used_by: []
+tested_by: []
+---
+<!-- generated-by: pew2-ast-reference-v1; do not edit -->
+
+# packages/app/src/configTruth.test.ts
+
+## Extracted declaration
+
+- Graph kind: module; normalized symbol kind: module; exported: false. (packages/app/src/configTruth.test.ts:1)
+- Source SHA-256: e92498b83b2f08a0b2feb3a6796a1ae1f0be2b3cd175610dbfb8aacd9be2d5c8. Verified against the local extraction cache.
+- Last source commit: e5d9db0b528545d143711a7be3a1ca49294cc42a; AutomationGod; 2026-10-08T20:10:31-04:00. Git metadata does not imply current bytes are committed.
+
+## Graph relationships
+
+Relations below are graph records, not inferred runtime behavior. Citations locate the originating declaration, not necessarily the exact call/import expression. Empty dependency fields are not a claim of no dependencies; the complete typed graph relations follow.
+
+- outgoing imports [EXTRACTED]: [[library/knowledge/private/codebase-graph/entities/generated/c452835326cf7d32f4582173a51daef168e9883801e5818d2312ce72969172bb]] — packages/app/src/ui/configMenu.ts; evidence: packages/app/src/configTruth.test.ts:1.
+- outgoing imports [EXTRACTED]: [[library/knowledge/private/codebase-graph/entities/generated/cb4f6c7dc46f00b78ba361ef8f331ebc502eff9ad0504ff581573a33a4da62a5]] — packages/app/src/useDaemon.ts; evidence: packages/app/src/configTruth.test.ts:1.
+- outgoing imports [EXTRACTED]: [[library/knowledge/private/codebase-graph/entities/generated/cd2b5bb71ed70978c89bcaa60e6c1f1c122a313e2d166c33142194e8499e3885]] — packages/app/src/configTruth.ts; evidence: packages/app/src/configTruth.test.ts:1.
+- outgoing imports [EXTRACTED]: external:bun:test (external/unresolved; no wiki target); evidence: packages/app/src/configTruth.test.ts:1.
+
+## Provenance
+
+[[library/knowledge/private/codebase-graph/meta/generated/catalog]] records engine version, graph hash, limitations and reproduction instructions.

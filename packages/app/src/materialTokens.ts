@@ -38,5 +38,4 @@ export function materialTokens(mode: MaterialMode) {
   return { glass: glassByMode[mode], approval: approvalByMode[mode] };
 }
 
-export const fallbackGlassTokens = glassByMode.dark;
 export const approvalActionColors = approvalByMode.dark;

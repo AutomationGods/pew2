@@ -12,7 +12,7 @@
  * and it runs on web (`npx expo start --web`) — which is why anything iOS-only
  * inside the tree has to be optional-called rather than assumed.
  */
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { AppearanceProvider } from "../appearance";
@@ -40,6 +40,25 @@ const LISTENING: Dictation = {
   toggle: () => {},
   cancel: () => {},
 };
+
+function QueueSlot() {
+  const [draft, setDraft] = useState("Then run the tests");
+  const [queued, setQueued] = useState(0);
+  const [stops, setStops] = useState(0);
+  return (
+    <Slot label="WORKING WITH A DRAFT">
+      <Composer
+        value={draft}
+        onChangeText={setDraft}
+        busy
+        onSend={() => { setQueued((count) => count + 1); setDraft(""); }}
+        onStop={() => setStops((count) => count + 1)}
+        onAttach={() => {}}
+      />
+      <Text style={{ color: theme.color.text }} testID="queue-result">Queued: {queued}; stopped: {stops}</Text>
+    </Slot>
+  );
+}
 
 function LiveDictationSlot() {
   const dictation = useDictation({
@@ -99,6 +118,7 @@ export default function ComposerHarness() {
             the busy state went unexamined. The slots keep their fixed heights,
             so every top edge is still where it was; only the viewport moves. */}
         <ScrollView contentContainerStyle={styles.content}>
+          <QueueSlot />
           <Slot label="COLLAPSED">
             <Composer value="" onChangeText={() => {}} onSend={() => {}} />
           </Slot>

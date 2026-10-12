@@ -10,10 +10,10 @@ import {
   Text,
   View,
 } from "react-native";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon } from "./Icon";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { nativeMotionEasings, type AppTheme } from "../theme";
 import {
   activitySummary,
   groupActivitySessions,
@@ -97,14 +97,14 @@ function WorkingCard({
         </Text>
         <View style={styles.liveRow}>
           {reduceMotion ? (
-            <Ionicons name="ellipsis-horizontal" size={17} color={theme.color.textFaint} />
+            <Icon name="ellipsis-horizontal" size={17} color={theme.color.textFaint} />
           ) : (
             <ActivityIndicator size="small" color={theme.color.textFaint} />
           )}
           <Text style={styles.liveText}>Agent is working…</Text>
         </View>
       </View>
-      <Ionicons name="chevron-forward" size={20} color={theme.color.textFaint} />
+      <Icon name="chevron-forward" size={20} color={theme.color.textFaint} />
     </Pressable>
   );
 }
@@ -124,7 +124,7 @@ function ReadyCard({ session, provider, onOpen }: SessionCardProps) {
       style={({ pressed }) => [styles.readyCard, pressed && styles.cardPressed]}
     >
       <View style={styles.readyIcon}>
-        <Ionicons name="checkmark" size={22} color={theme.color.success} />
+        <Icon name="checkmark" size={22} color={theme.color.success} />
       </View>
       <View style={styles.cardCopy}>
         <Text style={styles.readyTitle} numberOfLines={1}>
@@ -162,7 +162,7 @@ function RecentRow({ session, provider, onOpen }: SessionCardProps) {
           {providerLabel(session, provider)}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={18} color={theme.color.textFaint} />
+      <Icon name="chevron-forward" size={18} color={theme.color.textFaint} />
     </Pressable>
   );
 }
@@ -222,7 +222,7 @@ function PermissionCard({
       <View style={styles.permissionRail} />
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Open ${session.title}`}
+        accessibilityLabel={`Open ${session.title}. Permission needed: ${permission.title}. ${providerLabel(session, provider)}.`}
         hitSlop={touchSlop(40)}
         onPress={() => {
           haptics.tap();
@@ -232,7 +232,9 @@ function PermissionCard({
       >
         <SessionIdentity provider={provider} busy={false} />
         <View style={styles.cardCopy}>
-          <Text style={styles.cardTitle}>Permission needed</Text>
+          <Text style={styles.cardTitle}>
+            {permission.questions ? "Question for you" : "Permission needed"}
+          </Text>
           <Text style={styles.metadata} numberOfLines={1}>
             {providerLabel(session, provider)}
           </Text>
@@ -242,14 +244,27 @@ function PermissionCard({
         </View>
       </Pressable>
       <View style={styles.permissionActions}>
-        {options.map((option) => (
+        {permission.questions ? (
+          // A question card needs its own screen: opening the conversation
+          // brings it up whole, rather than offering a fragment of it here.
           <PermissionAction
-            key={option.optionId}
-            option={option}
+            option={{ optionId: "open", name: "Answer" }}
             disabled={disabled}
-            onPress={() => onAnswer(permission.requestId, option)}
+            onPress={() => {
+              haptics.tap();
+              onOpen();
+            }}
           />
-        ))}
+        ) : (
+          options.map((option) => (
+            <PermissionAction
+              key={option.optionId}
+              option={option}
+              disabled={disabled}
+              onPress={() => onAnswer(permission.requestId, option)}
+            />
+          ))
+        )}
       </View>
     </View>
   );
@@ -307,6 +322,7 @@ function ActivityScreenView({
     Animated.timing(entrance, {
       toValue: 1,
       duration: theme.motion.base,
+      easing: nativeMotionEasings.nativeTiming,
       useNativeDriver: true,
     }).start();
   }, [entrance, reduceMotion]);
@@ -340,7 +356,7 @@ function ActivityScreenView({
           ]}
         >
           <CircleButton label="Back to conversation" size={48} onPress={onClose}>
-            <Ionicons name="chevron-back" size={26} color={theme.color.text} />
+            <Icon name="chevron-back" size={26} color={theme.color.text} />
           </CircleButton>
           <View style={styles.titleBlock}>
             <Text style={styles.title} accessibilityRole="header">
@@ -351,7 +367,7 @@ function ActivityScreenView({
             </Text>
           </View>
           <CircleButton label="New conversation" size={48} onPress={onNewConversation}>
-            <Ionicons name="create-outline" size={23} color={theme.color.text} />
+            <Icon name="create-outline" size={23} color={theme.color.text} />
           </CircleButton>
         </View>
 
@@ -376,7 +392,7 @@ function ActivityScreenView({
         >
           {status !== "online" ? (
             <View style={styles.offlineBanner} accessibilityRole="alert">
-              <Ionicons name="cloud-offline-outline" size={19} color={theme.color.textDim} />
+              <Icon name="cloud-offline-outline" size={19} color={theme.color.textDim} />
               <Text style={styles.offlineText}>
                 {status === "connecting"
                   ? "Reconnecting to your computer…"
@@ -545,8 +561,8 @@ function makeStyles(theme: AppTheme) {
   workingCard: { backgroundColor: theme.color.groupedSurface },
   cardPressed: { backgroundColor: theme.color.surfacePressed },
   cardCopy: { flex: 1, minWidth: 0, gap: theme.space(1) },
-  cardTitle: { color: theme.color.text, fontSize: 17, lineHeight: 22, fontWeight: "700" },
-  metadata: { color: theme.color.textFaint, fontSize: theme.font.small, lineHeight: 19 },
+  cardTitle: { color: theme.color.text, fontSize: theme.font.body, lineHeight: 22, fontWeight: "700" },
+  metadata: { color: theme.color.textDim, fontSize: theme.font.small, lineHeight: 19 },
   liveRow: { minHeight: 25, flexDirection: "row", alignItems: "center", gap: theme.space(2) },
   liveText: { flex: 1, color: theme.color.textDim, fontSize: theme.font.small, lineHeight: 20 },
   permissionCard: {

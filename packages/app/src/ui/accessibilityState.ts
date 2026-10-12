@@ -54,25 +54,28 @@ function subscribe(setting: Setting) {
  * rather than a missing blur.
  */
 function prime() {
+  // Subscribe before querying. Even an event that repeats the default value
+  // is newer than the pending initial snapshot and must win over it.
+  let motionChanged = false;
+  let transparencyChanged = false;
+  // One subscription per setting for the life of the process.
+  AccessibilityInfo.addEventListener("reduceMotionChanged", (value) => {
+    motionChanged = true;
+    publish("reduceMotion", value);
+  });
+  AccessibilityInfo.addEventListener("reduceTransparencyChanged", (value) => {
+    transparencyChanged = true;
+    publish("reduceTransparency", value);
+  });
   AccessibilityInfo.isReduceMotionEnabled?.()
-    .then((value) => publish("reduceMotion", value))
+    .then((value) => { if (!motionChanged) publish("reduceMotion", value); })
     .catch(() => {});
   AccessibilityInfo.isReduceTransparencyEnabled?.()
-    .then((value) => publish("reduceTransparency", value))
+    .then((value) => { if (!transparencyChanged) publish("reduceTransparency", value); })
     .catch(() => {});
 }
 
 prime();
-
-// One subscription per setting for the life of the process, rather than one per
-// mounted component. These are never removed because the settings stay relevant
-// for exactly as long as the app is running.
-AccessibilityInfo.addEventListener("reduceMotionChanged", (value) =>
-  publish("reduceMotion", value),
-);
-AccessibilityInfo.addEventListener("reduceTransparencyChanged", (value) =>
-  publish("reduceTransparency", value),
-);
 
 const subscribeMotion = subscribe("reduceMotion");
 const subscribeTransparency = subscribe("reduceTransparency");

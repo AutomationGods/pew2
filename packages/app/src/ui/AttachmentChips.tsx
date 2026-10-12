@@ -15,7 +15,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 // expo-image: these thumbnails decode while the user is typing, and a
 // main-thread decode there lands on the composer's own animation.
 import { Image } from "expo-image";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon, type IconName } from "./Icon";
 import { useAppTheme, useThemeStyles } from "../appearance";
 import type { AppTheme } from "../theme";
 import { touchSlop } from "./controls";
@@ -29,7 +29,7 @@ interface AttachmentChipsProps {
 
 const THUMB = 32;
 
-function glyphFor(mimeType: string): keyof typeof Ionicons.glyphMap {
+function glyphFor(mimeType: string): IconName {
   if (mimeType.startsWith("image/")) return "image-outline";
   if (mimeType.startsWith("video/")) return "videocam-outline";
   if (mimeType.startsWith("audio/")) return "musical-notes-outline";
@@ -61,7 +61,7 @@ function AttachmentChipsView({ attachments, onRemove }: AttachmentChipsProps) {
             />
           ) : (
             <View style={styles.glyph}>
-              <Ionicons name={glyphFor(file.mimeType)} size={16} color={theme.color.glyph} />
+              <Icon name={glyphFor(file.mimeType)} size={16} color={theme.color.glyph} />
             </View>
           )}
 
@@ -85,7 +85,7 @@ function AttachmentChipsView({ attachments, onRemove }: AttachmentChipsProps) {
                 onRemove(file.id);
               }}
             >
-              <Ionicons name="close" size={13} color={theme.color.textDim} />
+              <Icon name="close" size={13} color={theme.color.textDim} />
             </Pressable>
           )}
         </View>

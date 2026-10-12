@@ -7,11 +7,55 @@
  * over a whole document, so that is not one lost setting but all of them.
  *
  * Renaming is atomic within a filesystem: a reader sees either the old file or
- * the new one. It also settles concurrent writers, who would otherwise
- * interleave into a single file descriptor — with a rename the last writer wins
- * cleanly, which is the same answer read-modify-write was already going to give.
+ * the new one. This does not serialize read-modify-write: callers that merge
+ * shared state must hold withFileLock across both the read and the replacement.
  */
-import { rename, writeFile } from "node:fs/promises";
+import { mkdir, realpath, rename, rm, rmdir, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+
+/**
+ * Serialize cooperating writers, including separate daemon/CLI processes.
+ * Lock directories are created exclusively; timestamps are never grounds for
+ * stealing one from a slow live writer. After a crash, fail closed with an
+ * actionable error rather than risk silently replacing another writer's data.
+ */
+export async function withFileLock<T>(
+  path: string,
+  work: () => Promise<T>,
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
+): Promise<T> {
+  options.signal?.throwIfAborted();
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  // Resolve directory aliases so two spellings of PEW2_HOME share one lock.
+  const lock = join(await realpath(dirname(path)), `${basename(path)}.lock`);
+  const deadline = performance.now() + (options.timeoutMs ?? 10_000);
+  for (;;) {
+    options.signal?.throwIfAborted();
+    try {
+      await mkdir(lock, { mode: 0o700 });
+      break;
+    } catch (error) {
+      if (!isFileError(error, "EEXIST")) throw error;
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) {
+        throw new Error(`Timed out waiting for ${lock}. No update was made. If a writer crashed, stop all pew2 processes before removing this lock directory.`, { cause: error });
+      }
+      await delay(Math.min(25, remaining), undefined, { signal: options.signal });
+    }
+  }
+  try {
+    options.signal?.throwIfAborted();
+    return await work();
+  } finally {
+    // Only remove the empty directory we acquired, never recursively delete it.
+    await rmdir(lock);
+  }
+}
+
+export function isFileError(error: unknown, code: string): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === code;
+}
 
 /**
  * Distinguishes two writes racing inside one process.
@@ -38,6 +82,10 @@ export async function writeFileAtomic(
   mode = 0o600,
 ): Promise<void> {
   const temp = `${path}.${process.pid}.${sequence++}.tmp`;
-  await writeFile(temp, data, { encoding: "utf8", mode });
-  await rename(temp, path);
+  try {
+    await writeFile(temp, data, { encoding: "utf8", mode });
+    await rename(temp, path);
+  } finally {
+    await rm(temp, { force: true });
+  }
 }

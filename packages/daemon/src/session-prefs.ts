@@ -16,10 +16,10 @@
  * Kept in its own file: `config-prefs.json` is a small hand-editable map of
  * provider defaults, and this grows an entry per conversation.
  */
-import { mkdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { userProvidersDir } from "./providers/registry.js";
-import { writeFileAtomic } from "./atomic-file.js";
+import { withFileLock, writeFileAtomic } from "./atomic-file.js";
 import type { ConfigPrefs } from "./config-prefs.js";
 
 /** Newest conversations kept; older records are dropped on write. */
@@ -78,23 +78,24 @@ export async function writeSessionPrefs(
 ): Promise<void> {
   if (Object.keys(prefs).length === 0) return;
   const path = prefsPath(env);
-  const all = await readAll(env);
-  const id = key(providerId, agentSessionId);
-  all[id] = {
-    prefs: { ...all[id]?.prefs, ...prefs },
-    updatedAt: Date.now(),
-  };
+  await withFileLock(path, async () => {
+    const all = await readAll(env);
+    const id = key(providerId, agentSessionId);
+    all[id] = {
+      prefs: { ...all[id]?.prefs, ...prefs },
+      updatedAt: Date.now(),
+    };
 
-  // Bounded, so a machine with thousands of conversations does not grow a file
-  // the daemon reads on every session open.
-  const entries = Object.entries(all);
-  const kept =
-    entries.length > MAX_SESSIONS
-      ? entries
-          .sort((a, b) => (b[1]?.updatedAt ?? 0) - (a[1]?.updatedAt ?? 0))
-          .slice(0, MAX_SESSIONS)
-      : entries;
+    // Bounded, so a machine with thousands of conversations does not grow a file
+    // the daemon reads on every session open.
+    const entries = Object.entries(all);
+    const kept =
+      entries.length > MAX_SESSIONS
+        ? entries
+            .sort((a, b) => (b[1]?.updatedAt ?? 0) - (a[1]?.updatedAt ?? 0) || a[0].localeCompare(b[0]))
+            .slice(0, MAX_SESSIONS)
+        : entries;
 
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFileAtomic(path, JSON.stringify(Object.fromEntries(kept), null, 2));
+    await writeFileAtomic(path, JSON.stringify(Object.fromEntries(kept), null, 2));
+  });
 }

@@ -493,12 +493,25 @@ export const SetSessionConfig = z.object({
   value: z.union([z.string(), z.boolean()]),
 });
 
+/**
+ * Answers to a GG Coder desktop question card, keyed by question id: a string
+ * for a pick or typed answer, a list for a multi-select. The desktop checks
+ * them against the questions it asked; this only bounds their size.
+ */
+export const DesktopAnswers = z.record(
+  z.string().max(200),
+  z.union([z.string().max(10_000), z.array(z.string().max(500)).max(20)]),
+);
+export type DesktopAnswers = z.infer<typeof DesktopAnswers>;
+
 /** App -> daemon. Answer an outstanding permission request. */
 export const PermissionReply = z.object({
   t: z.literal("session.permission"),
   sessionId: z.string(),
   requestId: z.string(),
   optionId: z.string(),
+  /** A whole question card's answers, only for a GG Coder desktop question. */
+  answers: DesktopAnswers.optional(),
 });
 
 /**
@@ -616,6 +629,12 @@ export const Replay = z.object({
    * busy forever after catching up on a finished turn.
    */
   working: z.boolean().optional(),
+  /**
+   * Current selectors on reconnect. `session.config` is not logged, so a
+   * missed frame cannot be recovered from transcript events. Absent means an
+   * older daemon or a session still attaching; leave known settings alone.
+   */
+  configOptions: z.array(ConfigOption).optional(),
   /**
    * Approval requests this session is still blocked on, on a catch-up frame.
    *

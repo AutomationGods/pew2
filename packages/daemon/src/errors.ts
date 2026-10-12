@@ -11,6 +11,7 @@
  * agent must already speak, so a newly added manifest gets readable errors
  * without a line of code here.
  */
+import { isRecord } from "./untyped.js";
 
 /** Longest message worth showing. Past this it is a log entry, not a message. */
 const MAX_LENGTH = 240;
@@ -52,10 +53,6 @@ const PROTOCOL_LABELS = new Set([
   "request cancelled",
   "authentication required",
 ]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 /** True when a string is a serialised object rather than prose. */
 function looksLikeJson(text: string): boolean {

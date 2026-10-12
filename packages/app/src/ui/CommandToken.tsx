@@ -12,15 +12,15 @@
  * always at offset zero and both use the same font metrics.
  */
 import { memo } from "react";
-import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { useAppTheme } from "../appearance";
 import { ShimmerText } from "./ShimmerText";
+import { motion } from "../motionTokens";
 
 /** One pass of the sheen. Unhurried, so it reads as a sheen and not a flicker. */
-const SWEEP_DURATION = 1800;
+const SWEEP_DURATION = motion.shimmerSweep;
 
 /** Pause between passes, so it is punctuation rather than a loading bar. */
-const SWEEP_GAP = 900;
+const SWEEP_GAP = motion.commandPause;
 
 function CommandTokenView({
   text,

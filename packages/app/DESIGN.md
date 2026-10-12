@@ -36,11 +36,11 @@ Stored accent keys remain unchanged so existing SecureStore preferences continue
 
 ### Screen anatomy
 
-- **Conversation:** stable top navigation, compact configuration, workspace context near the composer.
-- **Drawer:** machine status, agent filters, activity row, project row, recent sessions.
+- **Conversation:** flat bar buttons either side of a centred title; tapping the title opens the system menu for model and mode. Workspace context sits near the composer.
+- **Drawer:** machine status and a Settings button, then one grouped block (Agent, Project) whose rows open the system menu, the activity row, and recent sessions.
 - **Activity:** grouped lists ordered Needs you, Working, Ready, Recent.
-- **Sheets:** shared native header and grouped rows; approvals keep explicit Allow and Deny actions.
-- **Appearance:** segmented mode selection and named accent rows.
+- **Sheets:** the system sheet (UISheetPresentationController) sized to content, with shared header and grouped rows; approvals keep explicit Allow and Deny actions and cannot be swiped away.
+- **Settings:** appearance, accent, and This computer (connection, daemon update, Forget this computer behind a confirmation).
 
 ### Anti-default decisions
 
@@ -77,7 +77,20 @@ Navigation uses subdued section labels, hairline session rows, and one tonal sel
 
 ### Slice 6 checkpoint
 
-All secondary surfaces continue through the shared native sheet anatomy: grabber, balanced header, grouped body, backdrop dismissal where allowed, keyboard avoidance, reduced motion, and blocking approval behavior. No sheet implementation or focus ownership changed.
+All secondary surfaces continue through the shared sheet anatomy: grabber, balanced header, grouped body, backdrop dismissal where allowed, keyboard avoidance, reduced motion, and blocking approval behavior. (Superseded by the native platform pass below: the sheet is now the system's.)
+
+### Native platform pass
+
+The hand-drawn chrome is replaced by the platform's own, because users judge "real app" by these parts first:
+
+- **Icons:** SF Symbols on iOS through `Icon.tsx` (`expo-symbols`), falling back to the Ionicons glyph elsewhere and for any unmapped name.
+- **Menus:** `NativeMenu.tsx` wraps UIMenu (`@react-native-menu/menu`). It replaced `ConfigPicker`, `ProjectMenu`, `ProjectSelect`, the agent chips, and their manual layout maths. Menus keep the keyboard up, so a draft survives a model change.
+- **Android model and thinking:** `ConfigSelector` uses the shared `Sheet` with separate setting rows and bounded, scrollable tap-to-select lists. Current choices use `selectedRow` and a “Current” label, not checkboxes. Long names wrap. The sheet dismisses the keyboard without clearing the draft. iOS keeps its native menu. `ConfigSelector.harness.tsx` covers list content and selection; the native sheet requires separate on-device verification.
+- **Sheets:** `Sheet.tsx` presents through `@lodev09/react-native-true-sheet`; drag, dimming, keyboard avoidance, safe area, and Reduce Motion are the system's.
+- **Type:** body text is 17pt on a 24pt line, iOS's body style.
+- **Destructive actions:** Forget moved from the drawer into Settings.
+
+Kept on purpose: the per-reply copy button. Holding text selects one rendered block, so the button is the only way to copy a whole reply, and the earlier press-and-hold sheet broke native selection.
 
 ## Project creation
 

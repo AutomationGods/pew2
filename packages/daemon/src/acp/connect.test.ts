@@ -16,11 +16,13 @@
  */
 import { expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   connectProvider,
+  prepareProviderLaunch,
+  providerEnvironment,
   HANDSHAKE_TIMEOUT_MARKER,
   restoreMethodFor,
   withTimeout,
@@ -121,6 +123,73 @@ test("without the transcript, the replay is the only way to draw the thread", ()
   expect(restoreMethodFor(false, false)).toBe("session/load");
 });
 
+test("Windows child interpreters cannot reintroduce implicit or relative cwd search", () => {
+  const inherited = {
+    PEW2_FAKE_PLATFORM: "win32",
+    Path: '.;;".";relative;C:relative;"C:\\Program Files\\nodejs";D:\\bin',
+    NODEFAULTCURRENTDIRECTORYINEXEPATH: "",
+    OTHER_SETTING: "preserved",
+  };
+  const env = providerEnvironment(inherited);
+  expect(env.PATH).toBe("C:\\Program Files\\nodejs;D:\\bin");
+  expect(env.NoDefaultCurrentDirectoryInExePath).toBe("1");
+  expect(env.Path).toBeUndefined();
+  expect(env.NODEFAULTCURRENTDIRECTORYINEXEPATH).toBeUndefined();
+  expect(env.OTHER_SETTING).toBe("preserved");
+  expect(inherited.Path).toContain("relative");
+  expect(providerEnvironment({ PEW2_FAKE_PLATFORM: "win32" }).PATH).toBe("");
+});
+
+test("POSIX child environments retain operator configuration", () => {
+  const env = { PEW2_FAKE_PLATFORM: "posix", PATH: "/usr/bin:/bin", OTHER_SETTING: "preserved" };
+  expect(providerEnvironment(env)).toEqual(env);
+});
+
+test("npx bootstraps outside the workspace with an explicit private prefix", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "pew2-bootstrap-test-"));
+  const executable = join(workspace, "npx");
+  // Only plan the launch. No package is installed and no fixture is executed.
+  writeFileSync(executable, "", { mode: 0o700 });
+  writeFileSync(join(workspace, ".npmrc"), "script-shell=unused-test-shell\n");
+  const plan = await prepareProviderLaunch(executable, ["--yes", "test-agent@1.0.0"], workspace, { PEW2_FAKE_PLATFORM: "posix" });
+  try {
+    expect(plan.cwd).not.toBe(workspace);
+    expect(plan.cwd.startsWith(workspace + "/")).toBe(false);
+    expect(readdirSync(plan.cwd)).toEqual([]);
+    expect(plan.command).toBe(executable);
+    expect(plan.args).toEqual(["--prefix", plan.cwd, "--yes", "test-agent@1.0.0"]);
+  } finally {
+    await plan.cleanup();
+    rmSync(workspace, { recursive: true, force: true });
+  }
+  expect(existsSync(plan.cwd)).toBe(false);
+});
+
+test("native providers retain their ACP working directory and arguments", async () => {
+  const plan = await prepareProviderLaunch("native-agent", ["acp"], "/project", { PEW2_FAKE_PLATFORM: "posix" });
+  expect(plan.cwd).toBe("/project");
+  expect(plan.command).toBe("native-agent");
+  expect(plan.args).toEqual(["acp"]);
+  await plan.cleanup();
+});
+
+test("Windows npx bootstrap arguments keep the isolated prefix through batch escaping", async () => {
+  const installed = mkdtempSync(join(tmpdir(), "pew2-npx-win-"));
+  writeFileSync(join(installed, "npx.cmd"), "");
+  const plan = await prepareProviderLaunch("npx", ["--yes", "test-agent@1.0.0"], installed, {
+    PEW2_FAKE_PLATFORM: "win32", PATH: installed,
+  });
+  try {
+    expect(plan.cwd).not.toBe(installed);
+    expect(plan.windowsVerbatimArguments).toBe(true);
+    expect(plan.args[3]).toContain("--prefix");
+    expect(plan.args[3]?.replaceAll("^", "")).toContain(plan.cwd);
+  } finally {
+    await plan.cleanup();
+    rmSync(installed, { recursive: true, force: true });
+  }
+});
+
 /** The echo agent: a real ACP peer that needs no key, no network and no PATH. */
 const echoProvider: LoadedProvider = {
   manifest: { id: "echo", name: "echo" } as LoadedProvider["manifest"],
@@ -171,4 +240,40 @@ posixTest("a spawned agent is its own process group, and close() ends the group"
     if (previousHome === undefined) delete process.env.PEW2_HOME;
     else process.env.PEW2_HOME = previousHome;
   }
+});
+
+/** Runs one prompt against the echo agent under `providerId`, answering its question card. */
+async function answerCard(providerId: string): Promise<string> {
+  const previousHome = process.env.PEW2_HOME;
+  process.env.PEW2_HOME = mkdtempSync(join(tmpdir(), "pew2-connect-"));
+  const said: string[] = [];
+  try {
+    // Answered from inside the callback, which only fires after connect returns.
+    const handle: Awaited<ReturnType<typeof connectProvider>> = await connectProvider({
+      provider: { ...echoProvider, manifest: { ...echoProvider.manifest, id: providerId } },
+      cwd: tmpdir(),
+      onUpdate: (payload) => {
+        const text = (payload as { update?: { content?: { text?: string } } }).update?.content?.text;
+        if (text?.startsWith("answers:")) said.push(text);
+      },
+      onPermissionRequest: ({ requestId }) => {
+        handle.answerPermission(requestId, "answer", { q: "the blue one" });
+      },
+    });
+    await handle.prompt("desktop question");
+    handle.close();
+    return said.join("");
+  } finally {
+    if (previousHome === undefined) delete process.env.PEW2_HOME;
+    else process.env.PEW2_HOME = previousHome;
+  }
+}
+
+test("a desktop question card's answers go back to the GG Coder desktop with the reply", async () => {
+  expect(await answerCard("ggcoder-desktop")).toBe('answers:{"ggDesktopAnswers":{"q":"the blue one"}}');
+});
+
+test("card answers are never sent to an agent that is not the GG Coder desktop", async () => {
+  // Another agent copying the desktop's metadata must not receive what the user typed.
+  expect(await answerCard("echo")).toBe("answers:null");
 });

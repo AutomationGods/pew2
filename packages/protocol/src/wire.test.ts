@@ -8,7 +8,19 @@
  */
 import { expect, test } from "bun:test";
 import { directionKey, isEnvelope, seal } from "./crypto.js";
-import { ClientMessage, readCursors, ServerMessage, WIRE_VERSION, wireMismatch } from "./wire.js";
+import { ClientMessage, readCursors, Replay, ServerMessage, WIRE_VERSION, wireMismatch } from "./wire.js";
+
+test("catch-up settings are optional for older peers and validated when present", () => {
+  const replay = { t: "session.replay", sessionId: "live", events: [], catchUp: true };
+  expect(Replay.parse(replay).configOptions).toBeUndefined();
+  expect(Replay.parse({ ...replay, configOptions: [] }).configOptions).toEqual([]);
+  const configOptions = [{
+    id: "model", name: "Model", type: "select", currentValue: "opus",
+    options: [{ value: "opus", name: "Opus" }],
+  }];
+  expect(ServerMessage.parse({ ...replay, configOptions })).toMatchObject({ configOptions });
+  expect(Replay.safeParse({ ...replay, configOptions: [{ id: "model" }] }).success).toBe(false);
+});
 
 test("an outdated hello still parses, so its sender can be told why", () => {
   // The subtle one. Pinning `wire` to a literal in the schema would make this

@@ -16,6 +16,7 @@
  * sent a usage figure of its own.
  */
 import { readChunk } from "./chunks";
+import { field } from "./untyped";
 
 /** ACP tool kinds. `other` is the documented default. */
 export type ToolKind =
@@ -115,9 +116,9 @@ export function isTimingTurn(state: Activity): boolean {
  * Returns the same object when nothing changed, so the transcript's memoised
  * footer does not re-render on every streamed word of prose.
  */
-export function foldActivity(state: Activity, payload: any, now: number): Activity {
-  const update = payload?.update;
-  const kind = update?.sessionUpdate;
+export function foldActivity(state: Activity, payload: unknown, now: number): Activity {
+  const update = field(payload, "update");
+  const kind = field(update, "sessionUpdate");
   if (kind !== "tool_call" && kind !== "tool_call_update") {
     // Read through `readChunk` rather than sniffing the payload, so "the agent
     // is talking" means exactly what the transcript decided to render — a
@@ -137,8 +138,11 @@ export function foldActivity(state: Activity, payload: any, now: number): Activi
     return { ...state, speaking: next, tokens: tokens ?? state.tokens };
   }
 
-  const id = typeof update.toolCallId === "string" ? update.toolCallId : undefined;
-  if (!id) return state;
+  const id = field(update, "toolCallId");
+  if (typeof id !== "string" || !id) return state;
+  const title = field(update, "title");
+  const rawKind = field(update, "kind");
+  const status = field(update, "status");
 
   // A tool can arrive before the prompt echo does, so the clock is started here
   // too rather than assuming `beginActivity` already ran.
@@ -151,9 +155,9 @@ export function foldActivity(state: Activity, payload: any, now: number): Activi
     // whatever it has rather than dropped.
     const tool: ToolRun = {
       id,
-      title: typeof update.title === "string" ? update.title.trim() : "",
-      kind: readKind(update.kind),
-      status: readStatus(update.status) ?? "pending",
+      title: typeof title === "string" ? title.trim() : "",
+      kind: readKind(rawKind),
+      status: readStatus(status) ?? "pending",
     };
     // A new tool is new work, so the agent is no longer merely talking: the
     // line comes back, naming this one.
@@ -165,12 +169,9 @@ export function foldActivity(state: Activity, payload: any, now: number): Activi
   const previous = state.tools[at]!;
   const next: ToolRun = {
     ...previous,
-    title:
-      typeof update.title === "string" && update.title.trim()
-        ? update.title.trim()
-        : previous.title,
-    kind: update.kind === undefined ? previous.kind : readKind(update.kind),
-    status: readStatus(update.status) ?? previous.status,
+    title: typeof title === "string" && title.trim() ? title.trim() : previous.title,
+    kind: rawKind === undefined ? previous.kind : readKind(rawKind),
+    status: readStatus(status) ?? previous.status,
   };
   if (
     next.title === previous.title &&
@@ -195,17 +196,19 @@ export function foldActivity(state: Activity, payload: any, now: number): Activi
  * escape hatch several agents use. Absent means the receipt simply does not
  * mention tokens — a made-up number would be worse than a missing one.
  */
-function readTokens(payload: any): number | undefined {
-  const meta = payload?.update?._meta ?? payload?._meta ?? payload;
-  const usage = meta?.usage ?? meta?.tokenUsage ?? meta?.tokens;
+function readTokens(payload: unknown): number | undefined {
+  const meta = field(field(payload, "update"), "_meta") ?? field(payload, "_meta") ?? payload;
+  const usage = field(meta, "usage") ?? field(meta, "tokenUsage") ?? field(meta, "tokens");
   if (typeof usage === "number") return Number.isFinite(usage) ? usage : undefined;
   if (!usage || typeof usage !== "object") return undefined;
 
-  const total = usage.total ?? usage.totalTokens ?? usage.total_tokens;
+  const total = field(usage, "total") ?? field(usage, "totalTokens") ?? field(usage, "total_tokens");
   if (typeof total === "number") return total;
 
-  const input = usage.input ?? usage.inputTokens ?? usage.input_tokens ?? 0;
-  const output = usage.output ?? usage.outputTokens ?? usage.output_tokens ?? 0;
+  const input =
+    field(usage, "input") ?? field(usage, "inputTokens") ?? field(usage, "input_tokens") ?? 0;
+  const output =
+    field(usage, "output") ?? field(usage, "outputTokens") ?? field(usage, "output_tokens") ?? 0;
   const sum = (typeof input === "number" ? input : 0) + (typeof output === "number" ? output : 0);
   return sum > 0 ? sum : undefined;
 }

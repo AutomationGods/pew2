@@ -14,7 +14,9 @@ import { isEmptyChunk, readChunk, type Chunk } from "./chunks";
 import { joinChunks } from "./chunkJoin";
 import { readUsage, type ContextUsage } from "./contextUsage";
 import { dedupeImages } from "./images";
+import { findDuplicateError } from "./errorDedup";
 import { pendingPermission, readPermissionRequest } from "./permissions";
+import { NEW_CONVERSATION_TITLE } from "./conversationTitle";
 import type { PermissionRequest, Session, Turn } from "./useDaemon";
 
 /** True for a user turn rendered before the daemon echoed it back. */
@@ -68,13 +70,14 @@ export function capTurns(turns: Turn[]): Turn[] {
  * @param key Turn id, unique across sessions. `seq` restarts at 0 for each one.
  */
 export function applyChunk(turns: Turn[], key: string, chunk: Chunk): void {
-  const last = turns[turns.length - 1];
+  const boundary = liveBoundary(turns);
+  const last = turns[boundary - 1];
   // The echo of a prompt this client already rendered: adopt the server id in
   // place rather than showing the message twice. Text is the only handle on
   // that identity, so an image-only chunk never claims to be an echo of one.
   const optimistic =
     chunk.role === "user" && chunk.text
-      ? turns.findIndex((turn) => isOptimistic(turn) && turn.text === chunk.text)
+      ? turns.findIndex((turn) => isOptimistic(turn) && !turn.queuedForTurn && !turn.cancelled && turn.text === chunk.text)
       : -1;
   if (optimistic >= 0) {
     // The daemon has the message, so it is not waiting for a socket whatever
@@ -82,17 +85,43 @@ export function applyChunk(turns: Turn[], key: string, chunk: Chunk): void {
     // evidence, and a bubble must never keep the label after the agent has it.
     const { queued: _queued, ...adopted } = turns[optimistic]!;
     turns[optimistic] = { ...adopted, id: key };
-  } else if (last && last.role === chunk.role && chunk.role !== "user") {
+  } else if (
+    last &&
+    last.role === chunk.role &&
+    chunk.role !== "user" &&
+    // Ken's line is a speaker of its own: never merged into the agent's reply,
+    // nor the reply into it.
+    !last.ken &&
+    !chunk.ken
+  ) {
     // Coalesce consecutive chunks of the same role into one bubble.
-    turns[turns.length - 1] = mergeChunk(last, chunk);
+    turns[boundary - 1] = mergeChunk(last, chunk);
   } else {
-    turns.push(turnFromChunk(key, chunk));
+    turns.splice(boundary, 0, turnFromChunk(key, chunk));
   }
+}
+
+/** Unsent follow-ups stay after both streamed output and terminal failures. */
+function liveBoundary(turns: readonly Turn[]): number {
+  let boundary = turns.length;
+  while (boundary > 0 && (turns[boundary - 1]?.queued || turns[boundary - 1]?.cancelled)) boundary--;
+  return boundary;
+}
+
+/** Promote a streamed failure or insert it before the unsent queue. */
+export function withError(turns: readonly Turn[], id: string, text: string): Turn[] {
+  const next = [...turns];
+  const boundary = liveBoundary(next);
+  const duplicate = findDuplicateError(next.slice(0, boundary), text);
+  const existing = next[duplicate];
+  if (existing) next[duplicate] = { ...existing, role: "system" };
+  else next.splice(boundary, 0, { id, role: "system", text });
+  return capTurns(next);
 }
 
 /** A session's title once its first user message has arrived. */
 function titledBy(session: Session, chunk: Chunk): string {
-  return session.title === "New conversation" && chunk.role === "user"
+  return session.title === NEW_CONVERSATION_TITLE && chunk.role === "user"
     ? chunk.text.trim().slice(0, 60)
     : session.title;
 }
@@ -126,13 +155,14 @@ export function turnFromChunk(id: string, chunk: Chunk): Turn {
     role: chunk.role,
     text: chunk.text,
     ...(chunk.images ? { images: chunk.images } : {}),
+    ...(chunk.ken ? { ken: true } : {}),
   };
 }
 
 export interface ReplayEvent {
   sessionId?: string;
   seq?: number;
-  payload?: any;
+  payload?: unknown;
 }
 
 interface FoldState {

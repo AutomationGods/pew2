@@ -13,6 +13,7 @@
  *
  * Pure and React-free so both the extraction and the source rules are testable.
  */
+import { field, isRecord } from "./untyped";
 
 export interface ChatImage {
   /**
@@ -86,8 +87,20 @@ export function isDisplayableImage(src: string): boolean {
   return IMAGE_EXTENSION.test(value.split("?")[0]!.split("#")[0]!);
 }
 
-function imageFromBlock(block: any): ChatImage | undefined {
-  if (!block || typeof block !== "object") return undefined;
+/** The renderer's AST keeps markdown image descriptions in `content`, not alt. */
+export function imageFromMarkdown(node: {
+  attributes?: { src?: unknown; alt?: unknown };
+  content?: unknown;
+}): ChatImage | undefined {
+  const src = typeof node.attributes?.src === "string" ? node.attributes.src : "";
+  if (!isDisplayableImage(src)) return undefined;
+  const attributeAlt = typeof node.attributes?.alt === "string" ? node.attributes.alt.trim() : "";
+  const description = typeof node.content === "string" ? node.content.trim() : "";
+  return { src, alt: attributeAlt || description || undefined };
+}
+
+function imageFromBlock(block: unknown): ChatImage | undefined {
+  if (!isRecord(block)) return undefined;
 
   if (block.type === "image") {
     // An explicit type that cannot be painted is a refusal, not a reason to
@@ -119,7 +132,7 @@ function imageFromBlock(block: any): ChatImage | undefined {
 
   if (block.type === "resource") {
     const resource = block.resource;
-    if (!resource || typeof resource !== "object") return undefined;
+    if (!isRecord(resource)) return undefined;
     const mimeType = isImageMime(resource.mimeType) ? resource.mimeType : undefined;
     if (typeof resource.blob === "string" && resource.blob && mimeType) {
       return { src: `data:${mimeType};base64,${resource.blob}`, mimeType };
@@ -145,13 +158,13 @@ export function imagesFromContent(content: unknown): ChatImage[] {
  * lifting their text would put file contents and command output into the
  * transcript; a generated picture is the one part that is the answer itself.
  */
-export function imagesFromToolCall(update: any): ChatImage[] {
-  const content = update?.content;
+export function imagesFromToolCall(update: unknown): ChatImage[] {
+  const content = field(update, "content");
   if (!Array.isArray(content)) return [];
   const images: ChatImage[] = [];
-  for (const entry of content) {
-    if (entry?.type !== "content") continue;
-    images.push(...imagesFromContent(entry.content));
+  for (const entry of content as unknown[]) {
+    if (field(entry, "type") !== "content") continue;
+    images.push(...imagesFromContent(field(entry, "content")));
   }
   return images;
 }

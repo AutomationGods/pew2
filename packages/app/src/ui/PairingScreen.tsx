@@ -6,7 +6,7 @@
  * It deliberately does not explain ACP, providers or sessions — none of that
  * matters until there is a daemon on the other end.
  */
-import { useState } from "react";
+import { useReducer, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -18,7 +18,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon } from "./Icon";
 import { useAppTheme, useThemeStyles } from "../appearance";
 import type { AppTheme } from "../theme";
 import { haptics } from "./haptics";
@@ -28,16 +28,19 @@ import { QrScanner } from "./QrScanner";
 import { CircleButton } from "./controls";
 import { Glass } from "./Glass";
 import { verifyPairing } from "../verifyPairing";
+import { runPairingAttempt, scannerVisible } from "../reconnect";
 
 interface Props {
-  onPaired: (pairing: Pairing) => void;
+  onPaired: (pairing: Pairing) => void | Promise<void>;
   /** Returns to the launch screen. Omitted when there is nowhere to go back to. */
   onBack?: () => void;
   /** Set when a previously stored pairing stopped working. */
   notice?: string;
+  /** A confirmed reconnect opens the camera without another tap. */
+  startScanning?: boolean;
 }
 
-export function PairingScreen({ onPaired, onBack, notice }: Props) {
+export function PairingScreen({ onPaired, onBack, notice, startScanning = false }: Props) {
   const { theme } = useAppTheme();
   const styles = useThemeStyles(makeStyles);
 
@@ -45,7 +48,7 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
-  const [scanning, setScanning] = useState(false);
+  const [scanning, showScanner] = useReducer(scannerVisible, startScanning && (Platform.OS === "ios" || Platform.OS === "android"));
   const [busy, setBusy] = useState(false);
 
   // Scanning needs a camera. There is no useful one on web, so offering the
@@ -71,30 +74,26 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
     const verified = await verifyPairing(result.pairing);
     if (!verified.ok) return verified.message;
 
-    onPaired(result.pairing);
+    await onPaired(result.pairing);
     return null;
   };
 
   const submit = async () => {
-    setBusy(true);
     haptics.sent();
-    const failure = await accept(draft);
+    const failure = await runPairingAttempt(() => accept(draft), setBusy);
     // Pairing is the one moment the user is asked to trust this thing, so both
     // outcomes are confirmed physically rather than by a line of text alone.
     if (failure) haptics.failed();
     else haptics.finished();
     setError(failure);
-    if (failure) setBusy(false);
   };
 
   const handleScan = async (value: string) => {
     // Checking the code is a round trip, and the scanner latches after a read,
     // so without this the camera sits frozen for seconds with nothing said.
-    setBusy(true);
-    const failure = await accept(value);
-    setBusy(false);
+    const failure = await runPairingAttempt(() => accept(value), setBusy);
     if (!failure) {
-      setScanning(false);
+      showScanner("manual");
       return;
     }
     haptics.failed();
@@ -114,7 +113,7 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
       <View style={[styles.nav, { paddingTop: insets.top + theme.headerInset }]}>
         {onBack ? (
           <CircleButton label="Back" size={theme.size.touch} onPress={onBack}>
-            <Ionicons name="chevron-back" size={24} color={theme.color.text} />
+            <Icon name="chevron-back" size={24} color={theme.color.text} />
           </CircleButton>
         ) : null}
       </View>
@@ -146,12 +145,12 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
               onPress={() => {
                 haptics.tap();
                 setScanError(null);
-                setScanning(true);
+                showScanner("scan");
               }}
               accessibilityRole="button"
               accessibilityLabel="Scan the QR code"
             >
-              <Ionicons name="qr-code-outline" size={20} color={theme.color.text} />
+              <Icon name="qr-code-outline" size={20} color={theme.color.text} />
               <Text style={styles.scanText}>Scan QR code</Text>
             </Pressable>
           </Glass>
@@ -228,7 +227,7 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
         busy={busy}
         onScan={(value) => void handleScan(value)}
         onClose={() => {
-          setScanning(false);
+          showScanner("manual");
           // Carry the reason back to the form, so closing after a failed scan
           // does not land on a screen that looks like nothing happened.
           if (scanError) setError(scanError);
@@ -281,7 +280,7 @@ function makeStyles(theme: AppTheme) {
   commandText: {
     color: theme.color.accent,
     fontSize: 16,
-    fontFamily: "Menlo",
+    fontFamily: theme.display.monospace,
   },
   notice: {
     color: theme.color.accent,
@@ -305,10 +304,10 @@ function makeStyles(theme: AppTheme) {
     marginVertical: theme.space(5),
   },
   rule: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: theme.color.border },
-  orText: { color: theme.color.textFaint, fontSize: 13 },
+  orText: { color: theme.color.textFaint, fontSize: theme.font.small },
   label: {
     color: theme.color.textFaint,
-    fontSize: 13,
+    fontSize: theme.font.small,
     marginBottom: theme.space(2),
   },
   inputShell: { minHeight: 50 },
@@ -338,7 +337,7 @@ function makeStyles(theme: AppTheme) {
   buttonText: { color: theme.color.text, fontSize: 16, fontWeight: "700" },
   footnote: {
     color: theme.color.textFaint,
-    fontSize: 13,
+    fontSize: theme.font.small,
     lineHeight: 19,
     marginTop: theme.space(8),
   },

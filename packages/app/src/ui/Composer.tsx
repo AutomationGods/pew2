@@ -19,7 +19,6 @@
 import { forwardRef, memo, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import {
   Animated,
-  Easing,
   Pressable,
   StyleSheet,
   TextInput,
@@ -31,10 +30,12 @@ import Reanimated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon } from "./Icon";
 import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { motion, nativeMotionEasings, type AppTheme } from "../theme";
+import { createMotionEasings } from "../motionTokens";
 import { composerHeight, type ComposerBounds } from "./composerHeight";
+import { composerAction } from "./composerAction";
 import { touchSlop } from "./controls";
 import { haptics } from "./haptics";
 import { Glass } from "./Glass";
@@ -49,7 +50,8 @@ import type { Dictation } from "./useDictation";
 const EMPTY_ATTACHMENTS: readonly PendingAttachment[] = [];
 
 /** One fixed curve for expand/collapse, independent of the keyboard's own. */
-const EXPAND_DURATION = 140;
+const EXPAND_DURATION = motion.composerExpand;
+const composerEasings = createMotionEasings(ReanimatedEasing);
 
 /**
  * Lines the box can grow to before the text scrolls internally.
@@ -119,7 +121,7 @@ function ComposerView({
   onSend,
   busy = false,
   onStop,
-  placeholder = "Ask me anything...",
+  placeholder = "Ask me anything…",
   editable = true,
   attachments = EMPTY_ATTACHMENTS,
   onAttach,
@@ -128,14 +130,15 @@ function ComposerView({
 }: ComposerProps, ref: React.Ref<ComposerHandle>) {
   const { theme } = useAppTheme();
   const styles = useThemeStyles(makeStyles);
-  const { COLLAPSED, INSET, BUTTON, INLINE_SIDE, TEXT_DROP, CHROME, MIN_HEIGHT, MAX_HEIGHT, MAX_TEXT_HEIGHT, HALF_LEADING, BOUNDS } = useMemo(
+  const { COLLAPSED, INSET, BUTTON, INLINE_SIDE, TEXT_DROP, MAX_TEXT_HEIGHT, HALF_LEADING, BOUNDS } = useMemo(
     () => composerMetrics(theme),
     [theme],
   );
   const hasText = value.trim().length > 0;
   // A photo with no words is a real message — "look at this" is implied by the
   // act of attaching it — so attachments arm send on their own.
-  const canSend = hasText || attachments.length > 0;
+  const canSend = editable && (hasText || attachments.length > 0);
+  const primaryAction = composerAction(busy, canSend);
   const input = useRef<TextInput>(null);
   useImperativeHandle(ref, () => ({ focus: () => input.current?.focus() }), []);
 
@@ -205,7 +208,7 @@ function ComposerView({
     const animation = Animated.timing(textDrop, {
       toValue: expanded ? 0 : TEXT_DROP,
       duration: reduceMotion ? 0 : EXPAND_DURATION,
-      easing: Easing.out(Easing.cubic),
+      easing: nativeMotionEasings.outCubic,
       useNativeDriver: true,
     });
     animation.start();
@@ -239,7 +242,7 @@ function ComposerView({
     if (!expanded) textHeight.value = theme.line.body;
     openness.value = withTiming(expanded ? 1 : 0, {
       duration: reduceMotion ? 0 : EXPAND_DURATION,
-      easing: ReanimatedEasing.out(ReanimatedEasing.cubic),
+      easing: composerEasings.outCubic,
     });
   }, [expanded, reduceMotion, openness, textHeight]);
 
@@ -251,6 +254,7 @@ function ComposerView({
     const animation = Animated.timing(sendIn, {
       toValue: sendTarget,
       duration: reduceMotion ? 0 : theme.motion.fast,
+      easing: nativeMotionEasings.nativeTiming,
       useNativeDriver: true,
     });
     animation.start();
@@ -336,7 +340,7 @@ function ComposerView({
                 const capped = measured >= MAX_TEXT_HEIGHT;
                 if (capped !== atCeiling) setAtCeiling(capped);
               }}
-              placeholder={placeholder}
+              placeholder={busy ? "Queue a follow-up…" : placeholder}
               placeholderTextColor={theme.color.placeholder}
               multiline
               editable={editable}
@@ -379,8 +383,20 @@ function ComposerView({
                   onAttach?.();
                 }}
               >
-                <Ionicons name="add" size={22} color={theme.color.glyph} />
+                <Icon name="add" size={22} color={theme.color.glyph} />
               </Pressable>
+
+              {primaryAction === "queue" && (
+                <Pressable
+                  style={({ pressed }) => [styles.actionButton, styles.stopButton, pressed && styles.actionPressed]}
+                  hitSlop={touchSlop(BUTTON)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Stop current response"
+                  onPress={() => { haptics.warned(); onStop?.(); }}
+                >
+                  <Icon name="square" size={13} color={theme.color.glyph} />
+                </Pressable>
+              )}
 
               {/* Beside the attachment button and the same height as it, so the
                   command reads as another control on that row rather than as text
@@ -400,7 +416,7 @@ function ComposerView({
                   }}
                 >
                   <CommandToken text={split.command} size={theme.font.small} lineHeight={18} />
-                  <Ionicons name="close" size={13} color={theme.color.accent} />
+                  <Icon name="close" size={13} color={theme.color.accent} />
                 </Pressable>
               )}
             </View>
@@ -444,7 +460,7 @@ function ComposerView({
                   {/* Filled while listening: the difference has to be legible at a
                       glance on a control the size of a fingertip, so it is colour
                       *and* weight rather than colour alone. */}
-                  <Ionicons
+                  <Icon
                     name={dictation?.listening ? "mic" : "mic-outline"}
                     size={20}
                     color={dictation?.listening ? theme.color.accent : theme.color.glyph}
@@ -458,13 +474,14 @@ function ComposerView({
               >
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={busy ? "Stop generating" : "Send message"}
+                  accessibilityLabel={primaryAction === "stop" ? "Stop generating" : primaryAction === "queue" ? "Queue message" : "Send message"}
+                  accessibilityHint={primaryAction === "queue" ? "Sends after the current response finishes" : undefined}
                   accessibilityState={{ disabled: !busy && !canSend }}
                   hitSlop={touchSlop(BUTTON)}
                   // Sending commits work to another machine, so it lands heavier
                   // than a navigation tap; stopping is a correction, not a commit.
                   onPress={() => {
-                    if (busy) {
+                    if (primaryAction === "stop") {
                       haptics.warned();
                       onStop?.();
                       return;
@@ -479,10 +496,10 @@ function ComposerView({
                     pressed && styles.sendPressed,
                   ]}
                 >
-                  <Ionicons
-                    name={busy ? "square" : "arrow-up"}
-                    size={busy ? 13 : 20}
-                    color="#0f0f0f"
+                  <Icon
+                    name={primaryAction === "stop" ? "square" : "arrow-up"}
+                    size={primaryAction === "stop" ? 13 : 20}
+                    color={theme.color.canvas}
                   />
                 </Pressable>
               </Animated.View>
@@ -553,6 +570,7 @@ function makeStyles(theme: AppTheme) {
     right: 0,
     bottom: 0,
   },
+  stopButton: { marginLeft: theme.space(1) },
   actionPressed: { opacity: 0.6 },
   listening: { backgroundColor: theme.color.accentSoft },
   sendButton: { backgroundColor: theme.color.text },

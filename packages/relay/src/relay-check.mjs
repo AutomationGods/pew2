@@ -16,7 +16,13 @@
 // before it can name a Durable Object, so a memorable-but-invalid string here
 // fails every check below with a 400 that looks like a relay bug.
 const PAIRING = "0123456789abcdef0123456789abcdef01";
-const URL_BASE = `ws://127.0.0.1:8799/connect?pairing=${PAIRING}`;
+// The self-contained CI runner supplies its ephemeral local port. Manual
+// `relay:check` keeps using the documented dev server on 8799.
+const port = Number(process.env.PEW2_RELAY_TEST_PORT ?? 8799);
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  throw new Error("PEW2_RELAY_TEST_PORT must be an integer between 1 and 65535");
+}
+const URL_BASE = `ws://127.0.0.1:${port}/connect?pairing=${PAIRING}`;
 
 const open = (role, id) =>
   new Promise((resolve, reject) => {

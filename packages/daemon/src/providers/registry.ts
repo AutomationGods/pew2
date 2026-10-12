@@ -101,7 +101,7 @@ function runnable(path: string, env: NodeJS.ProcessEnv, platform: Platform): boo
 }
 
 /**
- * Resolve an executable the way a shell would, or `undefined` if it is not
+ * Resolve an executable from explicit paths or absolute PATH entries, or `undefined` if it is not
  * installed. Checked up front so an uninstalled agent is shown as unavailable
  * in the app rather than failing at spawn time, and reused by `detect` to work
  * out which adapters this machine already has.
@@ -144,17 +144,15 @@ export function findOnPath(
 
   const dirs = looksLikePath
     ? [""]
-    : // Windows resolves the current directory before PATH, and a user who
-      // installed an agent into the folder they are standing in should not be
-      // told it is missing.
-      [...(windows ? [process.cwd()] : []), ...(env.PATH ?? "").split(sep).filter(Boolean)]
-        // PATH entries are conventionally quoted on Windows when they contain
-        // spaces; the quotes are syntax, not part of the directory name.
-        .map((dir) => dir.replace(/^"(.*)"$/, "$1"));
+    : (env.PATH ?? "").split(sep)
+        // Never infer execution consent from the repository we are standing in.
+        // Relative/empty PATH entries would reintroduce that same implicit search.
+        .map((dir) => dir.replace(/^"(.*)"$/, "$1"))
+        .filter((dir) => isAbsolute(dir));
 
   for (const dir of dirs) {
     for (const candidate of candidates(dir)) {
-      if (runnable(candidate, env, platform)) return candidate;
+      if (runnable(candidate, env, platform)) return resolve(candidate);
     }
   }
   return undefined;

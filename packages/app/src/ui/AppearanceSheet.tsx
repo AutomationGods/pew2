@@ -1,8 +1,8 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon } from "./Icon";
 import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { createTheme, type AppTheme } from "../theme";
 import type { AccentName, AppearanceMode } from "../appearancePreference";
 import { ACCENT_NAMES, APPEARANCE_MODES } from "../appearancePreference";
 import { Sheet } from "./Sheet";
@@ -11,6 +11,12 @@ import { haptics } from "./haptics";
 interface AppearanceSheetProps {
   visible: boolean;
   onClose: () => void;
+  /**
+   * Extra grouped sections below Appearance. The drawer puts "This computer"
+   * here, so pairing and updates live in Settings, as on iOS, rather than one
+   * tap from the conversation list.
+   */
+  children?: ReactNode;
 }
 
 const MODE_LABELS: Record<AppearanceMode, string> = {
@@ -26,7 +32,7 @@ const ACCENT_LABELS: Record<AccentName, string> = {
   mint: "Mint",
 };
 
-function AppearanceSheetView({ visible, onClose }: AppearanceSheetProps) {
+function AppearanceSheetView({ visible, onClose, children }: AppearanceSheetProps) {
   const { preference, theme, setMode, setAccent } = useAppTheme();
   const styles = useThemeStyles(makeStyles);
 
@@ -47,7 +53,7 @@ function AppearanceSheetView({ visible, onClose }: AppearanceSheetProps) {
   );
 
   return (
-    <Sheet visible={visible} onClose={onClose} title="Appearance">
+    <Sheet visible={visible} onClose={onClose} title="Settings" scrollContent>
       <View style={styles.section}>
         <Text style={styles.sectionLabel}>Mode</Text>
         <View style={styles.modeRow}>
@@ -66,7 +72,7 @@ function AppearanceSheetView({ visible, onClose }: AppearanceSheetProps) {
                   pressed && styles.pressed,
                 ]}
               >
-                <Ionicons
+                <Icon
                   name={mode === "system" ? "phone-portrait" : mode === "light" ? "sunny" : "moon"}
                   size={16}
                   color={selected ? theme.color.accentText : theme.color.textDim}
@@ -90,7 +96,7 @@ function AppearanceSheetView({ visible, onClose }: AppearanceSheetProps) {
         <View style={styles.accentList}>
           {ACCENT_NAMES.map((accent) => {
             const selected = preference.accent === accent;
-            const accentTheme = ACCENT_PREVIEW[accent][theme.mode];
+            const accentTheme = createTheme(theme.mode, accent).color;
             return (
               <Pressable
                 key={accent}
@@ -107,11 +113,11 @@ function AppearanceSheetView({ visible, onClose }: AppearanceSheetProps) {
                 <View
                   style={[
                     styles.accentMarker,
-                    { backgroundColor: accentTheme.fill },
+                    { backgroundColor: accentTheme.accentSolid },
                   ]}
                 >
                   {selected && (
-                    <Ionicons name="checkmark" size={16} color={accentTheme.text} />
+                    <Icon name="checkmark" size={16} color={accentTheme.accentText} />
                   )}
                 </View>
                 <Text
@@ -124,29 +130,10 @@ function AppearanceSheetView({ visible, onClose }: AppearanceSheetProps) {
           })}
         </View>
       </View>
+      {children}
     </Sheet>
   );
 }
-
-/** Accent preview colors for the swatch circles. */
-const ACCENT_PREVIEW = {
-  coral: {
-    light: { fill: "#a94325", text: "#ffffff" },
-    dark: { fill: "#e87854", text: "#17110f" },
-  },
-  ocean: {
-    light: { fill: "#036a9b", text: "#ffffff" },
-    dark: { fill: "#38bdf8", text: "#082f49" },
-  },
-  violet: {
-    light: { fill: "#6d28d9", text: "#ffffff" },
-    dark: { fill: "#a78bfa", text: "#201238" },
-  },
-  mint: {
-    light: { fill: "#087a5b", text: "#ffffff" },
-    dark: { fill: "#34d399", text: "#072c22" },
-  },
-} as const;
 
 function makeStyles(theme: AppTheme) {
   return StyleSheet.create({
@@ -164,10 +151,11 @@ function makeStyles(theme: AppTheme) {
     },
     modeRow: {
       flexDirection: "row",
+      flexWrap: "wrap",
       gap: theme.space(2),
     },
     modeChip: {
-      flex: 1,
+      flexGrow: 1,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",

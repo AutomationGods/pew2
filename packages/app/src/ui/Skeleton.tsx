@@ -8,7 +8,7 @@
 import { useEffect, useRef } from "react";
 import { Animated, StyleSheet, View, type ViewStyle } from "react-native";
 import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { motion, nativeMotionEasings, type AppTheme } from "../theme";
 import { useReducedMotion } from "./useReducedMotion";
 import { useAppActive } from "./useAppActive";
 
@@ -30,8 +30,8 @@ export function Skeleton({ style }: { style?: ViewStyle | ViewStyle[] }) {
     if (reduceMotion || !appActive) return;
     const pulse = Animated.loop(
       Animated.sequence([
-        Animated.timing(opacity, { toValue: 0.85, duration: 650, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0.4, duration: 650, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.85, duration: motion.skeletonPulse, easing: nativeMotionEasings.nativeTiming, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.4, duration: motion.skeletonPulse, easing: nativeMotionEasings.nativeTiming, useNativeDriver: true }),
       ]),
     );
     pulse.start();
@@ -64,9 +64,11 @@ function makeStyles(theme: AppTheme) {
     backgroundColor: theme.color.surfacePressed,
     borderRadius: theme.radius.sm,
   },
+  // Matches a real session row's insets, so the placeholder lines start on
+  // the same text rail the conversations replace them on.
   historyRow: {
     paddingVertical: theme.space(3),
-    paddingHorizontal: theme.space(1),
+    paddingHorizontal: theme.space(3),
   },
   });
 }

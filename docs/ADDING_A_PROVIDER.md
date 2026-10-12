@@ -3,9 +3,16 @@
 > Read this file top to bottom before adding a provider. It is written to be
 > followed exactly, by a person or a coding agent, with no other context.
 
-A **provider** is any agent, app or CLI that shows up in the pew2 mobile app.
-Adding one means **writing a single JSON file into `providers/`**. There is no
-registration call, no code change, no rebuild.
+A **provider** is an agent exposed through pew2's mobile app. Today it must
+speak ACP, directly or through an adapter.
+
+For a **local integration**, add a user manifest under `~/.pew2/providers`
+(or `$PEW2_HOME/providers`); no daemon rebuild is needed. To **ship a built-in
+provider**, add `providers/<id>.json` and its import/list entry in
+[`bundled.ts`](../packages/daemon/src/providers/bundled.ts), then release a new
+daemon binary. Editing checkout JSON alone does not change installed binaries.
+See the [integration guide](../library/knowledge/private/providers/integration.md)
+for package ownership and capability limits.
 
 ---
 
@@ -27,18 +34,24 @@ bun run packages/daemon/src/cli/index.ts providers verify my-agent # prove it wo
 
 (`npm run providers:verify my-agent` is the same thing, if you prefer scripts.)
 
-When `verify` prints `ok`, the provider is done. It will appear in the app the
-next time the daemon announces its providers.
+When `verify` prints `ok`, the ACP smoke check passed—not every capability.
+Test the provider's real prompt, cancellation, approval and resume behavior as
+applicable. The daemon refreshes providers on startup and client hello; reconnect
+the phone after a manifest change. Availability also depends on the daemon's
+own environment and provider enable/disable preferences.
 
-Manifests are read from two directories, highest precedence first:
+The default loader considers these sources in precedence order:
 
-| Directory | What lives there |
+| Source | What lives there |
 | --- | --- |
-| `~/.pew2/providers` | Anything you or `pew2 detect` writes. Override the root with `PEW2_HOME`. |
-| `./providers` | The manifests bundled with a checkout. |
+| `~/.pew2/providers` | User manifests and detected integrations. Override the root with `PEW2_HOME`. |
+| Checkout `providers/` | Files resolved relative to the source module, not the shell's current directory. These may exist in development, not in the installed binary. |
+| Compiled `BUNDLED_MANIFESTS` | Built-in manifests embedded in the daemon executable. |
 
-Same id in both is deliberate shadowing — yours wins, silently. Same id twice in
-**one** directory is an error.
+An earlier source shadows a later source with the same id. Same id twice in
+**one** directory is an error. The executable must carry each built-in manifest
+in `BUNDLED_MANIFESTS`; the bundled-manifest regression test checks that it
+matches the repository's JSON files.
 
 ---
 
@@ -49,16 +62,17 @@ This is the only decision that really matters.
 | Your app… | Use | You get |
 | --- | --- | --- |
 | speaks ACP, or has an ACP adapter | `acp` | Streamed messages, tool calls, diffs, plans, **approve/deny from the phone** |
-| is any other CLI | `pty` | A raw terminal view only. No structured approvals. |
+| does not speak ACP | no supported direct transport | Supply an ACP adapter; `pty` is reserved, not implemented. |
 
 > **`pty` is reserved, not yet implemented.** The manifest accepts it, and
 > `verify` will skip it rather than pretend it passed. Today, use `acp`.
 
 **Always prefer `acp`.** Before reaching for a fallback, check whether an adapter
 already exists — the [ACP agent list](https://agentclientprotocol.com/get-started/agents)
-covers Claude, Codex, Gemini, Copilot, Cursor, Goose, OpenCode, OpenHands and
-~30 more. Wrapping your own tool in ACP is usually under 100 lines; see
-`packages/daemon/src/testing/echo-agent.ts` for a complete minimal agent.
+lists available integrations. See
+[`echo-agent.ts`](../packages/daemon/src/testing/echo-agent.ts) for a minimal
+local test agent; a production adapter also needs cancellation, error handling,
+permissions and lifecycle behavior appropriate to the tool.
 
 ---
 
@@ -127,8 +141,10 @@ its own login flow (this is why `claude-code` and `codex` do not force one).
 }
 ```
 
-Keep `$schema` on the first line. It gives editors autocomplete and inline
-validation, which prevents most mistakes before the CLI ever runs.
+For a manifest in repository `providers/`, that relative `$schema` points to the
+editor schema. A user manifest outside the checkout needs an appropriate schema
+path or can omit this optional field. Runtime validation comes from
+[`ProviderManifest`](../packages/protocol/src/manifest.ts), not the editor setting.
 
 ---
 
@@ -152,7 +168,7 @@ subcommand, or an agent that is not actually in ACP mode.
 
 1. **One provider per file**, named `<id>.json`, where `<id>` matches the `id` field.
 2. **Ids are `^[a-z][a-z0-9-]*$`.** Duplicates are rejected — the whole file is skipped, not silently merged.
-3. **`additionalProperties` is false.** A typo'd key is an error, not a field that silently does nothing.
+3. **Use the runtime schema.** The manifest, `pew` and environment-variable objects reject unknown fields. Do not assume every nested distribution object has the same strictness; keep only documented keys.
 4. **Never put a secret in a manifest.** These files are committed.
 5. **A broken manifest never takes the daemon down.** It is reported and skipped so other providers keep working.
 6. **Always finish with `verify`.** A manifest that only passes `validate` has proven nothing except that it is well-formed JSON.

@@ -12,10 +12,10 @@
  * Kept out of the probe cache deliberately: that file is the agent's answer and
  * is overwritten wholesale by the next probe, while this is the user's.
  */
-import { mkdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { userProvidersDir } from "./providers/registry.js";
-import { writeFileAtomic } from "./atomic-file.js";
+import { withFileLock, writeFileAtomic } from "./atomic-file.js";
 
 /** Config id to chosen value, for one provider. */
 export type ConfigPrefs = Record<string, string | boolean>;
@@ -59,8 +59,9 @@ export async function writeConfigPref(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   const path = prefsPath(env);
-  const all = await readAll(env);
-  all[providerId] = { ...all[providerId], [configId]: value };
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFileAtomic(path, JSON.stringify(all, null, 2));
+  await withFileLock(path, async () => {
+    const all = await readAll(env);
+    all[providerId] = { ...all[providerId], [configId]: value };
+    await writeFileAtomic(path, JSON.stringify(all, null, 2));
+  });
 }

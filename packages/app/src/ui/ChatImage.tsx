@@ -18,7 +18,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 // thread and caches to disk, which is the difference between a scroll that
 // drops frames over images and one that does not.
 import { Image, type ImageErrorEventData, type ImageLoadEventData } from "expo-image";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon } from "./Icon";
 import { useAppTheme, useThemeStyles } from "../appearance";
 import type { AppTheme } from "../theme";
 import { haptics } from "./haptics";
@@ -147,7 +147,7 @@ function ChatImageView({ image }: { image: ChatImageModel }) {
           pressed && { backgroundColor: theme.color.surfacePressed },
         ]}
       >
-        <Ionicons name="image-outline" size={20} color={theme.color.textDim} />
+        <Icon name="image-outline" size={20} color={theme.color.textDim} />
         <Text style={styles.errorText} numberOfLines={3}>
           {message}
         </Text>

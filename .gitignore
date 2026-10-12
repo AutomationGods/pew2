@@ -4,6 +4,7 @@ dist/
 .dev.vars
 .env
 .env.*
+!.env.example
 *.log
 .DS_Store
 .expo/
@@ -65,3 +66,6 @@ REMOTE_QA_CHECKLIST.md
 # native diff. Reproducible from app.json + app.config.js.
 ios/
 android/
+
+# Claude Code / GSD Core local install artifacts
+.claude/

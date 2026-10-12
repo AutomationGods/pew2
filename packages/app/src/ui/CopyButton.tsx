@@ -24,7 +24,7 @@
  * reads as a tick is heard as "Copied".
  */
 import { useEffect, useState } from "react";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon, type IconName } from "./Icon";
 import * as Clipboard from "expo-clipboard";
 import { Pressable, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
 import { useAppTheme, useThemeStyles } from "../appearance";
@@ -59,7 +59,7 @@ export const ACTION_SIZE = 28;
 /** Glyph inset inside that square, for aligning the row to the text rail. */
 export const ACTION_INSET = (ACTION_SIZE - 16) / 2;
 
-const ICONS: Record<CopyState, keyof typeof Ionicons.glyphMap> = {
+const ICONS: Record<CopyState, IconName> = {
   idle: "copy-outline",
   copied: "checkmark",
   failed: "alert-circle-outline",
@@ -114,7 +114,7 @@ export function CopyButton({
       onPress={() => void copy()}
       style={({ pressed }) => [styles.button, pressed && styles.pressed, style]}
     >
-      <Ionicons
+      <Icon
         name={ICONS[state]}
         // A shade larger than it was beside a word: alone, the glyph is the
         // entire control and has to be readable as one.

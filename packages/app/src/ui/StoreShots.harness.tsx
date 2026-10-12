@@ -20,13 +20,13 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppearanceProvider } from "../appearance";
 import { StatusBar } from "expo-status-bar";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon } from "./Icon";
 import { theme } from "../theme";
 import { ChatThread, type ChatThreadRef } from "./ChatThread";
 import { Composer } from "./Composer";
 import { Sidebar, DRAWER_WIDTH } from "./Sidebar";
 import { NewChatSheet } from "./NewChatSheet";
-import { CircleButton } from "./controls";
+import { BarButton } from "./controls";
 import type { Project } from "../projects";
 import type { Provider, Session, Turn } from "../useDaemon";
 
@@ -107,30 +107,30 @@ const TURNS: Turn[] = [
   },
 ];
 
-/** The top bar, matching the app's own: menu, connection, model, new chat. */
+/**
+ * The top bar, matching the app's own (App.tsx): menu, a centred title that
+ * opens the model menu, new chat. Kept in step by hand — these poses are the
+ * App Store screenshots, so a stale copy here ships an old design.
+ */
 function NavBar({ onMenu }: { onMenu: () => void }) {
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.nav, { paddingTop: insets.top + theme.space(1) }]}>
-      <CircleButton label="Menu" onPress={onMenu}>
-        <Ionicons name="menu" size={20} color={theme.color.text} />
-      </CircleButton>
-      <View style={styles.pill}>
-        <Text style={styles.pillText} numberOfLines={1}>
-          Sonnet 4.5
-        </Text>
-        <Ionicons name="chevron-down" size={13} color={theme.color.textDim} />
+      <BarButton label="Menu" onPress={onMenu}>
+        <Icon name="menu" size={22} color={theme.color.text} />
+      </BarButton>
+      <View style={styles.title}>
+        <View style={styles.titleRow}>
+          <Text style={styles.titleText} numberOfLines={1}>Fix the checkout total</Text>
+          <Icon name="chevron-down" size={11} color={theme.color.textDim} weight="semibold" />
+        </View>
+        <Text style={styles.titleMeta} numberOfLines={1}>Claude Code · Sonnet 4.5</Text>
       </View>
-      <View style={styles.pill}>
-        <Text style={styles.pillText} numberOfLines={1}>
-          Accept edits
-        </Text>
-        <Ionicons name="chevron-down" size={13} color={theme.color.textDim} />
+      <View style={styles.barSlot}>
+        <BarButton label="New conversation" onPress={() => {}}>
+          <Icon name="create-outline" size={21} color={theme.color.text} />
+        </BarButton>
       </View>
-      <View style={styles.navSpacer} />
-      <CircleButton label="New conversation" onPress={() => {}}>
-        <Ionicons name="create-outline" size={18} color={theme.color.text} />
-      </CircleButton>
     </View>
   );
 }
@@ -267,26 +267,15 @@ const styles = StyleSheet.create({
   nav: {
     flexDirection: "row",
     alignItems: "center",
-    gap: theme.space(2),
-    paddingHorizontal: theme.gutter,
-    paddingBottom: theme.space(2),
-    backgroundColor: theme.color.surface,
-    borderBottomWidth: 2,
-    borderBottomColor: theme.color.separator,
-  },
-  navSpacer: { flex: 1 },
-  pill: {
-    flexDirection: "row",
-    alignItems: "center",
     gap: theme.space(1),
-    paddingHorizontal: theme.space(3),
-    paddingVertical: theme.space(2),
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.color.surface,
-    borderWidth: 2,
-    borderBottomWidth: 4,
-    borderColor: theme.color.border,
+    paddingHorizontal: theme.gutter - (theme.size.touch - 22) / 2,
+    paddingBottom: theme.space(2),
+    backgroundColor: theme.color.bg,
   },
-  pillText: { color: theme.color.textDim, fontSize: 13 },
+  barSlot: { width: theme.size.touch, height: theme.size.touch },
+  title: { flex: 1, minWidth: 0, alignItems: "center" },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: theme.space(1), maxWidth: "100%" },
+  titleText: { color: theme.color.text, fontSize: theme.font.body, fontWeight: "600", flexShrink: 1 },
+  titleMeta: { color: theme.color.textDim, fontSize: theme.font.tiny, marginTop: 1 },
   dock: { position: "absolute", left: 0, right: 0, bottom: 0 },
 });

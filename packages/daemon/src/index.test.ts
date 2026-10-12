@@ -27,7 +27,9 @@ import { storeAttachments } from "./attachments.js";
 function daemonWithCollector() {
   const sent: unknown[] = [];
   const daemon = new Daemon({ id: "test", name: "test" });
-  daemon.attach((message) => sent.push(message));
+  // These unit fixtures drive reapIdleSessions with explicit times and use
+  // partial handles. A real transport would arm a timer that outlives the test.
+  daemon["send"] = (message) => { sent.push(message); };
   return { daemon, sent };
 }
 
@@ -54,7 +56,7 @@ async function until<T>(
 /** Register a session without spawning an agent: the mechanism is what matters. */
 function plantSession(daemon: Daemon, sessionId: string) {
   const session: {
-    handle: AcpSessionHandle;
+    handle: AcpSessionHandle | undefined;
     log: SessionLog;
     providerId: string;
     live: boolean;
@@ -69,6 +71,15 @@ function plantSession(daemon: Daemon, sessionId: string) {
   (daemon as any).sessions.set(sessionId, session);
   return session;
 }
+
+test("the unit daemon fixture leaves reaping under explicit test control", () => {
+  const { daemon } = daemonWithCollector();
+  try {
+    expect(daemon["reaper"]).toBeUndefined();
+  } finally {
+    daemon.closeAll();
+  }
+});
 
 test("a selector chosen before any session exists is kept for the next one", async () => {
   // The empty state offers the same pills a live conversation does, but a
@@ -375,6 +386,53 @@ test("a catch-up reports a turn that ended while the client was away", () => {
     working: false,
     permissions: [],
   });
+});
+
+test("a catch-up restores model and thinking selectors even without missed events", () => {
+  const { daemon } = daemonWithCollector();
+  const session = plantSession(daemon, "selectors");
+  const configOptions = [
+    {
+      id: "model",
+      name: "Model",
+      type: "select" as const,
+      currentValue: "opus",
+      options: [{ value: "opus", name: "Opus" }, { value: "sonnet", name: "Sonnet" }],
+    },
+    {
+      id: "effort",
+      name: "Thinking",
+      type: "select" as const,
+      currentValue: "high",
+      options: [{ value: "high", name: "High" }, { value: "low", name: "Low" }],
+    },
+  ];
+  session.handle = { configOptions, close: () => {} } as AcpSessionHandle;
+  daemon.markLive("selectors");
+
+  try {
+    // The phone received the resume's empty session.started, then lost its
+    // socket before session.config. No transcript event can recover that frame.
+    expect(daemon.catchUp({ selectors: -1 })[0]).toMatchObject({
+      sessionId: "selectors",
+      events: [],
+      configOptions,
+    });
+  } finally {
+    daemon.closeAll();
+  }
+});
+
+test("a catch-up does not claim empty settings while a resumed agent is still attaching", () => {
+  const { daemon } = daemonWithCollector();
+  const session = plantSession(daemon, "attaching");
+  session.handle = undefined;
+  daemon.markLive("attaching");
+  try {
+    expect(daemon.catchUp({ attaching: -1 })[0]).not.toHaveProperty("configOptions");
+  } finally {
+    daemon.closeAll();
+  }
 });
 
 test("a catch-up re-states an approval the agent is still blocked on", () => {

@@ -38,7 +38,11 @@ export default tseslint.config(
       "packages/app/.expo/**",
       "packages/app/ios/**",
       "packages/app/android/**",
+      // Wrangler's generated dev bundles are not Worker source.
+      "packages/relay/.wrangler/**",
       "**/*.d.ts",
+      // Local, gitignored tooling and rollback copies. Not project source.
+      ".gg/**",
     ],
   },
 

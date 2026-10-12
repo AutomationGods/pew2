@@ -19,14 +19,18 @@ import { touchSlop } from "./controls";
 import { Sheet, SHEET_ROW_HEIGHT, sheetCardStyle } from "./Sheet";
 import { isDenyApprovalOption, selectApprovalOptions } from "../approvalOptions";
 import type { PermissionRequest } from "../useDaemon";
+import type { DesktopAnswers } from "../permissions";
+import { QuestionCard } from "./QuestionCard";
 
 interface ApprovalSheetProps {
   /** The pending request, or undefined once it has been answered. */
   permission?: PermissionRequest;
   onAnswer: (requestId: string, optionId: string, deny: boolean) => void;
+  /** A GG Coder desktop question card, answered whole. */
+  onAnswerQuestions: (requestId: string, answers: DesktopAnswers) => void;
 }
 
-function ApprovalSheetView({ permission, onAnswer }: ApprovalSheetProps) {
+function ApprovalSheetView({ permission, onAnswer, onAnswerQuestions }: ApprovalSheetProps) {
   const { theme } = useAppTheme();
   const styles = useThemeStyles(makeStyles);
 
@@ -35,8 +39,27 @@ function ApprovalSheetView({ permission, onAnswer }: ApprovalSheetProps) {
   const shown = useLastDefined(permission);
   const options = shown ? selectApprovalOptions(shown.options) : [];
 
+  // A desktop question is the desktop's own card, not an approval: the same
+  // questions, choices and recommendation, rather than Allow/Reject squeezed
+  // out of a list that may hold several questions or ask for typing.
+  if (shown?.questions) {
+    const requestId = shown.requestId;
+    return (
+      <Sheet visible={permission !== undefined} title="GG Coder is asking" scrollContent>
+        <View style={styles.body} accessibilityLiveRegion="assertive">
+          {/* Keyed by request, so a second card never inherits the first one's picks. */}
+          <QuestionCard
+            key={requestId}
+            questions={shown.questions}
+            onSubmit={(answers) => onAnswerQuestions(requestId, answers)}
+          />
+        </View>
+      </Sheet>
+    );
+  }
+
   return (
-    <Sheet visible={permission !== undefined} title="Approval needed">
+    <Sheet visible={permission !== undefined} title="Approval needed" scrollContent>
       <View style={styles.body} accessibilityLiveRegion="assertive">
         <Text style={styles.request}>{shown?.title ?? ""}</Text>
 

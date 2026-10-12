@@ -14,9 +14,9 @@
  */
 import { memo, useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon, type IconName } from "./Icon";
 import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { motion, nativeMotionEasings, type AppTheme } from "../theme";
 import { currentTool, queuedTools, type Activity, type ToolKind } from "../activity";
 import { ShimmerText } from "./ShimmerText";
 import { useReducedMotion } from "./useReducedMotion";
@@ -27,7 +27,7 @@ import { useStatusRowHeight } from "./useStatusRowHeight";
  * One glyph per ACP tool kind, so a glance at the icon says what class of work
  * is happening even before the title is read.
  */
-const ICONS: Record<ToolKind, keyof typeof Ionicons.glyphMap> = {
+const ICONS: Record<ToolKind, IconName> = {
   read: "document-text-outline",
   edit: "create-outline",
   delete: "trash-outline",
@@ -40,10 +40,10 @@ const ICONS: Record<ToolKind, keyof typeof Ionicons.glyphMap> = {
 };
 
 /** Continuous, and slower than the composer's badge: this runs for minutes. */
-const SWEEP_DURATION = 2200;
+const SWEEP_DURATION = motion.activitySweep;
 
 /** Crossfade when the agent moves to the next tool. Fast enough to feel live. */
-const SWAP_DURATION = 160;
+const SWAP_DURATION = motion.activitySwap;
 
 /** Where a swap fades from. Never to zero: the row must not appear to blink out. */
 const SWAP_FROM = 0.35;
@@ -63,15 +63,24 @@ function ActivityLineView({ activity }: { activity: Activity }) {
   // the sheen mid-sweep and read as a stutter.
   const shown = useRef<string | undefined>(tool?.id);
   useEffect(() => {
+    // Preference changes must settle a running fade even when the tool did
+    // not change. Effect cleanup stops the previous animation first.
+    if (reduceMotion) {
+      shown.current = tool?.id;
+      fade.setValue(1);
+      return;
+    }
     if (tool?.id === shown.current) return;
     shown.current = tool?.id;
-    if (reduceMotion) return;
     fade.setValue(SWAP_FROM);
-    Animated.timing(fade, {
+    const animation = Animated.timing(fade, {
       toValue: 1,
       duration: SWAP_DURATION,
+      easing: nativeMotionEasings.nativeTiming,
       useNativeDriver: true,
-    }).start();
+    });
+    animation.start();
+    return () => animation.stop();
   }, [fade, reduceMotion, tool?.id]);
 
   const title = tool?.title?.trim() || "Working";
@@ -86,7 +95,7 @@ function ActivityLineView({ activity }: { activity: Activity }) {
       accessibilityLiveRegion="polite"
       accessibilityLabel={queued > 0 ? `${title}, and ${queued} more` : title}
     >
-      <Ionicons name={ICONS[kind]} size={13} color={theme.color.textFaint} style={styles.icon} />
+      <Icon name={ICONS[kind]} size={13} color={theme.color.textFaint} style={styles.icon} />
       <View style={styles.label}>
         <ShimmerText
           text={title}

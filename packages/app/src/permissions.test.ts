@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { pendingPermission, readPermissionRequest, toPermissionRequest } from "./permissions";
+import { pendingPermission, readDesktopQuestions, readPermissionRequest, toPermissionRequest } from "./permissions";
 
 test("an agent that offers no buttons still gets an answerable sheet", () => {
   // A sheet with no options cannot be answered, and an unanswerable sheet stops
@@ -53,4 +53,31 @@ test("the newest request is the one shown, as it is live", () => {
       { requestId: "p2", params: { toolCall: { title: "Second" } } },
     ]),
   ).toMatchObject({ requestId: "p2", title: "Second" });
+});
+
+test("a GG Coder desktop question card is read whole, as the desktop sent it", () => {
+  const params = {
+    _meta: {
+      ggDesktopAskId: "ask-1",
+      ggDesktopAsk: {
+        questions: [
+          { id: "fix", question: "What should I fix?", kind: "choice", detail: "Pick one.", options: [{ label: "All of it", value: "all", hint: "Safe", recommended: true }] },
+          { id: "note", question: "Anything else?", kind: "text", allowOther: false },
+        ],
+      },
+    },
+    toolCall: { title: "What should I fix?\nAnything else?" },
+    options: [{ optionId: "desktop", name: "Answer on the desktop" }],
+  };
+  expect(toPermissionRequest("perm_1", params).questions).toEqual([
+    { id: "fix", question: "What should I fix?", kind: "choice", detail: "Pick one.", options: [{ label: "All of it", value: "all", hint: "Safe", recommended: true }] },
+    { id: "note", question: "Anything else?", kind: "text", allowOther: false },
+  ]);
+});
+
+test("an ordinary approval, or an unreadable card, is not a question card", () => {
+  expect(toPermissionRequest("perm_1", { options: [{ optionId: "allow", name: "Allow" }] }).questions).toBeUndefined();
+  expect(readDesktopQuestions({ _meta: { ggDesktopAsk: { questions: [] } } })).toBeUndefined();
+  // One bad question spoils the card: answering part of it would be refused.
+  expect(readDesktopQuestions({ _meta: { ggDesktopAsk: { questions: [{ id: "a", question: "A?", kind: "choice" }, { id: "b", question: "B?", kind: "essay" }] } } })).toBeUndefined();
 });

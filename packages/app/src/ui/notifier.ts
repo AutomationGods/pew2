@@ -20,7 +20,7 @@
  * Expo-only. What a banner *says*, and whether a turn deserves one at all, lives
  * in `notificationPolicy.ts`, which stays importable by `bun test`.
  */
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import type { Notice } from "../notificationPolicy";
 import { duplicatePush } from "../notificationPolicy";
@@ -111,7 +111,8 @@ const CHANNELS = {
 const CATEGORY = "agentTurn";
 
 /** The reply action's id, echoed back on the response. */
-export const REPLY_ACTION = "reply";
+// A new action id also refuses text queued by the old, unauthenticated action.
+export const REPLY_ACTION = "replyAuthenticated";
 
 /** A granted permission, remembered so every turn is not a native round trip. */
 let granted: Promise<boolean> | undefined;
@@ -124,8 +125,8 @@ let granted: Promise<boolean> | undefined;
  * agent is usually one line — "yes, do that" — so making the round trip through
  * app launch, drawer, session, keyboard is most of the cost of the answer.
  *
- * `opensAppToForeground: false` keeps the user where they are; the reply is
- * sent over the existing socket instead.
+ * Replies can control a desktop agent. Require an unlock on iOS and bring the
+ * app forward on both platforms; never dispatch reply text while backgrounded.
  */
 async function registerCategory(): Promise<void> {
   await Notifications.setNotificationCategoryAsync(CATEGORY, [
@@ -133,7 +134,7 @@ async function registerCategory(): Promise<void> {
       identifier: REPLY_ACTION,
       buttonTitle: "Reply",
       textInput: { submitButtonTitle: "Send", placeholder: "Reply to the agent…" },
-      options: { opensAppToForeground: false },
+      options: { opensAppToForeground: true, isAuthenticationRequired: true },
     },
   ]);
 }
@@ -258,6 +259,7 @@ const handled = new Set<string>();
  * @returns an unsubscribe function.
  */
 export function onNotificationChoice(act: (choice: NotificationChoice) => void): () => void {
+  const pending = new Map<string, Notifications.NotificationResponse>();
   const once = (response: Notifications.NotificationResponse | null) => {
     if (!response) return;
     // Keyed by the interaction rather than the banner, so a tap and a reply on
@@ -267,11 +269,24 @@ export function onNotificationChoice(act: (choice: NotificationChoice) => void):
     if (handled.has(key)) return;
     const choice = choiceOf(response);
     if (!choice) return;
+    if (choice.text && AppState.currentState !== "active") {
+      pending.set(key, response);
+      return;
+    }
+    pending.delete(key);
     handled.add(key);
     act(choice);
   };
 
+  const foreground = AppState.addEventListener("change", (state) => {
+    if (state !== "active") return;
+    for (const response of [...pending.values()]) once(response);
+  });
   once(Notifications.getLastNotificationResponse());
   const subscription = Notifications.addNotificationResponseReceivedListener(once);
-  return () => subscription.remove();
+  return () => {
+    foreground.remove();
+    subscription.remove();
+    pending.clear();
+  };
 }

@@ -58,11 +58,23 @@ export function needsResume(
   return liveSessionIds !== undefined && !liveSessionIds.has(session.id);
 }
 
+/** Agent conversation ids are only unique within one provider connection. */
+export function findAgentSession(
+  sessions: Session[],
+  providerId: string | undefined,
+  agentSessionId: string | undefined,
+): Session | undefined {
+  if (!providerId || !agentSessionId) return undefined;
+  return sessions.find(
+    (session) => session.providerId === providerId && session.agentSessionId === agentSessionId,
+  );
+}
+
 /** Replace a disk-history stub with its live session without losing its project. */
 export function replaceAgentSessionStub(existing: Session[], live: Session): Session[] {
   if (!live.agentSessionId) return [live, ...existing];
 
-  const stub = existing.find((session) => session.agentSessionId === live.agentSessionId);
+  const stub = findAgentSession(existing, live.providerId, live.agentSessionId);
   return [
     {
       ...live,
@@ -74,7 +86,10 @@ export function replaceAgentSessionStub(existing: Session[], live: Session): Ses
       // state every conversation is in once the daemon has been restarted.
       receipt: live.receipt ?? stub?.receipt,
     },
-    ...existing.filter((session) => session.agentSessionId !== live.agentSessionId),
+    ...existing.filter(
+      (session) =>
+        session.providerId !== live.providerId || session.agentSessionId !== live.agentSessionId,
+    ),
   ];
 }
 
@@ -94,9 +109,12 @@ export function mergeAgentSessions(
 ): Session[] {
   if (!providerId || !canResume || !incoming?.length) return existing;
 
-  // Match on the agent's id as well as ours: once a stub is resumed it is
-  // tracked under a daemon session id, and must not reappear as a duplicate.
-  const seen = new Set(existing.map((s) => s.agentSessionId ?? s.id));
+  // Match only within this provider: the native and Desktop Live connections
+  // can expose the same agent id, but each must remain independently selectable.
+  // A resumed stub is tracked under a daemon id and must not appear twice.
+  const seen = new Set(
+    existing.filter((session) => session.providerId === providerId).map((s) => s.agentSessionId ?? s.id),
+  );
 
   const discovered: Session[] = incoming
     .filter((s) => s.sessionId && !seen.has(s.sessionId))

@@ -17,7 +17,7 @@ import { Animated, StyleSheet, Text, View, type TextStyle } from "react-native";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { motion, nativeMotionEasings, type AppTheme } from "../theme";
 import { useReducedMotion } from "./useReducedMotion";
 import { useAppActive } from "./useAppActive";
 
@@ -70,7 +70,7 @@ function ShimmerTextView({
   size,
   lineHeight,
   weight = "500",
-  duration = 1800,
+  duration = motion.shimmerSweep,
   gap = 0,
   numberOfLines,
   maxFontSizeMultiplier,
@@ -92,6 +92,7 @@ function ShimmerTextView({
     const pass = Animated.timing(sweep, {
       toValue: 1,
       duration,
+      easing: nativeMotionEasings.nativeTiming,
       useNativeDriver: true,
     });
     const loop = Animated.loop(
@@ -186,7 +187,7 @@ function ShimmerTextView({
   );
 }
 
-function makeStyles(theme: AppTheme) {
+function makeStyles(_theme: AppTheme) {
   return StyleSheet.create({
   host: { flexDirection: "row" },
   // Occupies the mask's exact space while contributing no colour of its own.

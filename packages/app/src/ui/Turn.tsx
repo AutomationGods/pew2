@@ -12,7 +12,7 @@
  */
 import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { Icon } from "./Icon";
 import { useAppTheme, useThemeStyles } from "../appearance";
 import type { AppTheme } from "../theme";
 import { MarkdownText } from "./MarkdownText";
@@ -51,6 +51,7 @@ interface TurnProps {
   retryPrompt?: string;
   /** Sends it. Must be stable: cells memo on it. */
   onRetry?: (text: string) => void;
+  onCancelQueued?: (turnKey: string) => void;
 }
 
 /**
@@ -86,7 +87,7 @@ interface TurnProps {
  * paragraph of it. That is what the Copy button under an agent turn is for —
  * a button, not a hold, so it takes nothing away from the gesture above it.
  */
-function TurnView({ turn, onOpenThought, retryPrompt, onRetry }: TurnProps) {
+function TurnView({ turn, onOpenThought, retryPrompt, onRetry, onCancelQueued }: TurnProps) {
   const { theme } = useAppTheme();
   const styles = useThemeStyles(makeStyles);
   const RETRY_SIZE = ACTION_SIZE + theme.space(1.5);
@@ -129,15 +130,20 @@ function TurnView({ turn, onOpenThought, retryPrompt, onRetry }: TurnProps) {
           )}
           <ChatImages images={images} />
         </View>
-        {/* A message typed with no signal. Shown as what it is — sent, waiting
-            on the network — rather than as an error, because nothing has
-            failed: the reconnect delivers it. Under the bubble and quiet, so a
-            thread queued up offline reads as a conversation rather than as a
-            column of warnings. */}
-        {turn.queued && (
+        {(turn.queued || turn.cancelled) && (
           <View style={styles.queuedRow}>
-            <Ionicons name="time-outline" size={12} color={theme.color.textDim} />
-            <Text style={styles.queuedLabel}>Sends when you're back online</Text>
+            <Icon name="time-outline" size={12} color={theme.color.textDim} />
+            <Text style={styles.queuedLabel}>{turn.cancelled ? "Not sent" : "Queued"}</Text>
+            {turn.queued && onCancelQueued && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Cancel queued message"
+                style={styles.cancelQueued}
+                onPress={() => onCancelQueued(turn.key ?? turn.id)}
+              >
+                <Text style={styles.queuedLabel}>Cancel</Text>
+              </Pressable>
+            )}
           </View>
         )}
       </View>
@@ -169,7 +175,7 @@ function TurnView({ turn, onOpenThought, retryPrompt, onRetry }: TurnProps) {
             {/* Keeps its border where the copy button has none: this one sits
                 under an error rather than under a reply, and has to read as
                 the way out of it rather than as part of the message. */}
-            <Ionicons name="refresh" size={16} color={theme.color.text} />
+            <Icon name="refresh" size={16} color={theme.color.text} />
           </Pressable>
         )}
       </View>
@@ -200,7 +206,7 @@ function TurnView({ turn, onOpenThought, retryPrompt, onRetry }: TurnProps) {
             style={({ pressed }) => [styles.thoughtToggle, pressed && styles.thoughtPressed]}
           >
             <Text style={styles.thoughtLabel}>Thought process</Text>
-            <Ionicons name="chevron-forward" size={13} color={theme.color.textDim} />
+            <Icon name="chevron-forward" size={13} color={theme.color.textDim} />
           </Pressable>
         )}
         <ChatImages images={images} />
@@ -210,6 +216,13 @@ function TurnView({ turn, onOpenThought, retryPrompt, onRetry }: TurnProps) {
 
   return (
     <View style={styles.agentRow}>
+      {/* Ken is GG Coder's reviewer: his verdict is a second voice in the same
+          reply area, so it carries his name the way the desktop's row does. */}
+      {turn.ken && (
+        <Text style={styles.kenLabel} accessibilityRole="header">
+          Ken
+        </Text>
+      )}
       {hasText && <MarkdownText text={text} />}
       <ChatImages images={images} />
       {/* A row rather than a lone button, because that is the shape this ends
@@ -249,8 +262,11 @@ export const Turn = memo(
     // whole transcript and only changes on the tail.
     before.retryPrompt === after.retryPrompt &&
     before.onRetry === after.onRetry &&
+    before.onCancelQueued === after.onCancelQueued &&
+    before.turn.cancelled === after.turn.cancelled &&
     before.turn.text === after.turn.text &&
     before.turn.role === after.turn.role &&
+    before.turn.ken === after.turn.ken &&
     // The one flag that is drawn: without it the label would outlive the
     // message going out, which is the moment it stops being true.
     before.turn.queued === after.turn.queued &&
@@ -279,6 +295,7 @@ function makeStyles(theme: AppTheme) {
     paddingRight: theme.space(1),
   },
   queuedLabel: { color: theme.color.textDim, fontSize: theme.font.small },
+  cancelQueued: { minWidth: theme.size.touch, minHeight: theme.size.touch, alignItems: "center", justifyContent: "center" },
   // Stacked rather than inline: instructions are markdown and may run to
   // several lines, which would not wrap cleanly beside the token.
   commandPrompt: { gap: theme.space(1) },
@@ -297,6 +314,12 @@ function makeStyles(theme: AppTheme) {
     color: theme.color.textDim,
     fontSize: theme.font.small,
     fontWeight: "600",
+  },
+  kenLabel: {
+    color: theme.color.textDim,
+    fontSize: theme.font.small,
+    fontWeight: "600",
+    marginBottom: theme.space(1),
   },
   systemRow: { width: "100%", gap: theme.space(2) },
   // Reads as a control rather than as more of the error text: the failure is
