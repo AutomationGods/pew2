@@ -263,33 +263,41 @@ export async function loginWithBrowser(
   let settle!: { resolve: (a: StoredAuth) => void; reject: (e: Error) => void };
   const done = new Promise<StoredAuth>((resolve, reject) => (settle = { resolve, reject }));
 
-  let server: ReturnType<typeof Bun.serve>;
-  try {
-    server = Bun.serve({
-      port: OAUTH_PORT,
-      hostname: "localhost",
-      fetch: async (req) => {
-        const u = new URL(req.url);
-        if (u.pathname !== "/auth/callback") return new Response("Not found", { status: 404 });
-        if (u.searchParams.get("state") !== state) return new Response("State mismatch", { status: 400 });
-        const error = u.searchParams.get("error");
-        const code = u.searchParams.get("code");
-        if (error || !code) {
-          settle.reject(new OpenAIAuthError(`Sign-in was not completed (${error ?? "no code"}).`));
-          return new Response(PAGE("Sign-in failed."), { status: 400, headers: { "content-type": "text/html" } });
-        }
-        try {
-          const auth = await exchangeCode(code, verifier, OAUTH_REDIRECT_URI);
-          await saveAuth(auth, env);
-          settle.resolve(auth);
-          return new Response(PAGE("Signed in to pew2."), { headers: { "content-type": "text/html" } });
-        } catch (e) {
-          settle.reject(e as Error);
-          return new Response(PAGE("Sign-in failed."), { status: 500, headers: { "content-type": "text/html" } });
-        }
-      },
-    });
-  } catch {
+  const handle = async (req: Request): Promise<Response> => {
+    const u = new URL(req.url);
+    if (u.pathname !== "/auth/callback") return new Response("Not found", { status: 404 });
+    if (u.searchParams.get("state") !== state) return new Response("State mismatch", { status: 400 });
+    const error = u.searchParams.get("error");
+    const code = u.searchParams.get("code");
+    if (error || !code) {
+      settle.reject(new OpenAIAuthError(`Sign-in was not completed (${error ?? "no code"}).`));
+      return new Response(PAGE("Sign-in failed."), { status: 400, headers: { "content-type": "text/html" } });
+    }
+    try {
+      const auth = await exchangeCode(code, verifier, OAUTH_REDIRECT_URI);
+      await saveAuth(auth, env);
+      settle.resolve(auth);
+      return new Response(PAGE("Signed in to pew2."), { headers: { "content-type": "text/html" } });
+    } catch (e) {
+      settle.reject(e as Error);
+      return new Response(PAGE("Sign-in failed."), { status: 500, headers: { "content-type": "text/html" } });
+    }
+  };
+
+  // The redirect says `localhost`, and a browser may resolve that to the IPv4
+  // or the IPv6 loopback. Binding only "localhost" landed on [::1] alone here,
+  // so a browser that tried 127.0.0.1 got "can't connect" with the code in its
+  // address bar and the login never finished. Listen on both loopbacks; never
+  // on a LAN address.
+  const servers: ReturnType<typeof Bun.serve>[] = [];
+  for (const hostname of ["127.0.0.1", "::1"]) {
+    try {
+      servers.push(Bun.serve({ port: OAUTH_PORT, hostname, fetch: handle }));
+    } catch {
+      // That loopback is unavailable (no IPv6, or the port is taken there).
+    }
+  }
+  if (servers.length === 0) {
     throw new OpenAIAuthError(`Port ${OAUTH_PORT} is busy (is \`codex login\` running?). Close it, or use \`pew2 openai login --device\`.`);
   }
 
@@ -302,7 +310,9 @@ export async function loginWithBrowser(
   } finally {
     clearTimeout(timeout);
     // Let the success page flush before the socket closes.
-    setTimeout(() => void server.stop(true), 500);
+    setTimeout(() => {
+      for (const server of servers) void server.stop(true);
+    }, 500);
   }
 }
 
