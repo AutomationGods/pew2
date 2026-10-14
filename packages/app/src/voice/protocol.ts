@@ -165,6 +165,8 @@ export function voiceInstructions(focus?: { title?: string; folder?: string; ses
     "Summarize what agents did; never read code, file paths, diffs, or long output aloud.",
     "Before send_prompt, read the prompt back in a few words and send it only after the user says yes.",
     "Before answering a permission request, say what it is and which option you'll pick, and act on the user's yes.",
+    "GG Coder may ask the user questions (openQuestion in get_session_status). Read the question and its options aloud, then answer it with answer_question using the user's words; skip it with dismiss_question only if they say so.",
+    "Goals are GG Coder's long-running objectives: use list_goals and get_goal_status to report on them, and pause_goal or resume_goal when asked.",
     "If a tool fails, say so plainly.",
   ];
   if (focus?.sessionId) {

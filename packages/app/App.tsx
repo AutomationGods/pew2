@@ -510,6 +510,16 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
       prompt: (id, text) => daemonRef.current.prompt(text, id),
       answer: (id, requestId, optionId) => daemonRef.current.answerSession(id, requestId, optionId),
       cancel: (id) => daemonRef.current.cancelSession(id),
+      // GG Coder: open questions and goals, from the same state the cards use.
+      asks: (id) => daemonRef.current.gg.asks[id] ?? [],
+      answerAsk: (id, requestId, result) => {
+        if (daemonRef.current.status !== "online") return false;
+        daemonRef.current.answerAsk(id, requestId, result);
+        return true;
+      },
+      goals: () => (daemonRef.current.hasGgCoder ? daemonRef.current.gg.goals : []),
+      goalWorkers: (id) => daemonRef.current.gg.goalStates[id]?.workers,
+      goalAction: (goalId, action) => daemonRef.current.goalAction(goalId, action) !== undefined,
     },
   });
   ringRef.current = voice.ring;

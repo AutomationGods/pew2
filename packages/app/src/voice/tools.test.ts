@@ -80,6 +80,78 @@ test("matchOption", () => {
 
 test("sessionUpdate carries tools and voice", () => {
   const u = sessionUpdate("be brief", "marin") as { session: { tools: unknown[]; audio: { output?: { voice: string } } } };
-  expect(u.session.tools).toHaveLength(5);
+  expect(u.session.tools).toHaveLength(11);
   expect(u.session.audio.output?.voice).toBe("marin");
+});
+
+describe("GG Coder questions and goals", () => {
+  const ask = {
+    requestId: "ask1",
+    questions: [
+      { id: "db", question: "Which database?", kind: "choice" as const, options: [{ label: "Postgres", value: "pg", recommended: true }, { label: "SQLite" }] },
+      { id: "go", question: "Ship today?", kind: "confirm" as const },
+    ],
+  };
+  const goals = [{ id: "g1", name: "gpt live", goal: "Voice calls", status: "running", sessionId: "s1" }];
+
+  function gg(connected = true) {
+    const calls: string[] = [];
+    const base = context(sessions, connected).ctx;
+    const ctx: VoiceToolContext = {
+      ...base,
+      asks: (id) => (id === "s1" ? [ask] : []),
+      answerAsk: (id, req, result) => (calls.push(`${id} ${req} ${JSON.stringify(result)}`), connected),
+      goals: () => goals,
+      goalWorkers: () => [{ name: "app builder", state: "running", activity: "editing App.tsx" }],
+      goalAction: (id, action) => (calls.push(`${action} ${id}`), connected),
+    };
+    return { ctx, calls };
+  }
+
+  test("status shows the open question with its options", () => {
+    const out = runVoiceTool("get_session_status", JSON.stringify({ sessionId: "s1" }), gg().ctx) as {
+      state: string;
+      openQuestion: { questionId: string; options: string[] }[];
+    };
+    expect(out.state).toBe("has a question for you");
+    expect(out.openQuestion.map((q) => [q.questionId, q.options])).toEqual([
+      ["db", ["Postgres (recommended)", "SQLite"]],
+      ["go", ["Yes", "No"]],
+    ]);
+  });
+
+  test("spoken answers map onto option values", () => {
+    const { ctx, calls } = gg();
+    const out = runVoiceTool(
+      "answer_question",
+      JSON.stringify({ sessionId: "s1", answers: [{ questionId: "db", answer: "postgres" }, { questionId: "go", answer: "yeah, go ahead" }] }),
+      ctx,
+    );
+    expect(out).toEqual({ ok: true, answered: { db: "pg", go: "yes" } });
+    expect(calls).toEqual([`s1 ask1 ${JSON.stringify({ action: "answer", answers: { db: "pg", go: "yes" } })}`]);
+  });
+
+  test("a missing answer is reported, not sent", () => {
+    const { ctx, calls } = gg();
+    const out = runVoiceTool("answer_question", JSON.stringify({ sessionId: "s1", answers: [{ questionId: "db", answer: "SQLite" }] }), ctx) as {
+      needsAnswer: { questionId: string }[];
+    };
+    expect(out.needsAnswer.map((q) => q.questionId)).toEqual(["go"]);
+    expect(calls).toEqual([]);
+  });
+
+  test("dismiss cancels the question", () => {
+    const { ctx, calls } = gg();
+    expect(runVoiceTool("dismiss_question", JSON.stringify({ sessionId: "s1" }), ctx)).toEqual({ ok: true });
+    expect(calls).toEqual([`s1 ask1 {"action":"cancel"}`]);
+  });
+
+  test("goals list, report workers, and pause", () => {
+    const { ctx, calls } = gg();
+    expect(runVoiceTool("list_goals", "", ctx)).toEqual({ goals: [{ goalId: "g1", name: "gpt live", status: "running" }] });
+    const status = runVoiceTool("get_goal_status", JSON.stringify({ goalId: "g1" }), ctx) as { workers: unknown[] };
+    expect(status.workers).toEqual([{ name: "app builder", state: "running", doing: "editing App.tsx" }]);
+    expect(runVoiceTool("pause_goal", JSON.stringify({ goalId: "g1" }), ctx)).toEqual({ ok: true });
+    expect(calls).toEqual(["pause g1"]);
+  });
 });

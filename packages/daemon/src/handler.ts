@@ -436,7 +436,7 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
       }
 
       case "session.permission": {
-        daemon.answerPermission(message.sessionId, message.requestId, message.optionId);
+        daemon.answerPermission(message.sessionId, message.requestId, message.optionId, message.answers);
         break;
       }
 
@@ -562,7 +562,11 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
  */
 function runTurn(ctx: HandlerContext, sessionId: string, turn: Promise<unknown>) {
   const { daemon, reply, broadcast } = ctx;
+  // A shared desktop turn is owned by the desk: its own working flag ends it
+  // (see `Daemon.record`), not this request settling.
+  const sharedDesktop = daemon.isSharedDesktop(sessionId);
   const idle = () => {
+    if (sharedDesktop) return;
     // Tell every client the turn is over, so they can stop showing a working
     // indicator. Broadcast, not reply: other devices watching this session
     // need it too. Carries the project and agent so a client can announce a

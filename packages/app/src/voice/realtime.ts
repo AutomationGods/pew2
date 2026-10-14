@@ -20,7 +20,7 @@ function webrtc(): typeof WebRTC | null {
   // Read inside a try: under the new architecture a module that fails to
   // build throws from this property read, and voice is an extra that must
   // hide itself rather than take the app down (see callkit.ts).
-  let present = false;
+  let present: boolean;
   try {
     present = Platform.OS !== "web" && !!(NativeModules as Record<string, unknown>).WebRTCModule;
   } catch {

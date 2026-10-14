@@ -140,7 +140,7 @@ export function useVoiceCall(deps: VoiceCallDeps) {
             type: "response.create",
             response: {
               instructions: focus.sessionId
-                ? "Greet the user in a few words and give a one-sentence status of the focused session (use get_session_status)."
+                ? "Greet the user in a few words and give a one-sentence status of the focused session (use get_session_status). If it has an open question or a permission request, read that out and ask for their answer."
                 : "Greet the user in a few words and ask what they need.",
             },
           });

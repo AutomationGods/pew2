@@ -44,6 +44,7 @@ import { readConfigPrefs, writeConfigPref, type ConfigPrefs } from "./config-pre
 import { readSessionPrefs, writeSessionPrefs } from "./session-prefs.js";
 import { readCommandDirs } from "./commands/from-disk.js";
 import { wire } from "@pew2/protocol";
+import { desktopAskId, kenNeedsYou, readDesktopState, SHARED_DESKTOP_PROVIDER } from "./acp/sharedDesktop.js";
 
 interface ActiveSession {
   handle?: AcpSessionHandle;
@@ -1413,6 +1414,40 @@ export class Daemon {
    * `markLive` and the reconnect replay both see the complete history.
    */
   private record(session: ActiveSession, payload: unknown) {
+    const shared = session.providerId === SHARED_DESKTOP_PROVIDER;
+    // The desktop bridge exiting means GG Coder desktop went away: the shared
+    // conversation is over, not merely idle.
+    if (shared && payload && typeof payload === "object" && "kind" in payload && payload.kind === "exit") {
+      session.working = false;
+      session.permissions?.clear();
+      this.publishDesktopState(session);
+      if (this.sessions.get(session.log.sessionId) === session) {
+        this.closeSession(session.log.sessionId, session);
+        this.announceProviders();
+      }
+    }
+    // Desk liveness rides on `_meta` and is state, never a logged event.
+    const state = shared ? readDesktopState(payload) : undefined;
+    if (state) {
+      const finished = session.working && !state.working;
+      if (!session.working && state.working) session.turnText = undefined;
+      session.working = state.working;
+      session.lastUsedAt = Date.now();
+      for (const [requestId, params] of session.permissions ?? []) {
+        const askId = desktopAskId(params);
+        if (askId && state.closedAsks.includes(askId)) session.permissions?.delete(requestId);
+      }
+      this.publishDesktopState(session);
+      if (session.live && finished) {
+        this.send({ t: "session.idle", sessionId: session.log.sessionId, ...this.sessionOrigin(session.log.sessionId) });
+        void pushFinishedTurn(this.pushTargets, { sessionId: session.log.sessionId, ...this.sessionNotice(session.log.sessionId) });
+      }
+      return;
+    }
+    // Ken (GG Coder's reviewer) handing a decision back live is as blocking
+    // as a question, so it rings the phone the same way. Replayed verdicts
+    // carry no `live` flag and never ring.
+    if (shared && kenNeedsYou(payload)) this.ringForInput(session.log.sessionId);
     rememberTurnText(session, payload);
     const event = session.log.append(payload);
     if (!session.live) return;
@@ -1439,6 +1474,7 @@ export class Daemon {
     const events = session.pendingReplay?.splice(0) ?? [];
     if (events.length > 0 || complete) {
       this.send({ t: "session.replay", sessionId: session.log.sessionId, events, complete });
+      this.publishDesktopState(session);
     }
   }
 
@@ -1457,6 +1493,7 @@ export class Daemon {
     // marks a resumed transcript as fully loaded and dismisses its skeleton.
     const backlog = session.log.since(-1);
     this.send({ t: "session.replay", sessionId, events: backlog });
+    this.publishDesktopState(session);
   }
 
   /** Announce first, then reveal resume history in frame-sized batches. */
@@ -2119,6 +2156,7 @@ export class Daemon {
     options: PromptOptions = {},
   ): Promise<PromptOutcome> {
     const session = this.require(sessionId);
+    if (this.isSharedDesktop(sessionId)) return this.promptSharedDesktop(session, text, attachments);
     if (session.working) {
       if (options.goalTurn) throw new Error("GG Goals is already working on this goal.");
       if (options.planDecision) throw new Error("The agent is still working; decide the plan when it stops.");
@@ -2567,9 +2605,52 @@ export class Daemon {
     return answered;
   }
 
-  answerPermission(sessionId: string, requestId: string, optionId: string) {
+  /** True when this session mirrors the running GG Coder desktop conversation. */
+  isSharedDesktop(sessionId: string): boolean {
+    return this.sessions.get(sessionId)?.providerId === SHARED_DESKTOP_PROVIDER;
+  }
+
+  /**
+   * Hand a shared desktop conversation's working flag and open approvals to
+   * every client. Sent as an empty catch-up because the desk, not a phone
+   * request, owns the turn, and catch-up is the contract apps already apply.
+   */
+  private publishDesktopState(session: ActiveSession): void {
+    if (!session.live || session.providerId !== SHARED_DESKTOP_PROVIDER) return;
+    this.send({
+      t: "session.replay", sessionId: session.log.sessionId, events: [],
+      catchUp: true, complete: true, working: session.working ?? false,
+      permissions: [...(session.permissions ?? [])].map(([requestId, params]) => ({ requestId, params })),
+    });
+  }
+
+  /**
+   * A phone message into the shared desktop conversation. The desk echoes it
+   * and owns the turn, so nothing is logged, queued or marked working here.
+   */
+  private async promptSharedDesktop(
+    session: ActiveSession,
+    text: string,
+    attachments: wire.PromptAttachment[],
+  ): Promise<PromptOutcome> {
+    session.lastUsedAt = Date.now();
+    session.turnText = undefined;
+    try {
+      if (attachments.length > 0) {
+        throw new Error("Attach files in GG Coder desktop for shared conversations; phone text messages are supported");
+      }
+      await session.ready;
+      await session.handle!.prompt(text, []);
+    } finally {
+      this.publishDesktopState(session);
+      session.lastUsedAt = Date.now();
+    }
+    return "ran";
+  }
+
+  answerPermission(sessionId: string, requestId: string, optionId: string, answers?: wire.DesktopAnswers) {
     const session = this.require(sessionId);
-    const answered = session.handle?.answerPermission(requestId, optionId) ?? false;
+    const answered = session.handle?.answerPermission(requestId, optionId, answers) ?? false;
     // Only on a real answer. A `false` means the connection had no such request
     // — a stale sheet from a previous turn, or a second client answering one
     // that was already resolved — and forgetting it here on that basis would

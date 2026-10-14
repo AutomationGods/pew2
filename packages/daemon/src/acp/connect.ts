@@ -16,6 +16,11 @@ import { SESSION_HISTORY_LIMIT } from "../session-history.js";
 import { hydrateMessageCounts } from "./messageCounts.js";
 import { foldProjects, type AgentProject } from "../projects.js";
 import { DETACH_CHILDREN, registerChild, terminateChild, unregisterChild } from "../children.js";
+import type { wire } from "@pew2/protocol";
+import { desktopAskId, readDesktopState, SHARED_DESKTOP_PROVIDER } from "./sharedDesktop.js";
+
+/** A GG Coder desktop question card's answers, keyed by question id. */
+export type DesktopAnswers = wire.DesktopAnswers;
 
 /**
  * A session-level selector advertised by the agent: model, thinking level, mode.
@@ -283,7 +288,8 @@ export interface AcpSessionHandle {
   /** Answer an open `_gg/ask_user`. False when no such question is pending. */
   answerAsk(requestId: string, result: AskAnswer): boolean;
   setConfigOption(configId: string, value: string | boolean): Promise<ConfigOption[]>;
-  answerPermission(requestId: string, optionId: string): boolean;
+  /** `answers` is a whole GG Coder desktop question card; other agents never get it. */
+  answerPermission(requestId: string, optionId: string, answers?: DesktopAnswers): boolean;
   close(): void;
 }
 
@@ -686,8 +692,12 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
   // awaits a promise nobody can ever fulfil — which retains the request, its
   // handler and the closure around this whole connection for the life of the
   // daemon process.
-  const pending = new Map<string, (optionId: string | null) => void>();
+  const pending = new Map<string, (answer: { optionId: string; answers?: DesktopAnswers } | null) => void>();
   let permissionCounter = 0;
+  // GG Coder desktop questions still open, so the desk answering one first
+  // can settle the phone's copy instead of leaving a dead sheet behind.
+  const desktopAsks = new Map<string, { askId: string; sessionId?: string }>();
+  const sharedDesktop = options.provider.manifest.id === SHARED_DESKTOP_PROVIDER;
   // Same rule for GG's `_gg/ask_user` questions: `null` answers as cancel.
   const asksPending = new Map<string, (result: AskAnswer | null) => void>();
   let askCounter = 0;
@@ -757,6 +767,16 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
         }
       }
       const sid = params?.sessionId;
+      const desktopState = sharedDesktop ? readDesktopState(ctx.params) : undefined;
+      if (desktopState) {
+        for (const [requestId, ask] of desktopAsks) {
+          if (ask.sessionId === sid && desktopState.closedAsks.includes(ask.askId)) {
+            pending.get(requestId)?.(null);
+            pending.delete(requestId);
+            desktopAsks.delete(requestId);
+          }
+        }
+      }
       const handler = (sid ? updateHandlers.get(sid) : undefined) ?? pendingRoute?.onUpdate;
       handler?.(ctx.params);
     })
@@ -764,21 +784,29 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
       const requestId = `perm_${++permissionCounter}`;
       // Register the resolver *before* notifying, otherwise a caller that answers
       // synchronously finds no pending entry and the agent waits forever.
-      const answered = new Promise<string | null>((resolve) => {
+      const answered = new Promise<{ optionId: string; answers?: DesktopAnswers } | null>((resolve) => {
         pending.set(requestId, resolve);
       });
       const sid = (ctx.params as { sessionId?: string })?.sessionId;
+      const askId = sharedDesktop ? desktopAskId(ctx.params) : undefined;
+      if (askId) desktopAsks.set(requestId, { askId, sessionId: sid });
       const handler =
         (sid ? permissionHandlers.get(sid) : undefined) ??
         pendingRoute?.onPermissionRequest ??
         options.onPermissionRequest;
       handler({ requestId, params: ctx.params });
-      const optionId = await answered;
+      const answer = await answered;
+      desktopAsks.delete(requestId);
       // Null means the connection went away with the question unanswered. ACP
       // has a word for that, and saying it lets the agent unwind instead of
       // sitting on a request whose client no longer exists.
-      if (optionId === null) return { outcome: { outcome: "cancelled" } };
-      return { outcome: { outcome: "selected", optionId } };
+      if (answer === null) return { outcome: { outcome: "cancelled" } };
+      // A question card's answers ride in _meta, and only to the GG Coder
+      // desktop, which is the one agent that asked for them.
+      return {
+        outcome: { outcome: "selected", optionId: answer.optionId },
+        ...(askId && answer.answers ? { _meta: { ggDesktopAnswers: answer.answers } } : {}),
+      };
     })
     // GG Coder's ask_user. Exactly the permission rule: the resolver is
     // registered before anyone is told, and a connection that closes with the
@@ -1269,11 +1297,11 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
     },
     cancel: () =>
       connection.agent.notify("session/cancel", { sessionId: current.sessionId }),
-    answerPermission(requestId, optionId) {
+    answerPermission(requestId, optionId, answers) {
       const resolve = pending.get(requestId);
       if (!resolve) return false;
       pending.delete(requestId);
-      resolve(optionId);
+      resolve({ optionId, ...(answers ? { answers } : {}) });
       return true;
     },
     close() {
@@ -1282,6 +1310,7 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
       // keeps this connection's entire closure reachable.
       for (const resolve of pending.values()) resolve(null);
       pending.clear();
+      desktopAsks.clear();
       for (const resolve of asksPending.values()) resolve(null);
       asksPending.clear();
       connection.close();
