@@ -45,7 +45,7 @@ import {
 } from "./activity";
 import { advance, alreadySeen, type Cursors } from "./cursors";
 import { findDuplicateError } from "./errorDedup";
-import { isEmptyChunk, readChunk, type KenMeta } from "./chunks";
+import { isEmptyChunk, readChunk, type CallNote, type KenMeta } from "./chunks";
 import type { ChatImage } from "./images";
 import { emptyImageCache, putImage, type ImageCache } from "./imageCache";
 import {
@@ -143,6 +143,8 @@ export interface Turn {
   text: string;
   /** Only on role "ken": the Autopilot phase and round. */
   ken?: KenMeta;
+  /** Only on a "note" that files a voice call: its transcript. */
+  call?: CallNote;
   /**
    * Pictures the agent sent with this message, in order. Kept beside the text
    * rather than spliced into it: the bytes may be inline base64 (megabytes of
@@ -3210,6 +3212,15 @@ export function useDaemon(
         }));
         return true;
       },
+      /**
+       * File a finished voice call in a conversation. Fire and forget: an
+       * older daemon answers `unknown_message`, and a lost socket loses only
+       * the note, never anything the call actually did.
+       */
+      saveCallTranscript: (
+        sessionId: string,
+        transcript: { callId: string; startedAt: number; endedAt: number; lines: { who: "user" | "assistant"; text: string }[] },
+      ): boolean => post({ t: "voice.transcript", sessionId, ...transcript }),
       /** Whether the daemon has this session open right now. */
       isLiveSession: (sessionId: string): boolean => liveSessions.current?.has(sessionId) ?? false,
     }),

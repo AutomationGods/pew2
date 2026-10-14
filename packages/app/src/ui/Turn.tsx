@@ -30,6 +30,8 @@ import {
   userPromptNeedsFullWidth,
 } from "./messageLayoutStyles";
 import type { Turn as TurnModel } from "../useDaemon";
+import type { CallNote } from "../chunks";
+import { callHeading } from "../callNote";
 
 /**
  * The retry button's square.
@@ -151,6 +153,10 @@ function TurnBody({ turn, onOpenThought, retryPrompt, onRetry, liveIdentity }: T
     );
   }
 
+  if (turn.role === "note" && turn.call) {
+    return <CallTranscript call={turn.call} />;
+  }
+
   if (turn.role === "note") {
     return (
       <View style={styles.noteRow} accessibilityRole="text">
@@ -264,10 +270,47 @@ export const Turn = memo(
     before.turn.images === after.turn.images,
 );
 
+/**
+ * A voice call filed in this conversation: who said what, as captioned. Read
+ * by the human only (the agent never sees it), so it is quiet: a dim card,
+ * not a bubble from either side.
+ */
+function CallTranscript({ call }: { call: CallNote }) {
+  return (
+    <View style={styles.callCard} accessibilityRole="summary">
+      <View style={styles.callHeader}>
+        <Ionicons name="call-outline" size={13} color={theme.color.textDim} />
+        <Text style={styles.callHeading}>{callHeading(call)}</Text>
+      </View>
+      {call.lines.map((line, i) => (
+        <Text key={i} style={styles.callLine}>
+          <Text style={line.who === "user" ? styles.callWhoUser : styles.callWho}>
+            {line.who === "user" ? "You  " : "pew2  "}
+          </Text>
+          {line.text}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   // Pew's globe fills the middle of its box; the rest is room to bounce,
   // so the box overhangs the old icon's footprint instead of growing the row.
   pew: { margin: -4 },
+  callCard: {
+    gap: theme.space(1.5),
+    padding: theme.space(3),
+    borderRadius: theme.radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: theme.color.border,
+    backgroundColor: theme.color.surface,
+  },
+  callHeader: { flexDirection: "row", alignItems: "center", gap: theme.space(1.5), marginBottom: theme.space(0.5) },
+  callHeading: { color: theme.color.textDim, fontSize: theme.font.small, fontWeight: "600" },
+  callLine: { color: theme.color.text, fontSize: theme.font.small, lineHeight: 19 },
+  callWho: { color: theme.color.textFaint, fontWeight: "600" },
+  callWhoUser: { color: theme.color.accent, fontWeight: "600" },
   noteRow: { flexDirection: "row", alignItems: "center", gap: theme.space(3), paddingVertical: theme.space(1) },
   noteRule: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: theme.color.border },
   noteText: { color: theme.color.textDim, fontSize: theme.font.small, flexShrink: 1, textAlign: "center" },

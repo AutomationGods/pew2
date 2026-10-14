@@ -14,7 +14,7 @@ import {
   type VoiceFailure,
   toolOutputEvents,
 } from "./protocol";
-import { runVoiceTool, sessionUpdate, type VoiceToolContext } from "./tools";
+import { runVoiceTool, sessionActedOn, sessionUpdate, transcriptOf, type VoiceToolContext } from "./tools";
 import { audioSessionActivated, startRealtime, voiceAvailable, type RealtimeCall } from "./realtime";
 import {
   callKitAvailable,
@@ -63,6 +63,16 @@ export interface VoiceCallDeps {
   describe: (sessionId: string | undefined) => CallFocus;
   /** Bring the session on screen behind the call. */
   openSession: (sessionId: string) => void;
+  /** File a finished call's transcript in a conversation (`voice.transcript`). */
+  saveTranscript?: (sessionId: string, transcript: CallTranscript) => void;
+}
+
+/** What a finished call leaves behind in a conversation. */
+export interface CallTranscript {
+  callId: string;
+  startedAt: number;
+  endedAt: number;
+  lines: { who: "user" | "assistant"; text: string }[];
 }
 
 export function useVoiceCall(deps: VoiceCallDeps) {
@@ -74,6 +84,10 @@ export function useVoiceCall(deps: VoiceCallDeps) {
   const captions = useRef<Caption[]>([]);
   // Bumped per call, so a late answer from a call already hung up is ignored.
   const generation = useRef(0);
+  // For filing the transcript: when the call began, and every conversation it
+  // was about (the focused one plus any the model acted on).
+  const startedAt = useRef(0);
+  const touched = useRef(new Set<string>());
 
   const fail = useCallback((error: VoiceFailure, detail?: string) => {
     setState((s) => ({ ...s, phase: "error", error, errorDetail: detail }));
@@ -86,6 +100,14 @@ export function useVoiceCall(deps: VoiceCallDeps) {
     const id = callId.current;
     callId.current = undefined;
     if (id && !fromCallKit) endCall(id);
+    // File what was said in each conversation the call was about. A call that
+    // was about nothing in particular, or where nothing was said, files nothing.
+    const transcript = id ? transcriptOf(id, startedAt.current, captions.current) : undefined;
+    if (transcript) {
+      for (const sessionId of touched.current) depsRef.current.saveTranscript?.(sessionId, transcript);
+    }
+    touched.current = new Set();
+    captions.current = [];
   }, []);
 
   const hangUp = useCallback(() => {
@@ -128,6 +150,8 @@ export function useVoiceCall(deps: VoiceCallDeps) {
             if (folded.error) setState((s) => ({ ...s, errorDetail: folded.error }));
             if (folded.call) {
               const result = runVoiceTool(folded.call.name, folded.call.arguments, depsRef.current.tools);
+              const acted = sessionActedOn(folded.call.name, folded.call.arguments, result, depsRef.current.tools);
+              if (acted) touched.current.add(acted);
               for (const out of toolOutputEvents(folded.call.callId, result)) rtc.current?.send(out);
             }
           },
@@ -163,6 +187,8 @@ export function useVoiceCall(deps: VoiceCallDeps) {
       if (call.sessionId) depsRef.current.openSession(call.sessionId);
       captions.current = [];
       callId.current = call.callId;
+      startedAt.current = Date.now();
+      touched.current = new Set(call.sessionId ? [call.sessionId] : []);
       setState({ ...IDLE, open: true, phase: "connecting", focus });
       if (!viaCallKit) startOutgoing(call);
       void connect(focus);

@@ -33,9 +33,35 @@ export interface KenMeta {
   round?: number;
 }
 
+/** A voice call filed in this conversation (`{kind:"voice_call"}`), shown as its transcript. */
+export interface CallNote {
+  callId: string;
+  startedAt: number;
+  endedAt: number;
+  lines: { who: "user" | "assistant"; text: string }[];
+}
+
+/** A logged `voice_call` event, or undefined. */
+export function readCallNote(payload: unknown): CallNote | undefined {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  const p = payload as Record<string, unknown>;
+  if (p.kind !== "voice_call" || typeof p.callId !== "string" || !Array.isArray(p.lines)) return undefined;
+  const lines = p.lines.flatMap((line: unknown): CallNote["lines"] => {
+    const l = line as { who?: unknown; text?: unknown } | null;
+    if (!l || (l.who !== "user" && l.who !== "assistant") || typeof l.text !== "string" || !l.text.trim()) return [];
+    return [{ who: l.who === "user" ? "user" : "assistant", text: l.text }];
+  });
+  if (lines.length === 0) return undefined;
+  const startedAt = typeof p.startedAt === "number" ? p.startedAt : 0;
+  const endedAt = typeof p.endedAt === "number" ? p.endedAt : startedAt;
+  return { callId: p.callId, startedAt, endedAt, lines };
+}
+
 export interface Chunk {
   role: ChunkRole;
   text: string;
+  /** Only on a "note" that is a voice call transcript. */
+  call?: CallNote;
   /** Present only when the chunk actually carried pictures. */
   images?: ChatImage[];
   /** Only on role "ken". */
@@ -121,6 +147,10 @@ export function readChunk(payload: any): Chunk | undefined {
     if (gg.role === "ken" && gg.ken) return { role: "ken", text: gg.text, ken: gg.ken };
     return { role: gg.role === "note" ? "note" : "system", text: gg.text };
   }
+  // A voice call about this conversation: a note for the human, never agent
+  // output, so it neither counts as work nor merges into a bubble.
+  const call = readCallNote(payload);
+  if (call) return { role: "note", text: "Voice call", call };
   if (payload?.kind === "exit") {
     // Closing a session kills the child, so a clean or signalled exit is the
     // normal end of a conversation. Reporting it in red said "something broke"

@@ -443,3 +443,42 @@ export function sessionUpdate(instructions: string, voice?: string): unknown {
     },
   };
 }
+
+/** Tools that do something to a conversation, as opposed to reading it. */
+const ACTING_TOOLS = new Set(["send_prompt", "answer_permission", "answer_question", "dismiss_question", "cancel_turn"]);
+
+/**
+ * The conversation a tool call changed, so the call's transcript is filed
+ * there too. Reads (status, lists) do not count: asking how something is going
+ * is not a reason to leave a note in it. A goal's pause or resume counts
+ * against the goal's coordinator conversation.
+ */
+export function sessionActedOn(
+  name: string,
+  rawArgs: string,
+  result: Record<string, unknown>,
+  ctx: VoiceToolContext,
+): string | undefined {
+  if (result.ok !== true) return undefined;
+  const args = parseArgs(rawArgs);
+  if (ACTING_TOOLS.has(name) && typeof args.sessionId === "string") return args.sessionId;
+  if ((name === "pause_goal" || name === "resume_goal") && typeof args.goalId === "string") {
+    return ctx.goals?.()?.find((g) => g.id === args.goalId)?.sessionId;
+  }
+  return undefined;
+}
+
+/** The lines worth keeping from a call's captions, within the wire's limits. */
+export function transcriptOf(
+  callId: string,
+  startedAt: number,
+  captions: readonly { who: "user" | "assistant"; text: string }[],
+  endedAt: number = Date.now(),
+): { callId: string; startedAt: number; endedAt: number; lines: { who: "user" | "assistant"; text: string }[] } | undefined {
+  const lines = captions
+    .map((c) => ({ who: c.who, text: c.text.trim().slice(0, 4000) }))
+    .filter((c) => c.text.length > 0)
+    .slice(-400);
+  if (lines.length === 0) return undefined;
+  return { callId, startedAt: startedAt || endedAt, endedAt, lines };
+}

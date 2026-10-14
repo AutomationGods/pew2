@@ -294,6 +294,18 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         break;
       }
 
+      case "voice.transcript": {
+        // A finished call, filed in the conversation it was about. Said out
+        // loud only when it cannot be: the session died with a restart.
+        if (!daemon.fileVoiceCall(message)) {
+          reply({
+            ...errorMessage("voice_transcript_unknown_session", "That conversation is no longer open, so the call was not saved to it."),
+            sessionId: message.sessionId,
+          });
+        }
+        break;
+      }
+
       case "session.cancel": {
         await daemon.cancel(message.sessionId);
         break;

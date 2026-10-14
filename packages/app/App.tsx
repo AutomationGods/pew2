@@ -499,6 +499,9 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
       const session = daemonRef.current.sessions.find((s) => s.id === id);
       if (session) daemonRef.current.openSession(session.id);
     },
+    saveTranscript: (sessionId, transcript) => {
+      daemonRef.current.saveCallTranscript(sessionId, transcript);
+    },
     describe: (sessionId) => {
       const session = sessionId ? daemonRef.current.sessions.find((s) => s.id === sessionId) : undefined;
       return { sessionId, title: session?.title, folder: session?.folder };

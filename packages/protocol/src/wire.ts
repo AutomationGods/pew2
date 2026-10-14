@@ -1186,6 +1186,31 @@ export const VoipRegister = z.object({
   bundleId: z.string().min(1),
 });
 
+/** One spoken line of a voice call, as captioned. */
+export const VoiceCallLine = z.object({
+  who: z.enum(["user", "assistant"]),
+  text: z.string().max(4000),
+});
+
+/** Ceiling on lines kept per call: an hour of talk is well under this. */
+export const MAX_VOICE_CALL_LINES = 400;
+
+/**
+ * App -> daemon. File a finished call's transcript in the conversation it was
+ * about. Logged as a session event `{ kind: "voice_call", callId, startedAt,
+ * endedAt, lines }` (broadcast like any event) and kept on the computer per
+ * agent conversation, so reopening it later shows the call again. A note for
+ * the human, never a prompt: the agent does not see it. Silence is acceptance.
+ */
+export const VoiceTranscript = z.object({
+  t: z.literal("voice.transcript"),
+  sessionId: z.string(),
+  callId: z.string().uuid(),
+  startedAt: z.number().int(),
+  endedAt: z.number().int(),
+  lines: z.array(VoiceCallLine).min(1).max(MAX_VOICE_CALL_LINES),
+});
+
 /** Why the daemon is calling. */
 export const VoiceCallReason = z.enum(["input", "manual"]);
 
@@ -1245,6 +1270,7 @@ export const ClientMessage = z.discriminatedUnion("t", [
   VoiceTokenRequest,
   VoipRegister,
   VoiceCallRequest,
+  VoiceTranscript,
 ]);
 
 export const ServerMessage = z.discriminatedUnion("t", [
@@ -1329,6 +1355,8 @@ export type VoipRegister = z.output<typeof VoipRegister>;
 export type VoiceCallReason = z.output<typeof VoiceCallReason>;
 export type VoiceCallRequest = z.output<typeof VoiceCallRequest>;
 export type VoiceIncoming = z.output<typeof VoiceIncoming>;
+export type VoiceCallLine = z.output<typeof VoiceCallLine>;
+export type VoiceTranscript = z.output<typeof VoiceTranscript>;
 export type ClientMessage = z.output<typeof ClientMessage>;
 export type ServerMessage = z.output<typeof ServerMessage>;
 export type PlanState = z.output<typeof PlanState>;

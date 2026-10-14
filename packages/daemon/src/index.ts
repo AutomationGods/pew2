@@ -35,6 +35,7 @@ import {
 import { folderName, resolveWorkspace } from "./workspace.js";
 import { PushRegistry, pushFinishedTurn, pushIncomingCall } from "./push.js";
 import { CallRinger } from "./voip.js";
+import { readVoiceCalls, saveVoiceCall, voiceCallNote } from "./voice-calls.js";
 import { readProbeCache, writeProbeCache } from "./probe-cache.js";
 import { readKnownProjects, rememberKnownProject } from "./known-projects.js";
 import { hydrateMessageCounts } from "./acp/messageCounts.js";
@@ -982,6 +983,12 @@ export class Daemon {
     // The agent's own id for the conversation, which is what the per-session
     // selectors below are keyed by and what the app dedupes history against.
     session.agentSessionId = session.handle.sessionId;
+    // Voice calls about this conversation, which the agent's own history
+    // never held: back onto the end of the transcript.
+    if (loadSessionId && session.agentSessionId) {
+      const calls = await readVoiceCalls(provider.manifest.id, session.agentSessionId, this.env).catch(() => []);
+      for (const note of calls) this.record(session, note);
+    }
     // A goal's coordinator: seed its state so a catch-up has something before
     // the first `_gg/goal_state` arrives.
     const goalMeta = session.handle.goal;
@@ -1129,6 +1136,23 @@ export class Daemon {
   /** The environment voice credentials are read from (`PEW2_HOME`, `OPENAI_API_KEY`). */
   get voiceEnv(): NodeJS.ProcessEnv {
     return this.env;
+  }
+
+  /**
+   * File a finished voice call in the conversation it was about: logged (so
+   * every client shows it now) and saved against the agent's conversation id
+   * (so it comes back when the conversation is reopened after a restart).
+   *
+   * @returns false when this daemon has no such session.
+   */
+  fileVoiceCall(message: wire.VoiceTranscript): boolean {
+    const session = this.sessions.get(message.sessionId);
+    if (!session) return false;
+    const note = voiceCallNote(message);
+    this.record(session, note);
+    const agentSessionId = session.agentSessionId;
+    if (agentSessionId) void saveVoiceCall(session.providerId, agentSessionId, note, this.env).catch(() => {});
+    return true;
   }
 
   /** Ring the phone because a session is waiting on the user. Never throws. */

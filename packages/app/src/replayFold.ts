@@ -127,6 +127,7 @@ export function turnFromChunk(id: string, chunk: Chunk): Turn {
     text: chunk.text,
     ...(chunk.images ? { images: chunk.images } : {}),
     ...(chunk.ken ? { ken: chunk.ken } : {}),
+    ...(chunk.call ? { call: chunk.call } : {}),
   };
 }
 
