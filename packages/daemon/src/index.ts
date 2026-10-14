@@ -33,7 +33,8 @@ import {
   type StoredAttachment,
 } from "./attachments.js";
 import { folderName, resolveWorkspace } from "./workspace.js";
-import { PushRegistry, pushFinishedTurn } from "./push.js";
+import { PushRegistry, pushFinishedTurn, pushIncomingCall } from "./push.js";
+import { CallRinger } from "./voip.js";
 import { readProbeCache, writeProbeCache } from "./probe-cache.js";
 import { readKnownProjects, rememberKnownProject } from "./known-projects.js";
 import { hydrateMessageCounts } from "./acp/messageCounts.js";
@@ -401,6 +402,12 @@ export class Daemon {
    * not have to be told twice.
    */
   readonly pushTargets = new PushRegistry();
+
+  /**
+   * CallKit ringing for "an agent needs you". Broadcasts through whatever
+   * transport is attached at the time, so it is safe to build before `attach`.
+   */
+  readonly calls: CallRinger;
 
   private readonly spares = new Map<
     // Keyed by provider *and* directory. `cwd` is part of a spare's identity
@@ -860,6 +867,8 @@ export class Daemon {
         // from before it was even asked.
         session.lastUsedAt = Date.now();
         this.record(session, { kind: "permission_request", requestId, params });
+        // The agent is blocked on the user: ring the phone (live voice).
+        this.ringForInput(session.log.sessionId);
       },
       gg: {
         // Same order as a permission: held, clock stamped, then told.
@@ -869,6 +878,8 @@ export class Daemon {
           (session.asks ??= new Map()).set(requestId, questions);
           session.lastUsedAt = Date.now();
           this.record(session, { kind: "ask_user", requestId, questions });
+          // A question blocks the agent just like a permission: ring the phone.
+          this.ringForInput(session.log.sessionId);
         },
         // The agent withdrew it (JSON-RPC cancel, or a new ask superseded it).
         onAskClosed: (requestId: string) => this.closeAsk(session, requestId),
@@ -1107,6 +1118,25 @@ export class Daemon {
     // Copied, not referenced: the point is a value that cannot change under a
     // write that lands later.
     this.env = { ...env };
+    this.calls = new CallRinger({
+      env: this.env,
+      broadcast: (message) => this.send(message),
+      androidRing: (incoming, deviceId) => pushIncomingCall(this.pushTargets, incoming, deviceId),
+    });
+  }
+
+  /** The environment voice credentials are read from (`PEW2_HOME`, `OPENAI_API_KEY`). */
+  get voiceEnv(): NodeJS.ProcessEnv {
+    return this.env;
+  }
+
+  /** Ring the phone because a session is waiting on the user. Never throws. */
+  ringForInput(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    const notice = this.sessionNotice(sessionId);
+    void this.calls
+      .ringForInput({ sessionId, providerId: session?.providerId, folder: notice.folder, agentName: notice.agentName })
+      .catch(() => {});
   }
 
   /** Point the daemon at a transport. Called with the relay socket's `send`. */

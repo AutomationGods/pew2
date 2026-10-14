@@ -606,7 +606,24 @@ interface DaemonOptions {
    * it keeps raising the local banner instead of going silent.
    */
   onPushRegistered?: (registered: boolean) => void;
+  /**
+   * This phone's VoIP (PushKit) address, sent as `app.voip` on every connect
+   * beside `app.push`. Injected for the same reason as `pushAddress`.
+   */
+  voipAddress?: () => Promise<VoipAddress | undefined>;
+  /** The daemon wants to ring this phone (`voice.incoming`). */
+  onVoiceIncoming?: (message: unknown) => void;
 }
+
+/** Where the daemon should send VoIP pushes. Mirrors `app.voip`. */
+export interface VoipAddress {
+  token: string;
+  environment: "production" | "sandbox";
+  bundleId: string;
+}
+
+/** How long a `voice.token` may go unanswered before it counts as unavailable. */
+const VOICE_TOKEN_TIMEOUT = 20_000;
 
 /**
  * @param deviceId Identifies this phone to the relay, which uses it to tell
@@ -861,6 +878,11 @@ export function useDaemon(
   // it is worth sending again: a token can rotate while the app is away, and a
   // daemon that restarted has forgotten every token it held.
   const pushRegistered = useRef(false);
+  const voipRegistered = useRef(false);
+  // `voice.token` requests awaiting an answer, by requestId. Resolved with the
+  // raw `result`, or `undefined` for an older daemon / timeout / lost socket.
+  const pendingVoiceTokens = useRef(new Map<string, (result: unknown) => void>());
+  const voiceCounter = useRef(0);
 
   // The agent this device used last, read once from storage.
   //
@@ -977,6 +999,9 @@ export function useDaemon(
       // accepts one, the local banner is the only route there is.
       pushRegistered.current = false;
       optionsRef.current.onPushRegistered?.(false);
+      voipRegistered.current = false;
+      for (const resolve of pendingVoiceTokens.current.values()) resolve(undefined);
+      pendingVoiceTokens.current.clear();
       // Fresh per connection: the counters that make replay detectable are only
       // meaningful within one socket, so carrying them across a reconnect would
       // make the new connection's first frames look like replays.
@@ -1625,6 +1650,16 @@ export function useDaemon(
               optionsRef.current.onPushRegistered?.(sent);
             });
           }
+          // The VoIP address, beside the push one and for the same reasons.
+          const askVoip = optionsRef.current.voipAddress;
+          if (askVoip && !voipRegistered.current) {
+            voipRegistered.current = true;
+            void askVoip().then((address) => {
+              if (address && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(secure.seal({ t: "app.voip", ...address })));
+              }
+            });
+          }
           if (Array.isArray(message.activeSessions)) {
             liveSessions.current = new Set<string>(message.activeSessions);
             // The conversation on screen may have died with a previous daemon
@@ -1698,6 +1733,22 @@ export function useDaemon(
             message.code === "push_token_invalid")
         ) {
           optionsRef.current.onPushRegistered?.(false);
+        }
+        // Same reading for voice: a daemon older than live voice cannot
+        // answer `voice.token`, and the refusal names no request.
+        if (message.t === "error" && message.code === "unknown_message") {
+          for (const resolve of pendingVoiceTokens.current.values()) resolve(undefined);
+          pendingVoiceTokens.current.clear();
+        }
+        if (message.t === "voice.token.result" && typeof message.requestId === "string") {
+          const resolve = pendingVoiceTokens.current.get(message.requestId);
+          pendingVoiceTokens.current.delete(message.requestId);
+          resolve?.(message.result);
+          return;
+        }
+        if (message.t === "voice.incoming") {
+          optionsRef.current.onVoiceIncoming?.(message);
+          return;
         }
 
         // Project and git state, answered per request. An answer for a
@@ -3112,9 +3163,63 @@ export function useDaemon(
     setState((s) => ({ ...s, loadingProject: key }));
   }, [post, state.status, effectiveProviderId, openProjectPath]);
 
+  const voiceActions = useMemo(
+    () => ({
+      /**
+       * Ask the daemon for an OpenAI Realtime client secret. Resolves the raw
+       * `result` of `voice.token.result`, or undefined when this daemon cannot
+       * answer (too old, offline, or silent past the timeout).
+       */
+      requestVoiceToken: (model?: string, voice?: string): Promise<unknown> => {
+        const requestId = `voice_${deviceId}_${++voiceCounter.current}`;
+        return new Promise<unknown>((resolve) => {
+          const timer = setTimeout(() => {
+            pendingVoiceTokens.current.delete(requestId);
+            resolve(undefined);
+          }, VOICE_TOKEN_TIMEOUT);
+          pendingVoiceTokens.current.set(requestId, (result) => {
+            clearTimeout(timer);
+            resolve(result);
+          });
+          if (!post({ t: "voice.token", requestId, ...(model ? { model } : {}), ...(voice ? { voice } : {}) })) {
+            pendingVoiceTokens.current.delete(requestId);
+            clearTimeout(timer);
+            resolve(undefined);
+          }
+        });
+      },
+      /** Interrupt a named session's turn, not only the visible one. */
+      cancelSession: (sessionId: string): boolean => {
+        if (!post({ t: "session.cancel", sessionId })) return false;
+        setState((s) => ({
+          ...s,
+          ...(s.sessionId === sessionId ? { busy: false, activity: IDLE_ACTIVITY, receipt: undefined } : {}),
+          sessions: s.sessions.map((session) => (session.id === sessionId ? { ...session, busy: false } : session)),
+        }));
+        return true;
+      },
+      /** Answer a permission request in a named session (voice can act on any). */
+      answerSession: (sessionId: string, requestId: string, optionId: string): boolean => {
+        if (!post({ t: "session.permission", sessionId, requestId, optionId })) return false;
+        setState((s) => ({
+          ...s,
+          ...(s.sessionId === sessionId ? { permission: undefined, busy: true } : {}),
+          sessions: s.sessions.map((session) =>
+            session.id === sessionId && session.permission ? { ...session, permission: undefined } : session,
+          ),
+        }));
+        return true;
+      },
+      /** Whether the daemon has this session open right now. */
+      isLiveSession: (sessionId: string): boolean => liveSessions.current?.has(sessionId) ?? false,
+    }),
+    [post, deviceId],
+  );
+
   return {
     ...state,
     ...actions,
+    ...voiceActions,
     resumeNow,
     setForeground,
     // Exported so the UI names the same agent the composer targets: the drawer

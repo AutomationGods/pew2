@@ -37,6 +37,7 @@ import { doctorView } from "./doctor-view.js";
 import { registryView } from "./registry-view.js";
 import { doctor } from "./doctor.js";
 import { setup } from "./setup.js";
+import { cmdOpenAI, cmdVoice } from "./voice.js";
 import {
   installService,
   isSupported,
@@ -746,6 +747,8 @@ async function main() {
   if (group === "doctor") return cmdDoctor(flags);
   if (group === "detect") return cmdDetect(flags);
   if (group === "registry") return cmdRegistry(command, flags);
+  if (group === "openai") return cmdOpenAI(command, flags);
+  if (group === "voice") return cmdVoice(command, arg, flags, argv);
 
   if (group !== "providers") {
     console.log(helpView().join("\n"));

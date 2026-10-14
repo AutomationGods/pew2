@@ -41,6 +41,12 @@ module.exports = () => {
 
   return {
     ...expo,
+    // Android push (and so Android ringing) needs Firebase. The file is
+    // per-account like eas-project.json, so it is picked up when present and
+    // never committed (root .gitignore).
+    ...(fs.existsSync(path.join(__dirname, "google-services.json"))
+      ? { android: { ...expo.android, googleServicesFile: "./google-services.json" } }
+      : {}),
     ...(owner ? { owner } : {}),
     ...(projectId
       ? { extra: { ...expo.extra, eas: { ...expo.extra?.eas, projectId } } }

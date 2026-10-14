@@ -1098,6 +1098,113 @@ export const Envelope = z.object({
   ct: z.string(),
 });
 
+/**
+ * Live voice ("gpt live").
+ *
+ * The phone talks to OpenAI's Realtime model directly over WebRTC, so audio
+ * never crosses the relay. What the phone cannot hold is a long-lived OpenAI
+ * credential: the ChatGPT sign-in (or the fallback API key) lives on the
+ * desktop, and the daemon mints a short-lived Realtime client secret on demand.
+ * The secret travels sealed like every other frame.
+ *
+ * All additive message types, deliberately not a `WIRE_VERSION` bump: an older
+ * daemon answers `unknown_message`, which the app treats as "voice unavailable".
+ */
+
+/** App -> daemon. Ask for a short-lived Realtime client secret. */
+export const VoiceTokenRequest = z.object({
+  t: z.literal("voice.token"),
+  /** Correlates the reply. */
+  requestId: z.string().min(1),
+  /** Optional model override; the daemon picks its default otherwise. */
+  model: z.string().optional(),
+  /** Optional voice name override (e.g. "marin"). */
+  voice: z.string().optional(),
+});
+
+export const VoiceTokenError = z.enum([
+  /** Neither a ChatGPT sign-in nor an API key is configured on the desktop. */
+  "not_signed_in",
+  /** OpenAI refused the credential (expired and refresh failed, revoked, plan lacks voice). */
+  "unauthorized",
+  /** Network or OpenAI-side failure. */
+  "failed",
+]);
+
+/** Daemon -> app. The reply to `voice.token`, sent only to the asker. */
+export const VoiceTokenResult = z.object({
+  t: z.literal("voice.token.result"),
+  requestId: z.string(),
+  result: z.discriminatedUnion("ok", [
+    z.object({
+      ok: z.literal(true),
+      /** Ephemeral secret (`ek_...`) for `Authorization: Bearer` on the WebRTC call. */
+      clientSecret: z.string(),
+      /** Unix seconds. */
+      expiresAt: z.number().int(),
+      model: z.string(),
+      /** Which desktop credential paid for it. */
+      source: z.enum(["chatgpt", "api_key"]),
+    }),
+    z.object({
+      ok: z.literal(false),
+      error: VoiceTokenError,
+      message: z.string(),
+    }),
+  ]),
+});
+
+/**
+ * App -> daemon. iOS PushKit (VoIP) token, so the daemon can ring the phone
+ * through CallKit while the app is suspended or killed.
+ *
+ * Separate from `app.push` because a VoIP token is a raw APNs device token, not
+ * an Expo token: it is sent with the user's own APNs key configured on their
+ * desktop, never with a credential shipped in the daemon. Held in memory only,
+ * like Expo tokens, and re-sent on every connect. Silence is acceptance.
+ */
+export const VoipRegister = z.object({
+  t: z.literal("app.voip"),
+  /** Hex APNs device token from PushKit. */
+  token: z.string().regex(/^[0-9a-fA-F]{32,200}$/),
+  /** APNs environment the build talks to (dev-client builds use sandbox). */
+  environment: z.enum(["production", "sandbox"]),
+  /** The app's bundle id; the VoIP topic is `${bundleId}.voip`. */
+  bundleId: z.string().min(1),
+});
+
+/** Why the daemon is calling. */
+export const VoiceCallReason = z.enum(["input", "manual"]);
+
+/**
+ * App -> daemon. "Call me": ask the daemon to ring this phone (used when the
+ * call should come from the desktop side, e.g. testing the ring path). Also
+ * sent by `pew2 call` via the daemon's local socket if available.
+ */
+export const VoiceCallRequest = z.object({
+  t: z.literal("voice.call"),
+  sessionId: z.string().optional(),
+});
+
+/**
+ * Daemon -> every client. An incoming call. A foregrounded app shows the
+ * CallKit incoming-call UI from this; a suspended one gets the same payload in
+ * the VoIP push. Answering opens a live voice session focused on `sessionId`.
+ */
+export const VoiceIncoming = z.object({
+  t: z.literal("voice.incoming"),
+  /** Unique per call (UUID), used as the CallKit call UUID. */
+  callId: z.string().uuid(),
+  reason: VoiceCallReason,
+  sessionId: z.string().optional(),
+  providerId: z.string().optional(),
+  /** Last segment of the session's cwd. */
+  folder: z.string().optional(),
+  /** One short line for the caller display, e.g. "Codex needs you in pew2". */
+  summary: z.string().optional(),
+  at: z.number().int(),
+});
+
 export const ClientMessage = z.discriminatedUnion("t", [
   Hello,
   Envelope,
@@ -1122,6 +1229,9 @@ export const ClientMessage = z.discriminatedUnion("t", [
   PlanDecide,
   AutopilotSet,
   ChecklistRequest,
+  VoiceTokenRequest,
+  VoipRegister,
+  VoiceCallRequest,
 ]);
 
 export const ServerMessage = z.discriminatedUnion("t", [
@@ -1146,6 +1256,8 @@ export const ServerMessage = z.discriminatedUnion("t", [
   AutopilotState,
   Checklist,
   ErrorMessage,
+  VoiceTokenResult,
+  VoiceIncoming,
 ]);
 
 export type QueuedMessage = z.output<typeof QueuedMessage>;
@@ -1197,6 +1309,13 @@ export type PushRegister = z.output<typeof PushRegister>;
 export type DeviceJoined = z.output<typeof DeviceJoined>;
 export type WorkspaceEntry = z.output<typeof WorkspaceEntry>;
 export type Workspaces = z.output<typeof Workspaces>;
+export type VoiceTokenRequest = z.output<typeof VoiceTokenRequest>;
+export type VoiceTokenError = z.output<typeof VoiceTokenError>;
+export type VoiceTokenResult = z.output<typeof VoiceTokenResult>;
+export type VoipRegister = z.output<typeof VoipRegister>;
+export type VoiceCallReason = z.output<typeof VoiceCallReason>;
+export type VoiceCallRequest = z.output<typeof VoiceCallRequest>;
+export type VoiceIncoming = z.output<typeof VoiceIncoming>;
 export type ClientMessage = z.output<typeof ClientMessage>;
 export type ServerMessage = z.output<typeof ServerMessage>;
 export type PlanState = z.output<typeof PlanState>;

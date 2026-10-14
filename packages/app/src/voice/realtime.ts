@@ -1,0 +1,160 @@
+/**
+ * A WebRTC call to OpenAI Realtime.
+ *
+ * `react-native-webrtc` is a native module, absent in Expo Go and in builds
+ * made before voice existed, so it is probed with `requireOptionalNativeModule`
+ * and required lazily — exactly as `ui/speech.ts` does — and `voiceAvailable()`
+ * answers false instead of the app crashing.
+ */
+import { NativeModules, Platform } from "react-native";
+import type * as WebRTC from "react-native-webrtc";
+
+const REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
+
+let cached: typeof WebRTC | null | undefined;
+
+function webrtc(): typeof WebRTC | null {
+  if (cached !== undefined) return cached;
+  // A bridge module (not an Expo module), so it is looked up on NativeModules;
+  // under the new architecture's interop layer it is still listed there.
+  if (Platform.OS === "web" || !(NativeModules as Record<string, unknown>).WebRTCModule) {
+    cached = null;
+    return cached;
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    cached = require("react-native-webrtc") as typeof WebRTC;
+  } catch {
+    cached = null;
+  }
+  return cached;
+}
+
+export function voiceAvailable(): boolean {
+  return webrtc() !== null;
+}
+
+/**
+ * Tell WebRTC that CallKit activated or deactivated the audio session. With
+ * CallKit in charge of audio, WebRTC must not start its audio unit until the
+ * system says the session is live, or the mic records silence.
+ */
+export function audioSessionActivated(active: boolean): void {
+  const rtc = webrtc();
+  if (!rtc) return;
+  if (active) rtc.RTCAudioSession.audioSessionDidActivate();
+  else rtc.RTCAudioSession.audioSessionDidDeactivate();
+}
+
+export interface RealtimeHandlers {
+  onState: (state: "connecting" | "connected" | "ended") => void;
+  onEvent: (event: unknown) => void;
+  onError: (error: "mic_denied" | "unsupported" | "failed", detail?: string) => void;
+}
+
+export interface RealtimeCall {
+  send: (event: unknown) => void;
+  setMuted: (muted: boolean) => void;
+  hangUp: () => void;
+}
+
+/** Open the call. Resolves undefined after reporting a failure. */
+export async function startRealtime(
+  clientSecret: string,
+  handlers: RealtimeHandlers,
+  onOpen: (call: RealtimeCall) => void,
+): Promise<RealtimeCall | undefined> {
+  const rtc = webrtc();
+  if (!rtc) {
+    handlers.onError("unsupported");
+    return undefined;
+  }
+  handlers.onState("connecting");
+
+  let stream: WebRTC.MediaStream;
+  try {
+    stream = await rtc.mediaDevices.getUserMedia({ audio: true, video: false });
+  } catch (error) {
+    handlers.onError("mic_denied", error instanceof Error ? error.message : undefined);
+    return undefined;
+  }
+
+  const pc = new rtc.RTCPeerConnection({});
+  let ended = false;
+  const end = () => {
+    if (ended) return;
+    ended = true;
+    try {
+      channel.close();
+    } catch {
+      // Already closed.
+    }
+    for (const track of stream.getTracks()) track.stop();
+    try {
+      pc.close();
+    } catch {
+      // Already closed.
+    }
+    handlers.onState("ended");
+  };
+
+  for (const track of stream.getTracks()) pc.addTrack(track, stream);
+  // Remote audio plays through the native audio session on its own; there is
+  // no <audio> element to attach it to on React Native.
+  const channel = pc.createDataChannel("oai-events");
+
+  const call: RealtimeCall = {
+    send: (event) => {
+      if (channel.readyState === "open") channel.send(JSON.stringify(event));
+    },
+    setMuted: (muted) => {
+      for (const track of stream.getAudioTracks()) track.enabled = !muted;
+    },
+    hangUp: end,
+  };
+
+  // The typings inherit `addEventListener` from event-target-shim, which does
+  // not resolve here; the runtime has it.
+  type Listenable = { addEventListener: (type: string, listener: (event: never) => void) => void };
+  const channelEvents = channel as unknown as Listenable;
+  const pcEvents = pc as unknown as Listenable;
+  channelEvents.addEventListener("open", () => onOpen(call));
+  channelEvents.addEventListener("message", (message: { data: unknown }) => {
+    if (typeof message.data !== "string") return;
+    try {
+      handlers.onEvent(JSON.parse(message.data));
+    } catch {
+      // Not JSON; nothing to fold.
+    }
+  });
+  pcEvents.addEventListener("connectionstatechange", () => {
+    const state = pc.connectionState;
+    if (state === "connected") handlers.onState("connected");
+    if (state === "failed") {
+      handlers.onError("failed", "the connection dropped");
+      end();
+    }
+    if (state === "closed" || state === "disconnected") end();
+  });
+
+  try {
+    const offer = await pc.createOffer({});
+    await pc.setLocalDescription(offer);
+    const response = await fetch(REALTIME_CALLS_URL, {
+      method: "POST",
+      body: offer.sdp,
+      headers: { Authorization: `Bearer ${clientSecret}`, "Content-Type": "application/sdp" },
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`OpenAI answered ${response.status}${body ? `: ${body.slice(0, 160)}` : ""}`);
+    }
+    const sdp = await response.text();
+    await pc.setRemoteDescription(new rtc.RTCSessionDescription({ type: "answer", sdp }));
+  } catch (error) {
+    handlers.onError("failed", error instanceof Error ? error.message : undefined);
+    end();
+    return undefined;
+  }
+  return call;
+}

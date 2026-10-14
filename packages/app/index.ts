@@ -18,6 +18,11 @@ import * as SplashScreen from 'expo-splash-screen';
 
 import { installCrashHandler } from './src/crashLog';
 import App from './App';
+import { defineCallTask } from './src/voice/androidRing';
+
+// Android rings through a background push task, which loads this bundle
+// without mounting the app; it has to be defined here, at module scope.
+defineCallTask();
 
 // Hold the native splash until the app has something real to show.
 //

@@ -23,6 +23,7 @@ import { storeGoalFiles } from "./goalFiles";
 import { readKnownProjects } from "./known-projects.js";
 
 const NOT_A_GOAL = "Open or create a goal first.";
+import { mintVoiceToken } from "./voice.js";
 
 export interface HandlerContext {
   daemon: Daemon;
@@ -259,6 +260,37 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
           // that never comes.
           reply(errorMessage("push_token_invalid", "That is not an Expo push token."));
         }
+        break;
+      }
+
+      case "voice.token": {
+        // Only the asker gets the secret: it is a credential for one call.
+        const result = await mintVoiceToken({ model: message.model, voice: message.voice }, { env: daemon.voiceEnv });
+        reply({ t: "voice.token.result", requestId: message.requestId, result });
+        break;
+      }
+
+      case "app.voip": {
+        // Same identity rule as `app.push`; silence is acceptance.
+        if (!ctx.deviceId) {
+          reply(errorMessage("push_unidentified", "Say hello before registering for calls."));
+          break;
+        }
+        daemon.calls.voip.register(ctx.deviceId, {
+          token: message.token,
+          environment: message.environment,
+          bundleId: message.bundleId,
+        });
+        break;
+      }
+
+      case "voice.call": {
+        // Rings every connected client (broadcast) and this phone's VoIP token.
+        const notice = message.sessionId ? daemon.sessionNotice(message.sessionId) : {};
+        await daemon.calls.ringManual(
+          { sessionId: message.sessionId, folder: notice.folder, agentName: notice.agentName },
+          ctx.deviceId,
+        );
         break;
       }
 

@@ -23,7 +23,7 @@
  * name and the agent's opening line. Everything else in pew2 stays sealed; this
  * one string does not, and that is the price of an instant notification.
  */
-import { noticeBody, noticeTitle, type NoticeOrigin } from "@pew2/protocol";
+import { noticeBody, noticeTitle, type NoticeOrigin, type wire } from "@pew2/protocol";
 
 /** Expo's push endpoint. Needs no credentials of ours; EAS holds those. */
 const PUSH_URL = "https://exp.host/--/api/v2/push/send";
@@ -94,6 +94,10 @@ export class PushRegistry {
     for (const [deviceId, target] of this.targets) {
       if (target.token === token) this.targets.delete(deviceId);
     }
+  }
+
+  get(deviceId: string): Target | undefined {
+    return this.targets.get(deviceId);
   }
 
   list(): Target[] {
@@ -208,5 +212,68 @@ export async function pushFinishedTurn(
   } catch {
     // Offline desktop, DNS failure, Expo outage. Nothing here is worth
     // interrupting the session that just finished successfully.
+  }
+}
+
+/** Android channel for incoming calls; the app creates it with max importance. */
+export const CALL_CHANNEL = "incoming-call";
+
+/** Data-only Expo message shape for a call: no title/body, so no banner is drawn. */
+interface ExpoCallMessage {
+  to: string;
+  data: Record<string, string>;
+  priority: "high";
+  channelId: string;
+  /** A ring that arrives late is worse than none. */
+  ttl: number;
+}
+
+/**
+ * Android ringing. iOS rings through PushKit; Android has nothing like it, so
+ * the call goes out as a high-priority, data-only push. With no title or body
+ * the OS draws nothing, and the app's background notification task wakes (even
+ * when the app was swiped away) and shows the incoming-call screen itself.
+ *
+ * Like every Expo push the content is not end-to-end sealed, so it carries only
+ * what the caller screen shows: the agent and the folder, never session text.
+ */
+export function incomingCallMessages(targets: Target[], incoming: wire.VoiceIncoming): ExpoCallMessage[] {
+  const data: Record<string, string> = { pew2Call: "1", callId: incoming.callId, reason: incoming.reason, at: String(incoming.at) };
+  if (incoming.sessionId) data.sessionId = incoming.sessionId;
+  if (incoming.providerId) data.providerId = incoming.providerId;
+  if (incoming.folder) data.folder = incoming.folder;
+  if (incoming.summary) data.summary = incoming.summary;
+  return targets
+    .filter((target) => target.platform === "android")
+    .map((target) => ({ to: target.token, data, priority: "high", channelId: CALL_CHANNEL, ttl: 30 }));
+}
+
+/** Ring Android phones (all, or only `deviceId`). Never throws. */
+export async function pushIncomingCall(
+  registry: PushRegistry,
+  incoming: wire.VoiceIncoming,
+  deviceId?: string,
+  options: { fetchImpl?: (url: string, init: RequestInit) => Promise<Response> } = {},
+): Promise<void> {
+  const one = deviceId === undefined ? undefined : registry.get(deviceId);
+  const targets = deviceId === undefined ? registry.list() : one ? [one] : [];
+  const messages = incomingCallMessages(targets, incoming);
+  if (messages.length === 0) return;
+  try {
+    const response = await (options.fetchImpl ?? fetch)(PUSH_URL, {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify(messages),
+      signal: AbortSignal.timeout(10_000),
+    });
+    // Same rule as a finished-turn push: a ring that failed is not retried,
+    // because a late ring is worse than none, and the "needs input" banner
+    // and the call screen on reconnect still reach the user.
+    if (!response.ok) return;
+    const payload: unknown = await response.json().catch(() => undefined);
+    applyTickets(registry, messages as unknown as ExpoMessage[],
+      payload && typeof payload === "object" && "data" in payload ? payload.data : undefined);
+  } catch {
+    // Offline desktop or push outage: calls stay optional.
   }
 }

@@ -49,6 +49,11 @@ import {
   type NotificationChoice,
 } from "./src/ui/notifier";
 import { pushAddress } from "./src/ui/push";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { CallScreen } from "./src/ui/CallScreen";
+import { useVoiceCall } from "./src/voice/useVoiceCall";
+import { parseIncoming } from "./src/voice/protocol";
+import { voipAddress } from "./src/voice/callkit";
 import { ComposerDock, type ComposerDockHandle } from "./src/ui/ComposerDock";
 import { ChatThread, type ChatThreadRef } from "./src/ui/ChatThread";
 import { ImageResolverProvider } from "./src/ui/ChatImage";
@@ -462,6 +467,8 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
 
   // The relay identifies devices by this, and it must match the id baked into
   // the stored pairing URL or the two look like different clients.
+  // Filled in once `useVoiceCall` exists below; the daemon hook needs it first.
+  const ringRef = useRef<(call: NonNullable<ReturnType<typeof parseIncoming>>) => void>(() => {});
   const daemon = useDaemon(pairing.url, pairing.deviceId, pairing.key, {
     onTurnFinished: announceTurn,
     // Supplied from here because obtaining it calls into the Expo SDK, which
@@ -473,7 +480,39 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
     onPushRegistered: (registered) => {
       pushExpected.current = registered;
     },
+    // Live voice: where to send VoIP pushes, and what to do when the daemon rings.
+    voipAddress,
+    onVoiceIncoming: (message) => {
+      const call = parseIncoming(message);
+      if (call) ringRef.current(call);
+    },
   });
+
+  // Live voice. Tools read the latest state through a ref, because the model
+  // calls them long after this render.
+  const daemonRef = useRef(daemon);
+  daemonRef.current = daemon;
+  const voice = useVoiceCall({
+    online: daemon.status === "online",
+    requestVoiceToken: daemon.requestVoiceToken,
+    openSession: (id) => {
+      const session = daemonRef.current.sessions.find((s) => s.id === id);
+      if (session) daemonRef.current.openSession(session.id);
+    },
+    describe: (sessionId) => {
+      const session = sessionId ? daemonRef.current.sessions.find((s) => s.id === sessionId) : undefined;
+      return { sessionId, title: session?.title, folder: session?.folder };
+    },
+    tools: {
+      sessions: () => daemonRef.current.sessions,
+      isLive: (id) => daemonRef.current.isLiveSession(id),
+      providerName: (id) => daemonRef.current.providers.find((p) => p.id === id)?.name,
+      prompt: (id, text) => daemonRef.current.prompt(text, id),
+      answer: (id, requestId, optionId) => daemonRef.current.answerSession(id, requestId, optionId),
+      cancel: (id) => daemonRef.current.cancelSession(id),
+    },
+  });
+  ringRef.current = voice.ring;
 
   const [drawerProjection, setDrawerProjection] = useState(() => ({
     source: daemon.sessions, rows: projectDrawerRows([], daemon.sessions),
@@ -1700,6 +1739,16 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
             <DotGlyph name="compose" size={16} />
           </CircleButton>
         )}
+        {voice.available && (
+          // Live voice: talk to pew2 about this conversation, or everything.
+          <CircleButton
+            label={daemon.sessionId ? "Talk to pew2 about this conversation" : "Talk to pew2"}
+            disabled={daemon.status !== "online"}
+            onPress={() => voice.startCall(daemon.sessionId)}
+          >
+            <Ionicons name="call-outline" size={17} color={theme.color.glyph} />
+          </CircleButton>
+        )}
         </View>
       </View>
       {/* Not while a chat is reopening: that screen is Pew alone, centred,
@@ -2047,6 +2096,14 @@ function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void })
 
       </SafeAreaView>
       </Reanimated.View>
+
+      <CallScreen
+        call={voice.state}
+        onHangUp={voice.hangUp}
+        onMute={voice.setMuted}
+        onSpeaker={voice.setSpeaker}
+        onRetry={voice.retry}
+      />
     </View>
     </AgentColorProvider>
     </ImageResolverProvider>
