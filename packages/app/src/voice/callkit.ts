@@ -30,9 +30,21 @@ const isAndroid = Platform.OS === "android";
 
 function native(): { callKeep: CallKeep; voip?: VoipPush } | null {
   if (modules !== undefined) return modules;
-  const nm = NativeModules as Record<string, unknown>;
-  const ios = Platform.OS === "ios" && !!nm.RNCallKeep && !!nm.RNVoipPushNotificationManager;
-  const android = isAndroid && !!nm.RNCallKeep;
+  // Merely reading a module off NativeModules can throw under the new
+  // architecture: the interop layer builds the module on first touch and
+  // refuses one it cannot parse (callkeep exported two methods with one name,
+  // and the app died on launch with "Exception in HostObject::get for prop
+  // 'RNCallKeep'"). Ringing is an extra; a module that will not load must cost
+  // the call screen, never the app.
+  const has = (name: string): boolean => {
+    try {
+      return !!(NativeModules as Record<string, unknown>)[name];
+    } catch {
+      return false;
+    }
+  };
+  const ios = Platform.OS === "ios" && has("RNCallKeep") && has("RNVoipPushNotificationManager");
+  const android = isAndroid && has("RNCallKeep");
   if (!ios && !android) {
     modules = null;
     return modules;

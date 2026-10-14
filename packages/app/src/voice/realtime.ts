@@ -17,7 +17,16 @@ function webrtc(): typeof WebRTC | null {
   if (cached !== undefined) return cached;
   // A bridge module (not an Expo module), so it is looked up on NativeModules;
   // under the new architecture's interop layer it is still listed there.
-  if (Platform.OS === "web" || !(NativeModules as Record<string, unknown>).WebRTCModule) {
+  // Read inside a try: under the new architecture a module that fails to
+  // build throws from this property read, and voice is an extra that must
+  // hide itself rather than take the app down (see callkit.ts).
+  let present = false;
+  try {
+    present = Platform.OS !== "web" && !!(NativeModules as Record<string, unknown>).WebRTCModule;
+  } catch {
+    present = false;
+  }
+  if (!present) {
     cached = null;
     return cached;
   }
