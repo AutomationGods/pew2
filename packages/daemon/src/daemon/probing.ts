@@ -164,23 +164,35 @@ export abstract class DaemonProbes extends DaemonSpares {
       let handle: AcpSessionHandle | undefined;
       try {
         const workspace = resolveWorkspace();
-        handle = await connectProvider({
-          provider,
-          // Same rule as session.start: under launchd cwd is `/`, which is not a
-          // project directory. Probing from it hid every agent's sessions.
-          cwd: workspace,
-          // A probe session is never shown, so its output goes nowhere.
-          onUpdate: () => {},
-          onPermissionRequest: () => {},
-        });
-        const booted = handle;
-        // Published before the history below, which is the slow half: listing
-        // sessions and counting each one's messages is seconds of disk work,
-        // and a new conversation needs none of it. Whoever adopts this calls
-        // `session/new` on the same process; `listSessions` does not touch the
-        // adopted session, so the two can safely overlap.
-        this.stashSpare(providerId, booted, workspace);
-        handle = undefined;
+        // A process already parked here answers this probe as well as a new
+        // one would: `listSessions` re-reads the agent's disk every call. Booting
+        // a second one anyway and parking it under the same key closed the
+        // first, under whoever had borrowed it — on the phone, GG Goals failing
+        // with "ACP connection closed" whenever a reconnect revalidated GG Coder
+        // while the goals list was in flight. Check the spare before booting.
+        const parked = this.spares.get(DaemonSpares.spareKey(providerId, workspace))?.handle;
+        let booted: AcpSessionHandle;
+        if (parked) {
+          booted = parked;
+        } else {
+          handle = await connectProvider({
+            provider,
+            // Same rule as session.start: under launchd cwd is `/`, which is not a
+            // project directory. Probing from it hid every agent's sessions.
+            cwd: workspace,
+            // A probe session is never shown, so its output goes nowhere.
+            onUpdate: () => {},
+            onPermissionRequest: () => {},
+          });
+          // Published before the history below, which is the slow half: listing
+          // sessions and counting each one's messages is seconds of disk work,
+          // and a new conversation needs none of it. Whoever adopts this calls
+          // `session/new` on the same process; `listSessions` does not touch the
+          // adopted session, so the two can safely overlap. If another boot
+          // parked first, that one is kept and used, and this one is closed.
+          booted = this.stashSpare(providerId, handle, workspace);
+          handle = undefined;
+        }
         announceSpare();
 
         // Needed several times below, and `listSessions` is the slow call:

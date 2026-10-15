@@ -175,17 +175,26 @@ export abstract class DaemonSpares extends DaemonState {
     if (ext) this.knownExtensions.set(providerId, ext);
   }
 
-  protected stashSpare(providerId: string, handle: AcpSessionHandle, cwd: string) {
-    this.noteExtensions(providerId, handle);
+  /**
+   * Park a booted process as this provider's spare for `cwd`.
+   *
+   * @returns the process now parked there, which callers must use from here on.
+   *   When the slot is already taken that is the one already there, and
+   *   `handle` is closed: two boots raced (a capability refresh and GG Goals
+   *   each spawn when nothing is parked, and neither can see the other), and
+   *   the parked process may be borrowed mid-request. Replacing it closed GG
+   *   Coder under the goals list, which the phone showed as "ACP connection
+   *   closed" with no goals. A different directory is still evicted below, as
+   *   opening another project should.
+   */
+  protected stashSpare(providerId: string, handle: AcpSessionHandle, cwd: string): AcpSessionHandle {
     const key = DaemonSpares.spareKey(providerId, cwd);
-    const old = this.spares.get(key);
-    if (old) {
-      clearTimeout(old.timer);
-      old.handle.close();
-      // Removed as well as closed, so the eviction pass below does not find it
-      // and close the same process a second time.
-      this.spares.delete(key);
+    const parked = this.spares.get(key);
+    if (parked) {
+      if (parked.handle !== handle) handle.close();
+      return parked.handle;
     }
+    this.noteExtensions(providerId, handle);
 
     // Bounded per provider, oldest first. Each spare is a live agent process
     // holding memory and a model connection, so "keep one per project" cannot
@@ -208,6 +217,7 @@ export abstract class DaemonSpares extends DaemonState {
     // The timer must not keep the daemon process alive on its own.
     timer.unref?.();
     this.spares.set(key, { handle, timer, cwd, providerId });
+    return handle;
   }
 
   /**

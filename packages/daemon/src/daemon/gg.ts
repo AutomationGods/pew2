@@ -201,8 +201,8 @@ export abstract class DaemonGg extends DaemonProjects {
         handle.close();
         return parked.handle;
       }
-      this.stashSpare(GG_PROVIDER_ID, handle, workspace);
-      return handle;
+      // Whichever process ends up parked; a probe that parked first wins.
+      return this.stashSpare(GG_PROVIDER_ID, handle, workspace);
     })().finally(() => {
       this.ggConnecting = undefined;
     });

@@ -5,7 +5,7 @@
  * answers on demand; everything that crosses ACP (`_gg/*`) runs against
  * `testing/gg-agent.ts`, a real ACP peer that advertises `_meta.gg`.
  */
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +15,13 @@ import { SessionLog } from "./session/log.js";
 import type { AcpSessionHandle } from "./acp/connect.js";
 import type { LoadedProvider } from "./providers/registry.js";
 import { fileURLToPath } from "node:url";
+
+// These tests boot `gg-agent.ts` as a real process, often several times each,
+// and `until` below waits up to 8s per step. Bun's 5s default was shorter than
+// one step's own wait, so a slow boot under full-suite load timed a test out
+// mid-teardown ("ACP connection closed") with nothing wrong. Several already
+// take ~4.8s alone.
+setDefaultTimeout(30_000);
 
 async function until<T>(read: () => T | undefined, what: string, ms = 8000): Promise<T> {
   const deadline = Date.now() + ms;
@@ -166,7 +173,10 @@ let openDaemons: Daemon[] = [];
 afterEach(() => {
   for (const daemon of openDaemons) daemon.closeAll();
   openDaemons = [];
-  for (const restore of restoreEnv.splice(0)) restore();
+  // Newest first. A test that sets the same variable twice (several daemons in
+  // one test) otherwise ends on the first change's value, not the original, and
+  // leaks it into every file that runs after this one.
+  for (const restore of restoreEnv.splice(0).reverse()) restore();
 });
 
 function setEnv(key: string, value: string | undefined) {
@@ -323,6 +333,25 @@ test("goals: list, create, open with a kickoff turn, act, delete", async () => {
   await send({ t: "goal.action", requestId: "r7", goalId: created.goal.id, action: "delete" });
   expect(sent.find((m) => m.requestId === "r7")).toMatchObject({ ok: true });
   expect(sent.findLast((m) => m.t === "goals").goals).toEqual([]);
+});
+
+test("goals answer when a capability refresh boots GG Coder at the same moment", async () => {
+  // The phone's reconnect: GG Coder's capabilities (refreshed) and the goals
+  // list, sent together to a daemon with no GG Coder process parked yet. Both
+  // booted one, and whichever was parked second closed the first — under the
+  // goals request, which answered "ACP connection closed" with no goals.
+  // A brand-new daemon each round: nothing parked, nothing warming, which is
+  // the state a phone finds right after the daemon restarts.
+  for (let round = 0; round < 3; round++) {
+    const fresh = await ggDaemon();
+    await Promise.all([
+      fresh.send({ t: "provider.capabilities", providerId: "ggcoder", refresh: true }),
+      fresh.send({ t: "goals", requestId: `g${round}` }),
+    ]);
+    const answer = fresh.sent.find((m) => m.t === "goals" && m.requestId === `g${round}`);
+    expect(answer?.error).toBeUndefined();
+    expect(Array.isArray(answer?.goals)).toBe(true);
+  }
 });
 
 test("an older GG Coder answers goals with an error, not a crash", async () => {

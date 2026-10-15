@@ -106,7 +106,11 @@ test("a daemon that never restarts still gets its log trimmed", async () => {
     onRotate: (p) => rotated.push(p),
   });
   try {
-    await Bun.sleep(60);
+    // Wait for the trim rather than a fixed 60ms: under full-suite load the
+    // timer plus its file I/O ran past that with nothing wrong. Bounded, so a
+    // rotation that never fires still fails below.
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline && !rotated.includes(path)) await Bun.sleep(10);
   } finally {
     stop();
   }

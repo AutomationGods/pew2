@@ -119,6 +119,66 @@ test("a session adopts the warm spare instead of spawning again", async () => {
   daemon.closeAll();
 }, 60_000);
 
+test("a reprobe reuses the parked process instead of closing it under a caller", async () => {
+  // The phone asks for every agent's capabilities and the goals list in the
+  // same breath on each reconnect. A capability answer older than a minute is
+  // revalidated in the background, and that used to boot a second process and
+  // park it under the same key — which closes the first, mid-request for
+  // whatever had borrowed it. On the phone that was GG Goals answering "ACP
+  // connection closed" with an empty list.
+  const { Daemon } = await import("../index.js");
+  const daemon = new Daemon({ id: "test", name: "test" }, true);
+  await daemon.refreshProviders();
+
+  try {
+    await daemon.probeProvider("echo", { refresh: true });
+    const parked = (daemon as any).spares.get(`echo\u0000${process.cwd()}`)?.handle;
+    expect(parked).toBeDefined();
+
+    // A caller borrows the parked process (as GG Goals does) and is still
+    // using it when the background revalidation lands.
+    const inFlight = parked.listSessions();
+    await daemon.probeProvider("echo", { refresh: true });
+
+    // Same process still parked, and the borrowed request completes.
+    expect((daemon as any).spares.get(`echo\u0000${process.cwd()}`)?.handle).toBe(parked);
+    await expect(inFlight).resolves.toBeDefined();
+    // And it still answers afterwards: it was never closed.
+    await expect(parked.listSessions()).resolves.toBeDefined();
+  } finally {
+    daemon.closeAll();
+  }
+}, 60_000);
+
+test("a second boot for the same spare slot is dropped, never the process in use", async () => {
+  // Booted side by side, nobody can see the other coming: the phone's
+  // capability refresh and its GG Goals request each spawned GG Coder when
+  // nothing was parked, and whichever parked second closed the first — under
+  // the goals request, which answered "ACP connection closed". The process
+  // already parked may be borrowed, so it is the newcomer that goes.
+  const { Daemon } = await import("../index.js");
+  const daemon = new Daemon({ id: "test", name: "test" }, true);
+  await daemon.refreshProviders();
+  const provider = (daemon as any).providers.find((p: any) => p.manifest.id === "echo");
+  const boot = () =>
+    connectProvider({ provider, cwd: process.cwd(), onUpdate: () => {}, onPermissionRequest: () => {} });
+
+  try {
+    const first = await boot();
+    const second = await boot();
+    expect((daemon as any).stashSpare("echo", first, process.cwd())).toBe(first);
+    const inFlight = first.listSessions();
+    // The second parks into the occupied slot: it is closed, the first is kept.
+    expect((daemon as any).stashSpare("echo", second, process.cwd())).toBe(first);
+    expect((daemon as any).spares.get(`echo\u0000${process.cwd()}`)?.handle).toBe(first);
+    await expect(inFlight).resolves.toBeDefined();
+    await expect(first.listSessions()).resolves.toBeDefined();
+    await expect(second.listSessions()).rejects.toThrow();
+  } finally {
+    daemon.closeAll();
+  }
+}, 60_000);
+
 test("an unopened session crosses ACP, daemon state, and drawer formatting", async () => {
   const { Daemon } = await import("../index.js");
   const daemon = new Daemon({ id: "test", name: "test" }, true);
@@ -316,7 +376,14 @@ test("opening a project warms that project, evicting the last one", async () => 
 
     const elsewhere = await mkdtemp(join(tmpdir(), "pew2-second-"));
     await daemon.startSession("echo", elsewhere);
-    await new Promise((r) => setTimeout(r, 800));
+    // The swap happens in `stashSpare`, only once the new directory's agent has
+    // booted, so how long that takes is the machine's load, not the daemon's
+    // logic. A fixed 800ms sleep went red whenever a boot ran long. Wait for the
+    // swap, bounded, so a daemon that never re-warms still fails below.
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline && daemon.spareDirs("echo")[0] !== elsewhere) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
 
     // The new project is the warm one, and it is the only one.
     expect(daemon.spareDirs("echo")).toEqual([elsewhere]);
