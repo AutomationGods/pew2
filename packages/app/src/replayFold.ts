@@ -134,7 +134,7 @@ export function turnFromChunk(id: string, chunk: Chunk): Turn {
 export interface ReplayEvent {
   sessionId?: string;
   seq?: number;
-  payload?: any;
+  payload?: unknown;
 }
 
 interface FoldState {

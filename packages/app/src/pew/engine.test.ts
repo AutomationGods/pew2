@@ -213,6 +213,9 @@ describe("sleeping styles", () => {
     return calls;
   };
 
+  // A fixed simulation (3 sizes x every style x 900 frames) that takes ~3s
+  // alone and over 6s while the whole suite competes for the CPU, so bun's 5s
+  // default turned load into a red test. The work and assertions are unchanged.
   test("every style stays finite over a long run", () => {
     for (const S of [24, 48, 176])
       for (let s = 0; s < PEW_SLEEP_STYLES; s++) {
@@ -226,7 +229,7 @@ describe("sleeping styles", () => {
           }
         }
       }
-  });
+  }, 30_000);
 
   test("styles paint measurably differently", () => {
     for (const S of [48, 176]) {
@@ -262,8 +265,10 @@ describe("sleeping styles", () => {
 // is *defined*, so one declared further down the file is captured as
 // undefined and crashes only on a device ("talkOpen is not a function"). The
 // JS-thread tests can't see that, so the ordering is checked from the source.
-test("no worklet calls a helper declared below it", () => {
-  const raw = readFileSync(join(import.meta.dir, "engine.ts"), "utf8");
+// Per file: the engine is split in two, and an import is always evaluated
+// before the importing file defines anything, so only same-file order matters.
+test.each(["engineBody.ts", "enginePaint.ts"])("no worklet in %s calls a helper declared below it", (file) => {
+  const raw = readFileSync(join(import.meta.dir, file), "utf8");
   const src = raw
     .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
     .replace(/\/\/[^\n]*/g, "")
