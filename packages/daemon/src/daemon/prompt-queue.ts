@@ -127,6 +127,8 @@ export abstract class DaemonPromptQueue extends DaemonGg {
             });
           }
           await session.ready;
+          // A selector change sent just before this prompt lands first.
+          await session.configuring?.catch(() => {});
           if (next.goalTurn) {
             await session.handle!.prompt("", [], { goalTurn: next.goalTurn });
           } else if (next.planDecision) {

@@ -315,6 +315,55 @@ export abstract class DaemonProbes extends DaemonSpares {
   }
 
   /**
+   * Start probing at boot, so the phone's first `provider.capabilities` finds
+   * an answer in memory (or a probe already in flight) instead of a cold spawn.
+   *
+   * Only providers this machine has probed before — the ones with a probe
+   * cache file — so a fresh install does not boot every agent it can see.
+   * Never awaited by the caller: each probe reads its cache file, installs it,
+   * and boots a spare plus a revalidation in the background.
+   *
+   * @returns the providers it started, for tests.
+   */
+  async prewarm(): Promise<string[]> {
+    const started: string[] = [];
+    for (const provider of this.providers) {
+      const id = provider.manifest.id;
+      // GG Goals rides GG Coder's probe; announced-only rules apply as usual.
+      if (id === GG_GOALS_ID || !this.isEnabled(id) || !isAvailable(provider)) continue;
+      if (provider.manifest.pew.experimental && !this.includeExperimental) continue;
+      if (this.probes.has(id)) continue;
+      if (!(await readProbeCache(id, this.env))) continue;
+      void this.probeProvider(id).catch(() => {});
+      started.push(id);
+    }
+    return started.sort();
+  }
+
+  /**
+   * `provider.capabilities` as the handler answers it: never behind a spawn
+   * when anything is cached.
+   *
+   * A `refresh` used to await the reprobe (0.5–4 s for GG Coder). With a cached
+   * answer in memory or on disk it is now served at once and the reprobe runs
+   * beside it; `revalidate` pushes the fresh list as an unsolicited
+   * `provider.capabilities`, which clients fold in like their own answer.
+   *
+   * With nothing cached at all, this still waits on the first probe: an empty
+   * early answer would clear the app's history and projects for that agent
+   * (an older app has no way to read it as "still probing").
+   */
+  async capabilitiesNow(providerId: string, { refresh = false } = {}): Promise<ProviderCapabilities> {
+    if (!refresh) return this.capabilitiesFor(providerId);
+    const key = providerId === GG_GOALS_ID ? GG_PROVIDER_ID : providerId;
+    const cached = this.probes.has(key) || (await readProbeCache(key, this.env)) !== undefined;
+    if (!cached) return this.capabilitiesFor(providerId, { refresh: true });
+    const answer = await this.capabilitiesFor(providerId);
+    void this.refreshCapabilities(providerId);
+    return answer;
+  }
+
+  /**
    * Tell every client what a new conversation with this provider will now use.
    *
    * Sent whenever a provider-level preference is written — from the empty state

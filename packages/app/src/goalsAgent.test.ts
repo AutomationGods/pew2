@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ggStrips, goalDrawerRow, isGoalsProvider, suggestGoalName } from "./goalsAgent";
+import { clampGoalName, GOAL_NAME_MAX, ggStrips, goalDrawerRow, goalsEntryLabel, isGoalsProvider, launchCaption, runningGoalCount, suggestGoalName } from "./goalsAgent";
 
 describe("ggStrips", () => {
   test("never shows autopilot/checklist/plan for gg-goals", () => {
@@ -25,12 +25,13 @@ describe("ggStrips", () => {
 
 describe("suggestGoalName", () => {
   test("first words, capitalised, punctuation trimmed", () => {
-    expect(suggestGoalName("get checkout loading under one second, please")).toBe("Get checkout loading under");
-    expect(suggestGoalName("  ship the docs!\nthen more")).toBe("Ship the docs then");
+    expect(suggestGoalName("get checkout loading under one second, please")).toBe("Get checkout");
+    expect(suggestGoalName("  ship the docs!\nthen more")).toBe("Ship the docs");
   });
   test("caps length and handles empty", () => {
     expect(suggestGoalName("")).toBe("");
-    expect(suggestGoalName("a".repeat(60)).length).toBe(40);
+    expect(suggestGoalName("a".repeat(60)).length).toBe(GOAL_NAME_MAX);
+    expect(suggestGoalName("a".repeat(60), 4, 40).length).toBe(40);
   });
 });
 
@@ -47,5 +48,41 @@ describe("goalDrawerRow", () => {
   });
   test("a running goal gets the busy dot", () => {
     expect(goalDrawerRow({ ...goal, status: "running" }, "just now").row.busy).toBe(true);
+  });
+});
+
+describe("goal name limit", () => {
+  test("suggestions never exceed what GG Coder accepts", () => {
+    for (const text of ["internationalisation everywhere now", "make the onboarding flow faster", "x y z w v u"]) {
+      expect(suggestGoalName(text).length).toBeLessThanOrEqual(GOAL_NAME_MAX);
+    }
+    expect(suggestGoalName("internationalisation everywhere")).toBe("Internationalis");
+  });
+  test("clampGoalName trims and hard-cuts", () => {
+    expect(clampGoalName("  short  ")).toBe("short");
+    expect(clampGoalName("a very long goal name here")).toBe("a very long goa");
+    expect(clampGoalName("abcdefghijklmn opq")).toBe("abcdefghijklmn");
+  });
+});
+
+describe("goals entry", () => {
+  test("counts running goals; absent stays absent", () => {
+    expect(runningGoalCount(undefined)).toBeUndefined();
+    expect(runningGoalCount([{ status: "running" }, { status: "idle" }, { status: "running" }])).toBe(2);
+    expect(goalsEntryLabel(undefined)).toBe("Goals");
+    expect(goalsEntryLabel(0)).toBe("Goals");
+    expect(goalsEntryLabel(2)).toBe("Goals · 2 running");
+  });
+});
+
+describe("launchCaption", () => {
+  const base = { pending: false, ready: true, plain: false, holding: false, short: false };
+  test("each state", () => {
+    expect(launchCaption(base)).toBe("Hold anywhere here");
+    expect(launchCaption({ ...base, plain: true })).toBe("Tap to launch goal");
+    expect(launchCaption({ ...base, holding: true })).toBe("Keep holding");
+    expect(launchCaption({ ...base, short: true })).toBe("Hold until the ring fills");
+    expect(launchCaption({ ...base, ready: false, plain: true })).toBe("Name and goal first");
+    expect(launchCaption({ ...base, pending: true })).toBe("Launching");
   });
 });

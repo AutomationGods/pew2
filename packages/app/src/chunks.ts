@@ -24,9 +24,10 @@ import {
 } from "./images";
 import { readGgEvent } from "./ggReview";
 import { asRecord, asString } from "@pew2/protocol";
+import { readPlan, readSessionTitle, readToolPatch, type PlanEntry, type ToolPatch } from "./toolCalls";
 
 /** "note": a neutral marker (plan decisions) — never an error, never a retry target. */
-export type ChunkRole = "user" | "agent" | "thought" | "system" | "ken" | "note";
+export type ChunkRole = "user" | "agent" | "thought" | "system" | "ken" | "note" | "tool" | "plan";
 
 /** What an Autopilot (Ken) row says about itself, for its tint and round label. */
 export interface KenMeta {
@@ -67,15 +68,25 @@ export interface Chunk {
   images?: ChatImage[];
   /** Only on role "ken". */
   ken?: KenMeta;
+  /** Only on role "tool": a patch for the card with this toolCallId. */
+  tool?: ToolPatch;
+  /** Only on role "plan": the whole list, replacing the previous one. */
+  plan?: PlanEntry[];
+  /** Only on a "note" carrying `session_info_update`: renames the conversation, adds no row. */
+  title?: string;
 }
 
 /** True when a chunk has nothing to render — no text and no picture. */
 export function isEmptyChunk(chunk: Chunk | undefined): boolean {
-  return !chunk || (!chunk.text && !chunk.images?.length);
+  if (!chunk) return true;
+  if (chunk.tool || chunk.plan || chunk.title) return false;
+  return !chunk.text && !chunk.images?.length;
 }
 
 /** Display-only guard. Unlike chunk acceptance, whitespace has no visible row. */
-export function isEmptyTurn(turn: Chunk): boolean {
+export function isEmptyTurn(turn: { role?: string; text: string; images?: unknown[]; tool?: unknown; plan?: unknown[] }): boolean {
+  if (turn.tool) return false;
+  if (turn.plan) return turn.plan.length === 0;
   return !turn.text.trim() && !turn.images?.length;
 }
 
@@ -132,11 +143,21 @@ export function readChunk(raw: unknown): Chunk | undefined {
     return isReplayMetadata(chunk.text) ? undefined : chunk;
   }
   if (update?.sessionUpdate === "tool_call" || update?.sessionUpdate === "tool_call_update") {
-    // Tool calls are otherwise not rendered — but an image generation tool's
-    // result *is* the answer, and it arrives nowhere else. Text is deliberately
-    // left out, so a tool that produced no picture yields nothing.
+    // A card per toolCallId, merged in `applyChunk`. An image generation
+    // tool's result *is* the answer and arrives nowhere else, so its pictures
+    // ride along and render under the card.
     const images = dedupeImages(imagesFromToolCall(update));
-    return images.length > 0 ? { role: "agent", text: "", images } : undefined;
+    const tool = readToolPatch(update);
+    if (!tool) return images.length > 0 ? { role: "agent", text: "", images } : undefined;
+    return images.length > 0 ? { role: "tool", text: "", tool, images } : { role: "tool", text: "", tool };
+  }
+  if (update?.sessionUpdate === "plan") {
+    const plan = readPlan(update);
+    return plan ? { role: "plan", text: "", plan } : undefined;
+  }
+  if (update?.sessionUpdate === "session_info_update") {
+    const title = readSessionTitle(update);
+    return title ? { role: "note", text: "", title } : undefined;
   }
   if (payload?.kind === "user_message") {
     // Files the user attached. The daemon wrote them to *its* disk and echoes

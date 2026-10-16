@@ -9,7 +9,7 @@
  * most 60 times a second.
  */
 import { useCallback, useMemo } from "react";
-import { StyleSheet } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Canvas, Picture, Skia, BlurStyle, type SkCanvas, type SkPicture } from "@shopify/react-native-skia";
 import { beginFrame, blankPicture, endFrame } from "./skiaFrame";
 import { useFrameCallback, useSharedValue, type FrameInfo, type SharedValue } from "react-native-reanimated";
@@ -150,11 +150,14 @@ export function LaunchFx({ scene, color, values }: { scene: FxScene; color: stri
   }, [color]);
   const picture = useSharedValue<SkPicture>(blankPicture());
   return (
-    <>
+    // A plain View owns the touch-through: a Skia Canvas is not guaranteed
+    // to honour `pointerEvents` on every architecture, and a full-screen one
+    // that took the touch would swallow the launch pad's hold.
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
       <Ticker scene={scene} palette={palette} values={values} picture={picture} />
       <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
         <Picture picture={picture as SharedValue<SkPicture>} />
       </Canvas>
-    </>
+    </View>
   );
 }

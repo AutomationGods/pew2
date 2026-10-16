@@ -34,6 +34,11 @@ export interface GgState {
   goalsLoading: boolean;
   goalStates: Record<string, GoalState>;
   goalResults: Record<string, GoalResult>;
+  /**
+   * Goal actions applied on screen before the daemon answered, by request id.
+   * Re-applied over any list that lands meanwhile; undone on `ok: false`.
+   */
+  goalPending: Record<string, PendingGoalAction>;
   returned?: ReturnedMessages;
   plans: Record<string, PlanInfo>;
   autopilot: Record<string, AutopilotInfo>;
@@ -50,6 +55,7 @@ export const EMPTY_GG: GgState = {
   goalsLoading: false,
   goalStates: {},
   goalResults: {},
+  goalPending: {},
   plans: {},
   autopilot: {},
   checklists: {},
@@ -158,15 +164,152 @@ export function dropQueued(state: GgState, sessionId: string, id: string): GgSta
   return { ...state, queues: withKey(state.queues, sessionId, rest.length > 0 ? rest : undefined) };
 }
 
+export type GoalActionKind = "delete" | "pause" | "resume" | "update" | "critterModel";
+export interface GoalActionExtra {
+  context?: string[];
+  instructions?: string;
+  model?: string | null;
+}
+export interface PendingGoalAction {
+  goalId: string;
+  action: GoalActionKind;
+  extra: GoalActionExtra;
+  /** The goal as it was before the tap, for an undo. Absent when it was not listed. */
+  before?: GoalSummary;
+  /** Its position, so an undone delete goes back where it was. */
+  index: number;
+  /** Live goal states touched by the tap (pause/resume), as they were. */
+  statesBefore: Record<string, GoalState>;
+}
+
+/** One action applied to one listed goal. Undefined = remove it. */
+function patchGoal(goal: GoalSummary, action: GoalActionKind, extra: GoalActionExtra): GoalSummary | undefined {
+  switch (action) {
+    case "delete":
+      return undefined;
+    case "pause":
+      return { ...goal, status: "paused" };
+    case "resume":
+      return goal.status === "paused" || goal.status === "interrupted" ? { ...goal, status: "running" } : goal;
+    case "update": {
+      const byPath = new Map(goal.context.map((item) => [item.path, item]));
+      return {
+        ...goal,
+        ...(extra.context
+          ? { context: extra.context.map((path) => byPath.get(path) ?? { kind: "folder" as const, path }) }
+          : {}),
+        ...(extra.instructions !== undefined ? { instructions: extra.instructions } : {}),
+      };
+    }
+    default:
+      return goal;
+  }
+}
+
+function patchGoals(goals: readonly GoalSummary[], pending: PendingGoalAction): GoalSummary[] {
+  const next: GoalSummary[] = [];
+  for (const goal of goals) {
+    if (goal.id !== pending.goalId) next.push(goal);
+    else {
+      const patched = patchGoal(goal, pending.action, pending.extra);
+      if (patched) next.push(patched);
+    }
+  }
+  return next;
+}
+
+/**
+ * Show a goal action the moment it is tapped. The daemon's `goal.result`
+ * settles it (`applyGoalMessage`); until then a list that lands — a cached
+ * one may well predate the tap — gets the same patch re-applied.
+ */
+export function optimisticGoalAction(
+  state: GgState,
+  requestId: string,
+  goalId: string,
+  action: GoalActionKind,
+  extra: GoalActionExtra = {},
+): GgState {
+  const index = state.goals?.findIndex((goal) => goal.id === goalId) ?? -1;
+  const statesBefore: Record<string, GoalState> = {};
+  let goalStates = state.goalStates;
+  if (action === "pause" || action === "resume") {
+    const paused = action === "pause";
+    for (const [sessionId, live] of Object.entries(state.goalStates)) {
+      if (live.goalId !== goalId || live.paused === paused) continue;
+      statesBefore[sessionId] = live;
+      goalStates = { ...goalStates, [sessionId]: { ...live, paused } };
+    }
+  }
+  const pending: PendingGoalAction = {
+    goalId,
+    action,
+    extra,
+    before: index >= 0 ? state.goals?.[index] : undefined,
+    index,
+    statesBefore,
+  };
+  return {
+    ...state,
+    goals: state.goals ? patchGoals(state.goals, pending) : state.goals,
+    goalStates,
+    goalPending: { ...state.goalPending, [requestId]: pending },
+  };
+}
+
+function settleGoal(state: GgState, requestId: string, result: Record<string, unknown>): GgState {
+  const pending = state.goalPending[requestId];
+  if (!pending) return state;
+  const goalPending = withKey(state.goalPending, requestId, undefined);
+  if (result.ok === true) {
+    const answered = result.goal as GoalSummary | undefined;
+    const goals =
+      answered && state.goals && pending.action !== "delete"
+        ? state.goals.map((goal) => (goal.id === answered.id ? answered : goal))
+        : state.goals;
+    return { ...state, goals, goalPending };
+  }
+  // Refused: put back what the tap changed, and let the sheet show the error.
+  let goals = state.goals;
+  const before = pending.before;
+  if (goals && before) {
+    goals = goals.some((goal) => goal.id === before.id)
+      ? goals.map((goal) => (goal.id === before.id ? before : goal))
+      : [...goals.slice(0, pending.index), before, ...goals.slice(pending.index)];
+  }
+  let goalStates = state.goalStates;
+  for (const [sessionId, live] of Object.entries(pending.statesBefore)) {
+    const now = goalStates[sessionId];
+    if (now) goalStates = { ...goalStates, [sessionId]: { ...now, paused: live.paused } };
+  }
+  return { ...state, goals, goalStates, goalPending };
+}
+
+/**
+ * Whether asking for the list should show a spinner: only when there is
+ * nothing at all to show. A known list stays up and refreshes silently.
+ */
+export function goalsRequested(state: GgState): GgState {
+  return state.goals === undefined && !state.goalsLoading ? { ...state, goalsLoading: true } : state;
+}
+
+/** A remembered list from a previous launch; never over one the daemon sent. */
+export function withCachedGoals(state: GgState, cached: GoalSummary[] | undefined): GgState {
+  if (!cached || state.goals !== undefined) return state;
+  return { ...state, goals: cached, goalsLoading: false };
+}
+
 /** `goals`, `goal.result` and `goal.state` frames. */
 export function applyGoalMessage(state: GgState, message: { t: string } & Record<string, unknown>): GgState {
   if (message.t === "goals") {
     if (typeof message.error === "string") return { ...state, goalsLoading: false, goalsError: message.error };
     if (!Array.isArray(message.goals)) return { ...state, goalsLoading: false };
-    return { ...state, goals: message.goals as GoalSummary[], goalsLoading: false, goalsError: undefined };
+    const goals = Object.values(state.goalPending).reduce(patchGoals, message.goals as GoalSummary[]);
+    return { ...state, goals, goalsLoading: false, goalsError: undefined };
   }
   if (message.t === "goal.result" && typeof message.requestId === "string") {
-    return { ...state, goalResults: { ...state.goalResults, [message.requestId]: message as unknown as GoalResult } };
+    const settled = settleGoal(state, message.requestId, message);
+    return { ...settled, goalResults: { ...settled.goalResults, [message.requestId]: message as unknown as GoalResult } };
   }
   if (message.t === "goal.state" && isGoalState(message)) {
     return { ...state, goalStates: { ...state.goalStates, [message.sessionId]: message } };

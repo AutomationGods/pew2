@@ -32,7 +32,9 @@ import {
 } from "./preferences";
 import type { SlashCommand } from "./slashCommands";
 import { capTurns } from "./replayFold";
-import { EMPTY_GG, type GgState, type GoalSummary } from "./ggState";
+import { EMPTY_GG, withCachedGoals, type GgState, type GoalSummary } from "./ggState";
+import { historyFromSessions, withCachedProjects } from "./lastKnown";
+import { mergeAgentSessions } from "./agentHistory";
 
 export type {
   Status,
@@ -322,6 +324,54 @@ export function useDaemon(
       cancelled = true;
     };
   }, []);
+
+  // The drawer as it last stood — goals, past conversations, projects — so a
+  // cold start shows lists at once and the daemon's answers refresh them in
+  // place. See `lastKnown.ts`. Each part applies only where nothing newer is
+  // known yet, and the merge is the same one a capability reply uses.
+  useEffect(() => {
+    let cancelled = false;
+    const store = optionsRef.current.lastKnown;
+    if (!store) return;
+    void store.load().then((known) => {
+      if (cancelled) return;
+      setGg((g) => withCachedGoals(g, known.goals));
+      setState((s) => {
+        let sessions = s.sessions;
+        for (const [providerId, rows] of Object.entries(known.history)) {
+          sessions = mergeAgentSessions(sessions, providerId, rows, true);
+        }
+        const projects = withCachedProjects(s.projects, known.projects);
+        return sessions === s.sessions && projects === s.projects ? s : { ...s, sessions, projects };
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Written back at most every few seconds: `sessions` changes with every
+  // streamed chunk, and this is a memory of lists, not of transcripts.
+  const lastKnownSource = useRef({ goals: gg.goals, projects: state.projects });
+  lastKnownSource.current = { goals: gg.goals, projects: state.projects };
+  const lastKnownTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    if (lastKnownTimer.current) return;
+    lastKnownTimer.current = setTimeout(() => {
+      lastKnownTimer.current = undefined;
+      optionsRef.current.lastKnown?.save({
+        goals: lastKnownSource.current.goals,
+        projects: lastKnownSource.current.projects,
+        history: historyFromSessions(sessionsRef.current),
+      });
+    }, 3_000);
+  }, [gg.goals, state.projects, state.sessions]);
+  useEffect(
+    () => () => {
+      if (lastKnownTimer.current) clearTimeout(lastKnownTimer.current);
+    },
+    [],
+  );
 
   // Written back whenever the machine answers, so the memory is of the last
   // truth rather than the first. Keyed on the ids and their availability, not

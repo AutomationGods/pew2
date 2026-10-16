@@ -6,6 +6,7 @@
  * modules) without the 2,000 lines of socket handling around them.
  * `useDaemon.ts` re-exports every one, so existing imports keep working.
  */
+import type { PlanEntry, ToolCard } from "./toolCalls";
 import type { TurnReceipt } from "./activity";
 import type { CallNote, KenMeta } from "./chunks";
 import type { ContextUsage } from "./contextUsage";
@@ -51,8 +52,12 @@ export interface Turn {
    * on turns born with a server id, which never changes.
    */
   key?: string;
-  role: "user" | "agent" | "thought" | "system" | "ken" | "note";
+  role: "user" | "agent" | "thought" | "system" | "ken" | "note" | "tool" | "plan";
   text: string;
+  /** Only on role "tool": the card, merged by toolCallId across updates. */
+  tool?: ToolCard;
+  /** Only on role "plan": the agent's latest to-do list. */
+  plan?: PlanEntry[];
   /** Only on role "ken": the Autopilot phase and round. */
   ken?: KenMeta;
   /** Only on a "note" that files a voice call: its transcript. */

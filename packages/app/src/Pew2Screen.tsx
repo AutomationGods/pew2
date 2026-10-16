@@ -39,7 +39,11 @@ import { AttachmentSheet } from "./ui/AttachmentSheet";
 import { useAttachments } from "./ui/useAttachments";
 import { useDictation } from "./ui/useDictation";
 import { QueuedStrip } from "./ui/QueuedStrip";
-import { isGoalsProvider } from "./goalsAgent";
+import { GOALS_PROVIDER_ID, isGoalsProvider, runningGoalCount } from "./goalsAgent";
+import { startingConversation } from "./pendingSession";
+import { loadLastKnown, saveLastKnown } from "./lastKnownStore";
+
+const LAST_KNOWN_STORE = { load: loadLastKnown, save: saveLastKnown } as const;
 import { ThoughtSheet } from "./ui/ThoughtSheet";
 import { applyCommand, type SlashCommand } from "./slashCommands";
 import { CircleButton } from "./ui/controls";
@@ -88,6 +92,7 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
   const ringRef = useRef<(call: NonNullable<ReturnType<typeof parseIncoming>>) => void>(() => {});
   const daemon = useDaemon(pairing.url, pairing.deviceId, pairing.key, {
     onTurnFinished: announceTurn,
+    lastKnown: LAST_KNOWN_STORE,
     // Supplied from here because obtaining it calls into the Expo SDK, which
     // `useDaemon` deliberately stays clear of. What it buys: the daemon can
     // announce a finished turn even after iOS has suspended this app and taken
@@ -359,10 +364,14 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
   // this the screen fell back to home for that moment, with the agent's recent
   // chats as cards under a thumb that had just let go of Ken: one stray tap
   // opened some other conversation instead of the goal.
-  const launching = launchingGoal !== undefined && daemon.turns.length === 0 && !daemon.restoreTarget;
-  const inThread = daemon.turns.length > 0 || launching;
+  // A conversation started with no message is the same case: open and empty
+  // from the tap, "Starting" until the agent is up, then a ready composer.
+  const startingRow = startingConversation(daemon.startingSessionId, daemon.sessionId, daemonSessions);
+  const launchTitle = launchingGoal ?? (startingRow && !daemon.sessionId ? startingRow.title : undefined);
+  const launching = launchTitle !== undefined && daemon.turns.length === 0 && !daemon.restoreTarget;
+  const inThread = daemon.turns.length > 0 || launching || startingRow !== undefined;
   const sessionTitle = daemon.restoreTarget?.title
-    ?? (launching ? launchingGoal : undefined)
+    ?? (launching ? launchTitle : startingRow?.title)
     ?? daemonSessions.find((session) => session.id === (daemon.sessionId ?? threadKey))?.title
     ?? "New conversation";
 
@@ -749,6 +758,18 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
     deleteGoal,
     openNewGoal,
   } = goals;
+  // Goals are reachable from any agent: the drawer's peek and the home chip.
+  // "All" switches the drawer to GG Goals' full list, staying open.
+  const selectProvider = daemon.select;
+  const showAllGoals = useCallback(() => selectProvider(GOALS_PROVIDER_ID), [selectProvider]);
+  const openGoalsDrawer = useCallback(() => setMenuOpen(true), []);
+  // Goals change at the desk too: whenever the drawer opens with them on
+  // show, ask again (the last-known list paints meanwhile).
+  const hasGgCoder = daemon.hasGgCoder;
+  const online = daemon.status === "online";
+  useEffect(() => {
+    if (menuOpen && hasGgCoder && online) refreshGoals();
+  }, [menuOpen, hasGgCoder, online, refreshGoals]);
   const restoring = Boolean(daemon.restoreTarget) && daemon.loadingSession;
   useEffect(() => {
     if (!restoring) {
@@ -856,6 +877,20 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
               }
             : undefined
         }
+        goalsPeek={
+          !isGoalsProvider(activeId) && daemon.hasGgCoder
+            ? {
+                list: gg.goals,
+                loading: gg.goalsLoading,
+                error: gg.goalsError,
+                onRefresh: refreshGoals,
+                onOpen: openGoal,
+                onDelete: deleteGoal,
+                onNew: openNewGoal,
+                onAll: showAllGoals,
+              }
+            : undefined
+        }
       />
       </View>
       </GestureDetector>
@@ -906,7 +941,7 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
             turns={holdingRestore ? NO_TURNS : shownTurns}
             activeStream={daemon.activeStream}
             restore={launching ? {
-              title: launchingGoal!,
+              title: launchTitle,
               state: "starting",
               onRetry: NOOP,
             } : daemon.restoreTarget ? {
@@ -939,6 +974,11 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
             openSession={openSession}
             greeting={greeting}
             emptyReason={emptyReason}
+            goalsEntry={
+              daemon.hasGgCoder && !isGoalsProvider(active?.id)
+                ? { running: runningGoalCount(gg.goals), onPress: openGoalsDrawer }
+                : undefined
+            }
           />
         ) : null}
 

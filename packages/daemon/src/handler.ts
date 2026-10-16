@@ -14,7 +14,6 @@
 import { GG_GOALS_ID, type Daemon } from "./index.js";
 import { humanError } from "./errors.js";
 import { loadImage } from "./images.js";
-import { workspaceStatus } from "./git.js";
 import { resolveWorkspace } from "./workspace.js";
 import { suggestionRoots, discoverRepos, listDirectory } from "./workspaces.js";
 import { wire } from "@pew2/protocol";
@@ -149,7 +148,7 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         // `capabilitiesFor`, not `probeProvider`: the probe is the agent's own
         // answer, and what the app has to render is the state a new session will
         // actually open in — the agent's list at this user's remembered values.
-        const capabilities = await daemon.capabilitiesFor(providerId, {
+        const capabilities = await daemon.capabilitiesNow(providerId, {
           refresh: message.refresh === true,
         });
         reply({ t: "provider.capabilities", providerId, ...capabilities });
@@ -387,7 +386,7 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
           // Echoed so a client can drop an answer for a conversation it has
           // already navigated away from.
           sessionId: message.sessionId,
-          ...(await workspaceStatus(root)),
+          ...(await daemon.workspaceStatuses.get(root)),
         });
         break;
       }
@@ -504,7 +503,7 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
       case "goals": {
         // A missing or too-old GG Coder is an answer, not a failure.
         try {
-          reply({ t: "goals", requestId: message.requestId, goals: await daemon.listGoals() });
+          reply({ t: "goals", requestId: message.requestId, goals: await daemon.goalsNow() });
         } catch (error) {
           reply({ t: "goals", requestId: message.requestId, goals: [], error: humanError(error) });
         }

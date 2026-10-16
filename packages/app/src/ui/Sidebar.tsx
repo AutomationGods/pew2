@@ -94,6 +94,12 @@ interface SidebarProps {
    * lists cannot drift apart.
    */
   goals?: SidebarGoals;
+  /**
+   * GG Coder is on the computer but another agent is selected: a short
+   * "Goals" block (latest few, New goal, All goals) sits above that agent's
+   * projects and chats, so goals are findable without knowing to pick GG Goals.
+   */
+  goalsPeek?: SidebarGoals & { onAll: () => void };
 }
 
 export interface SidebarGoals {
@@ -297,6 +303,66 @@ function GoalsSection({ goals, activeSessionId, reduceMotion, paused }: { goals:
   );
 }
 
+/** How many goals the peek shows above another agent's chats. */
+const PEEK_GOALS = 3;
+
+/** The compact goals block: same rows as GoalsSection, latest few only. */
+function GoalsPeek({ goals, activeSessionId, reduceMotion, paused }: { goals: SidebarGoals & { onAll: () => void }; activeSessionId?: string; reduceMotion: boolean; paused: boolean }) {
+  const latest = useMemo(() => sortGoals([...(goals.list ?? [])]).slice(0, PEEK_GOALS), [goals.list]);
+  const { onOpen } = goals;
+  const open = useCallback(
+    (id: string) => {
+      const goal = latest.find((g) => g.id === id);
+      if (!goal) return;
+      haptics.tap();
+      onOpen(goal);
+    },
+    [latest, onOpen],
+  );
+  return (
+    <View style={styles.peek}>
+      <ListHead label="Goals">
+        <View style={styles.peekActions}>
+          <LedAction label="New goal" a11y="New goal" onPress={goals.onNew} />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="All goals"
+            hitSlop={touchSlop(theme.space(2))}
+            onPress={() => {
+              haptics.select();
+              goals.onAll();
+            }}
+            style={({ pressed }) => [styles.ledAction, pressed && styles.pressed]}
+          >
+            <Led>All</Led>
+          </Pressable>
+        </View>
+      </ListHead>
+      {latest.length === 0 ? (
+        <Text style={styles.empty} numberOfLines={2}>
+          {goals.list === undefined ? (goals.error ?? "Loading goals") : "No goals yet. Start one with New goal."}
+        </Text>
+      ) : (
+        latest.map((goal, index) => {
+          const { row, meta } = goalDrawerRow(goal, lastActiveLabel(goal.lastActiveMs));
+          return (
+            <SessionRow
+              key={goal.id}
+              session={row}
+              meta={meta}
+              index={index}
+              active={goal.sessionId !== undefined && goal.sessionId === activeSessionId}
+              reduceMotion={reduceMotion}
+              paused={paused}
+              onOpen={open}
+            />
+          );
+        })
+      )}
+    </View>
+  );
+}
+
 /** One agent on the rail: its Pew, a tinted tile when chosen (no edge bar: the user wants no coloured left edges anywhere), a status pixel. */
 const RailAgent = memo(function RailAgent({
   provider, selected, mark, index, paused, reduceMotion, onPress,
@@ -369,6 +435,7 @@ function SidebarView({
   historyLoading = false,
   reduceMotion = false,
   goals,
+  goalsPeek,
 }: SidebarProps) {
   const insets = useSafeAreaInsets();
   const appActive = useAppActive();
@@ -484,6 +551,7 @@ function SidebarView({
             <GoalsSection goals={goals} activeSessionId={activeSessionId} reduceMotion={reduceMotion} paused={rowsStill} />
           ) : (
             <>
+              {goalsPeek && <GoalsPeek goals={goalsPeek} activeSessionId={activeSessionId} reduceMotion={reduceMotion} paused={rowsStill} />}
               {/* Horizontal tabs instead of a dropdown: the row scrolls, so many
                   projects still fit, and the choice is visible without a tap. */}
               {projects.length > 0 && (
@@ -637,6 +705,8 @@ const styles = StyleSheet.create({
   },
   tabText: { color: theme.color.textDim, fontSize: theme.font.small },
 
+  peek: { marginBottom: theme.space(3) },
+  peekActions: { flexDirection: "row", alignItems: "center", gap: theme.space(3) },
   listHead: {
     flexDirection: "row",
     alignItems: "center",

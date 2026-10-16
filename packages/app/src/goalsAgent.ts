@@ -30,7 +30,38 @@ export function ggStrips(
 }
 
 /** A goal name suggested from the first few words of the goal text. */
-export function suggestGoalName(text: string, maxWords = 4, maxChars = 40): string {
+/** GG Coder refuses a goal name longer than this ("Keep the name to 15 characters"). */
+export const GOAL_NAME_MAX = 15;
+
+/** A name GG Coder will take: trimmed and hard-cut at `GOAL_NAME_MAX`. */
+export function clampGoalName(name: string, maxChars = GOAL_NAME_MAX): string {
+  return name.trim().slice(0, maxChars).trim();
+}
+
+/** How many goals are running right now; undefined when the list never arrived. */
+export function runningGoalCount(goals: readonly { status: string }[] | undefined): number | undefined {
+  return goals?.filter((goal) => goal.status === "running").length;
+}
+
+/** The home screen's way into goals: "Goals", or "Goals · 2 running". */
+export function goalsEntryLabel(running: number | undefined): string {
+  return running && running > 0 ? `Goals · ${running} running` : "Goals";
+}
+
+/**
+ * The launch pad's caption. `plain` is Reduce Motion or a screen reader,
+ * where the pad is tapped, not held; `short` is a hold let go too soon.
+ */
+export function launchCaption(s: { pending: boolean; ready: boolean; plain: boolean; holding: boolean; short: boolean }): string {
+  if (s.pending) return "Launching";
+  if (!s.ready) return "Name and goal first";
+  if (s.plain) return "Tap to launch goal";
+  if (s.holding) return "Keep holding";
+  if (s.short) return "Hold until the ring fills";
+  return "Hold anywhere here";
+}
+
+export function suggestGoalName(text: string, maxWords = 4, maxChars = GOAL_NAME_MAX): string {
   const words = text
     .replace(/[\r\n]+/g, " ")
     .split(" ")

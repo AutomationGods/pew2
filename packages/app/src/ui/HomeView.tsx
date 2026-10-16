@@ -9,6 +9,10 @@ import { styles } from "../appStyles";
 import type { Provider, useDaemon } from "../useDaemon";
 import type { useKeyboardLift } from "./useKeyboardLift";
 import { HomeGreeting } from "./HomeGreeting";
+import { StageButton } from "./stage/StageButton";
+import { goalsEntryLabel } from "../goalsAgent";
+import { KEN_COLOR } from "../pew/palette";
+import { theme } from "../theme";
 
 export function HomeView({
   daemon,
@@ -23,6 +27,7 @@ export function HomeView({
   openSession,
   greeting,
   emptyReason,
+  goalsEntry,
 }: {
   daemon: ReturnType<typeof useDaemon>;
   keyboard: ReturnType<typeof useKeyboardLift>;
@@ -36,6 +41,8 @@ export function HomeView({
   openSession: (id: string) => void;
   greeting: string;
   emptyReason: (providerCount: number) => string;
+  /** GG Coder is on the computer: a way into goals from any agent's home. `running` undefined = list not in yet. */
+  goalsEntry?: { running: number | undefined; onPress: () => void };
 }) {
   return (
           // Cancels half the pane's lift, so the greeting settles in the middle
@@ -101,6 +108,18 @@ export function HomeView({
                         : emptyReason(daemon.providers.length)}
                 />
               </Reanimated.View>
+              )}
+              {goalsEntry && (
+                <StageButton
+                  compact
+                  kind="secondary"
+                  color={KEN_COLOR}
+                  feel="select"
+                  label={goalsEntryLabel(goalsEntry.running)}
+                  accessibilityHint="Opens the drawer with your goals"
+                  onPress={goalsEntry.onPress}
+                  style={{ alignSelf: "center", marginTop: theme.space(4) }}
+                />
               )}
             </Pressable>
           </Reanimated.View>

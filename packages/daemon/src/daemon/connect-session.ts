@@ -200,7 +200,16 @@ export abstract class DaemonConnectSession extends DaemonPromptQueue {
       await this.awaitSpare(provider.manifest.id);
       spare = this.takeSpare(provider.manifest.id, cwd);
     }
+    if (!spare) {
+      // A refill already booting in this project (the previous open here
+      // started it) is further along than a cold spawn would be.
+      await this.awaitSpareBoot(provider.manifest.id, cwd);
+      spare = this.takeSpare(provider.manifest.id, cwd);
+    }
     if (spare) {
+      // Refill at once rather than after this session finishes connecting, so
+      // the next start or resume here finds a process already booting.
+      void this.warmSpareFor(provider, cwd);
       try {
         // `cwd` is what makes the spare usable for this conversation: the warm
         // process was booted for the probe's workspace, not this project.

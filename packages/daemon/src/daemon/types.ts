@@ -18,6 +18,8 @@ import type { wire } from "@pew2/protocol";
 export interface ActiveSession {
   handle?: AcpSessionHandle;
   log: SessionLog;
+  /** The latest `session/set_config_option` chain; a prompt waits on it. */
+  configuring?: Promise<unknown>;
   /** Which agent this belongs to, so a config change knows what to remember. */
   providerId: string;
   /**

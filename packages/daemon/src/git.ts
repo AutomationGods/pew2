@@ -60,3 +60,33 @@ export async function workspaceStatus(cwd: string): Promise<WorkspaceStatus> {
     return { cwd, folder, repo: false, uncommitted: 0 };
   }
 }
+
+/**
+ * `workspaceStatus` with a short per-directory memory.
+ *
+ * The composer asks on every project pick, session switch and reconnect, and
+ * each ask was a `git status` (~50 ms, far more in a big repo). Concurrent asks
+ * for one directory share one run, and an answer is reused for `ttlMs` — a
+ * count a few seconds old is fine for a decoration beside a text field.
+ */
+export class WorkspaceStatusCache {
+  private readonly entries = new Map<string, { at: number; status: Promise<WorkspaceStatus> }>();
+
+  constructor(
+    private readonly ttlMs = 3_000,
+    private readonly now: () => number = Date.now,
+    private readonly read: (cwd: string) => Promise<WorkspaceStatus> = workspaceStatus,
+  ) {}
+
+  get(cwd: string): Promise<WorkspaceStatus> {
+    const at = this.now();
+    const hit = this.entries.get(cwd);
+    if (hit && at - hit.at < this.ttlMs) return hit.status;
+    // Expired entries go as they are replaced; sweep the rest so a long-lived
+    // daemon does not hold every directory it was ever asked about.
+    for (const [key, entry] of this.entries) if (at - entry.at >= this.ttlMs) this.entries.delete(key);
+    const status = this.read(cwd);
+    this.entries.set(cwd, { at, status });
+    return status;
+  }
+}

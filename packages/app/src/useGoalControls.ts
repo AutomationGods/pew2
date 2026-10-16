@@ -91,7 +91,17 @@ export function useGoalControls({
   const stripsHere = ggStrips(daemon.effectiveProviderId, extensionsHere, openSessionId !== undefined);
   const [checklistOpen, setChecklistOpen] = useState(() => devSheet === "checklist");
   const openChecklist = useCallback(() => setChecklistOpen(true), []);
-  const checklistHere = openSessionId ? gg.checklists[openSessionId] : undefined;
+  // Last-known content shows at once: this session's last answer, else the
+  // last one for the same project (the checklist is the project's, and a new
+  // session there has no answer of its own yet). The open sheet refreshes it.
+  const ownChecklist = openSessionId ? gg.checklists[openSessionId] : undefined;
+  const checklistCwd = daemon.workspace?.cwd;
+  const [projectChecklists, setProjectChecklists] = useState<Record<string, NonNullable<typeof ownChecklist>>>({});
+  useEffect(() => {
+    if (!ownChecklist?.items || !checklistCwd) return;
+    setProjectChecklists((known) => (known[checklistCwd] === ownChecklist ? known : { ...known, [checklistCwd]: ownChecklist }));
+  }, [ownChecklist, checklistCwd]);
+  const checklistHere = ownChecklist ?? (checklistCwd ? projectChecklists[checklistCwd] : undefined);
   const decidePlan = useCallback(
     (generation: number, action: "accept" | "feedback" | "reject", feedback?: string) => {
       if (openSessionId) decidePlanDaemon(openSessionId, generation, action, feedback);
@@ -124,6 +134,12 @@ export function useGoalControls({
   useEffect(() => {
     if (checklistOpen && openSessionId) requestChecklist(openSessionId);
   }, [checklistOpen, openSessionId, gg.checklistNonce, requestChecklist]);
+  // Asked for in the background as soon as a conversation that offers one is
+  // open, so the chip's sheet opens on content rather than "Loading…".
+  const checklistOffered = stripsHere.checklist === true;
+  useEffect(() => {
+    if (checklistOffered && openSessionId && daemon.status === "online") requestChecklist(openSessionId);
+  }, [checklistOffered, openSessionId, daemon.status, requestChecklist]);
   const answerAsk = useCallback(
     (requestId: string, result: AskResult) => {
       if (openSessionId) answerAskDaemon(openSessionId, requestId, result);

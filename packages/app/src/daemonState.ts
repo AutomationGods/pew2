@@ -10,6 +10,8 @@ import type { ChatImage } from "./images";
 import type { SlashCommand } from "./slashCommands";
 import type { WireProject } from "./projects";
 import type { ContextUsage } from "./contextUsage";
+import type { PendingConfig } from "./configTruth";
+import type { LastKnown } from "./lastKnown";
 import type {
   Status,
   Provider,
@@ -143,6 +145,14 @@ export interface State {
   activeStream?: LiveStreamIdentity;
   restoreTarget?: RestoreTarget;
   restoreError?: string;
+  /** A pill change shown before the daemon confirmed it. See `configTruth.ts`. */
+  pendingConfig?: PendingConfig;
+  /**
+   * A conversation started with no message, shown as an open empty thread
+   * from the tap: its `pending:` key until `session.started`, then its id.
+   * Cleared by anything that leaves it.
+   */
+  startingSessionId?: string;
   /** Terminal callbacks drain after this state (and its final text) commits. */
   completedTurns?: readonly TurnFinished[];
   /** Project and git state for the session on screen. Absent until asked. */
@@ -308,6 +318,15 @@ export interface PushAddress {
 }
 
 export interface DaemonOptions {
+  /**
+   * Where the drawer's last-known lists live between launches. Injected
+   * rather than imported: the store is Expo-bound, and this hook is reached
+   * by the daemon's typecheck. See `lastKnown.ts`.
+   */
+  lastKnown?: {
+    load: () => Promise<LastKnown>;
+    save: (value: LastKnown) => void;
+  };
   /** Called once per finished turn, for any session — not just the open one. */
   onTurnFinished?: (turn: TurnFinished) => void;
   /**

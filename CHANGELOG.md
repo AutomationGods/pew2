@@ -11,6 +11,43 @@ installs them separately, and what an app and a daemon must agree on is
 
 Dates are the day the tag was cut.
 
+## Unreleased
+
+### Added
+
+- **See what the agent actually did.** Every tool call now shows as a small card
+  in the reply: what ran, on which file, and whether it worked. Tap one for its
+  input and output. Edits show the change itself, in red and green.
+- **The agent's plan is on screen.** When GG Coder works from a to-do list, the
+  phone shows it as a checklist that ticks off as it goes.
+- **Conversations take the title the agent gives them.**
+- **Goals are easy to find.** The home screen has a Goals button showing how
+  many are running, and the side drawer lists your latest goals whichever agent
+  you have picked, with New goal one tap away.
+
+### Fixed
+
+- **Launching a goal works with any name.** A name suggested from what you
+  typed could be longer than GG Coder accepts, and the launch failed. Names now
+  fit, and your computer trims one from an older phone so it launches too.
+- **Holding Ken always does something.** With Reduce Motion or VoiceOver on,
+  tapping the launch area launches the goal, and it now says so. Letting go too
+  early says "Hold until the ring fills".
+
+### Changed
+
+- **Taps answer straight away, even away from home.** Switching model or
+  thinking level, pausing or resuming a goal, opening the goals drawer, a
+  project's conversations, the checklist and starting an empty conversation all
+  show the change at once and settle when your computer replies. Lists you have
+  seen before appear immediately on a cold start.
+- **Your computer answers faster.** The goals list comes back in about 30 ms
+  instead of half a second, GG Coder is ready the moment pew2 starts rather
+  than on the first question, a fresh GG Coder is kept ready after every new
+  conversation, and project status is no longer rechecked on every request.
+- A model change made just before sending a message always applies to that
+  message over the tunnel too.
+
 ## 0.9.22 — 2026-10-14
 
 ### Fixed

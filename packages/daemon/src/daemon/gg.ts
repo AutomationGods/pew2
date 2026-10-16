@@ -8,6 +8,8 @@ import { resolve as __resolve } from "node:path";
 import { resolveWorkspace } from "../workspace.js";
 import { pushFinishedTurn } from "../push.js";
 import { wire } from "@pew2/protocol";
+import { readGoalsCache, writeGoalsCache } from "../goals-cache.js";
+import { fitGoalName } from "../goal-name.js";
 import { DaemonProjects } from "./projects.js";
 import { AUTOPILOT_PHASES, GG_GOALS_ID, GG_PROVIDER_ID, type ActiveSession } from "./types.js";
 
@@ -255,13 +257,64 @@ export abstract class DaemonGg extends DaemonProjects {
   async listGoals(): Promise<wire.GoalSummary[]> {
     const handle = await this.goalsConnection();
     const answer = await handle.extRequest<{ goals?: unknown }>("_gg/goals/list", {});
-    const goals = (Array.isArray(answer?.goals) ? answer.goals : []).flatMap((value) => {
+    const goals = DaemonGg.readGoals(answer?.goals);
+    this.goalNames = new Map(goals.map((g) => [__resolve(g.path), g.name]));
+    for (const goal of goals) await this.rememberProject(goal.path);
+    // Every authoritative list (including the one after a create or action)
+    // becomes the cached answer, so the next `goals` ask is already correct.
+    this.goalsCache = goals;
+    void writeGoalsCache(goals, this.env).catch(() => {});
+    return goals.map((goal) => this.overlayGoal(goal));
+  }
+
+  protected static readGoals(raw: unknown): wire.GoalSummary[] {
+    return (Array.isArray(raw) ? raw : []).flatMap((value) => {
       const goal = DaemonGg.readGoal(value);
       return goal ? [goal] : [];
     });
-    this.goalNames = new Map(goals.map((g) => [__resolve(g.path), g.name]));
-    for (const goal of goals) await this.rememberProject(goal.path);
-    return goals.map((goal) => this.overlayGoal(goal));
+  }
+
+  /**
+   * The goals list, stale-while-revalidate.
+   *
+   * Answered from the last list (memory, then disk) at once, with live state
+   * overlaid, while `_gg/goals/list` runs behind it; a refresh that changes
+   * anything is broadcast as an unsolicited `goals`, which clients already
+   * fold in after a create or action. Nothing cached yet means the ask waits
+   * on GG Coder, exactly as before.
+   */
+  async goalsNow(): Promise<wire.GoalSummary[]> {
+    if (!this.goalsCache) {
+      const disk = await readGoalsCache(this.env);
+      if (disk && !this.goalsCache) {
+        const goals = DaemonGg.readGoals(disk);
+        this.goalsCache = goals;
+        // Goal folders are recognisable straight after a restart too.
+        for (const g of goals) this.goalNames.set(__resolve(g.path), g.name);
+      }
+    }
+    const cached = this.goalsCache;
+    if (!cached) return this.listGoals();
+    void this.refreshGoals();
+    return cached.map((goal) => this.overlayGoal(goal));
+  }
+
+  /** One background `_gg/goals/list` at a time; broadcasts only a change. */
+  protected refreshGoals(): Promise<void> {
+    if (this.goalsRefreshing) return this.goalsRefreshing;
+    const before = JSON.stringify(this.goalsCache ?? null);
+    const run = this.listGoals()
+      .then((fresh) => {
+        if (JSON.stringify(this.goalsCache ?? null) !== before) this.send({ t: "goals", goals: fresh });
+      })
+      .catch(() => {
+        // The cached list stands; the next ask tries again.
+      })
+      .finally(() => {
+        if (this.goalsRefreshing === run) this.goalsRefreshing = undefined;
+      });
+    this.goalsRefreshing = run;
+    return run;
   }
 
   async createGoal(input: {
@@ -272,7 +325,8 @@ export abstract class DaemonGg extends DaemonProjects {
   }): Promise<wire.GoalSummary> {
     const handle = await this.goalsConnection();
     const answer = await handle.extRequest<{ goal?: unknown }>("_gg/goals/create", {
-      name: input.name,
+      // Older phone builds could send a name GG Coder refuses outright.
+      name: fitGoalName(input.name),
       goal: input.goal,
       context: input.context,
       ...(input.instructions !== undefined ? { instructions: input.instructions } : {}),
@@ -313,6 +367,8 @@ export abstract class DaemonGg extends DaemonProjects {
       if (live?.[1].working) throw new Error("GG Goals is working on this goal. Pause it first.");
       const handle = await this.goalsConnection();
       await handle.extRequest("_gg/goals/delete", { id: goalId });
+      // Gone from the cached answer at once, before any refresh lands.
+      this.goalsCache = this.goalsCache?.filter((g) => g.id !== goalId);
       return undefined;
     }
     const { sessionId, session } = this.openGoalSession(goal);

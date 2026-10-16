@@ -35,7 +35,7 @@ import { StageButton } from "./stage/StageButton";
 import { Pew } from "../pew/Pew";
 import { AgentColorProvider } from "./stage/agentColor";
 import { KEN_COLOR } from "../pew/palette";
-import { suggestGoalName } from "../goalsAgent";
+import { clampGoalName, suggestGoalName } from "../goalsAgent";
 import type { GoalResult, GoalSummary } from "../ggState";
 import type { WorkspaceBrowse } from "../useDaemon";
 import { EASE_OUT } from "./motion/ease";
@@ -170,7 +170,7 @@ function NewGoalScreen({ visible, onClose, onCreate, results, onCreated, browse,
     // with a name and goal filled in, for checking it on the simulator.
     const devStep = __DEV__ ? (process.env.EXPO_PUBLIC_DEV_GOAL_STEP as Step | undefined) : undefined;
     setStep(devStep && STEPS.includes(devStep) ? devStep : "name");
-    setName(devStep ? "Pew2 polish" : prefill ? suggestGoalName(prefill) : "");
+    setName(devStep ? "Pew2 polish" : prefill ? clampGoalName(suggestGoalName(prefill)) : "");
     setGoal(devStep ? "Make every screen feel alive." : (prefill ?? ""));
     setContext([]);
     setFiles([]);
@@ -309,7 +309,8 @@ function NewGoalScreen({ visible, onClose, onCreate, results, onCreated, browse,
     // Recorded before the reply can arrive.
     sentFiles.current = files.length;
     const id = onCreate({
-      name: name.trim(),
+      // A suggested name is set in code, past the input's maxLength.
+      name: clampGoalName(name),
       goal: goal.trim(),
       context,
       instructions: instructions.trim() || undefined,
@@ -397,7 +398,7 @@ function NewGoalScreen({ visible, onClose, onCreate, results, onCreated, browse,
         <View style={[styles.fill, { paddingBottom: insets.bottom + theme.space(4) }]}>
           <Reanimated.View entering={reduce ? undefined : FadeInDown.duration(260)} style={styles.launchHead}>
             <Text style={styles.stepTitle} accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-              {STEP_TITLE.launch}
+              {plain ? "Launch your goal" : STEP_TITLE.launch}
             </Text>
             {error ? (
               <Text style={[styles.error, styles.errorCentred]} accessibilityLiveRegion="polite">

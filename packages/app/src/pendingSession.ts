@@ -142,3 +142,20 @@ export function dropPendingSessions(
   const stale = (session: Session) => isPendingSession(session.id) && !keep.has(session.id);
   return existing.some(stale) ? existing.filter((session) => !stale(session)) : (existing as Session[]);
 }
+
+/**
+ * The empty conversation just started, when it is the one on screen: still
+ * pending (no session id yet) or adopted under the id it was given. Its row
+ * must still exist — a reconnect drops a request that can no longer be
+ * answered, and the screen must not hold onto a conversation nothing has.
+ */
+export function startingConversation(
+  startingSessionId: string | undefined,
+  sessionId: string | undefined,
+  sessions: readonly Session[],
+): Session | undefined {
+  if (!startingSessionId) return undefined;
+  const onScreen = sessionId === undefined ? isPendingSession(startingSessionId) : sessionId === startingSessionId;
+  if (!onScreen) return undefined;
+  return sessions.find((session) => session.id === startingSessionId);
+}

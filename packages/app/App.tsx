@@ -20,6 +20,7 @@ import { PairingScreen } from "./src/ui/PairingScreen";
 import { LaunchScreen } from "./src/ui/LaunchScreen";
 import { clearPairing, loadPairing, savePairing, type Pairing } from "./src/pairing";
 import { clearCachedProviders } from "./src/preferences";
+import { clearLastKnown } from "./src/lastKnownStore";
 import * as SplashScreen from "expo-splash-screen";
 import { clearCrash, readCrash } from "./src/crashLog";
 import * as Clipboard from "expo-clipboard";
@@ -181,7 +182,7 @@ function Root() {
     // The remembered agent list goes with it. It describes one specific machine,
     // so keeping it would offer the next computer agents it may not have — and
     // "Forget this computer" ought to mean it.
-    void Promise.all([clearPairing(), clearCachedProviders()])
+    void Promise.all([clearPairing(), clearCachedProviders(), clearLastKnown()])
       .catch(() => {})
       .then(() => {
         setPairing(null);

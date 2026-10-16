@@ -6,16 +6,18 @@
 import type { RefObject } from "react";
 import { mergeAgentSessions, replaceAgentSessionStub } from "./agentHistory";
 import { recordReceipt } from "./turnReceipts";
-import { adoptPendingSession } from "./pendingSession";
+import { adoptPendingSession, pendingSessionKey } from "./pendingSession";
 import { foldActivity, summariseActivity, IDLE_ACTIVITY } from "./activity";
 import { findDuplicateError } from "./errorDedup";
 import { isEmptyChunk, readChunk } from "./chunks";
 import { readAvailableCommands } from "./slashCommands";
 import { readUsage } from "./contextUsage";
-import { applyChunk, capTurns, isOptimistic } from "./replayFold";
+import { applyChunk, capTurns, isOptimistic, titledBy } from "./replayFold";
 import { readPermissionRequest } from "./permissions";
 import type { Session } from "./daemonTypes";
 import { firstUserText, type State, type TurnFinished } from "./daemonState";
+import { revertConfigChoice, settleConfigChoice } from "./configTruth";
+import { keepKnownProjects } from "./lastKnown";
 
 /** What the handler worked out before the update, read by the transition. */
 export interface MessageScope {
@@ -58,8 +60,11 @@ export function reduceMessage(prev: State, message: any, scope: MessageScope): S
       return {
         ...prev,
         sessions,
+        // An empty list from a daemon still probing must not blank a list
+        // already shown (remembered from a previous launch, or a fuller
+        // answer); absent is "said nothing".
         projects: message.providerId
-          ? { ...prev.projects, [message.providerId]: message.projects ?? [] }
+          ? keepKnownProjects(prev.projects, message.providerId, message.projects)
           : prev.projects,
         loadingSessions: pendingCapabilities.current.size > 0,
       };
@@ -153,6 +158,12 @@ export function reduceMessage(prev: State, message: any, scope: MessageScope): S
         ...prev,
         sessions,
         sessionId: message.sessionId,
+        // An empty conversation the user started stays on screen under
+        // its real id now. See `startingSessionId`.
+        startingSessionId:
+          adoptedRequestId && prev.startingSessionId === pendingSessionKey(adoptedRequestId)
+            ? message.sessionId
+            : prev.startingSessionId,
         activeProviderId: message.providerId ?? prev.activeProviderId,
         configOptions: message.configOptions ?? [],
         // Keep any prompt already rendered optimistically: it belongs to
@@ -219,7 +230,7 @@ export function reduceMessage(prev: State, message: any, scope: MessageScope): S
     case "session.config": {
       const configOptions = message.configOptions ?? [];
       return {
-        ...prev,
+        ...settleConfigChoice(prev, message.sessionId),
         configOptions,
         // Mirror into history so reopening restores the same selection.
         sessions: prev.sessions.map((session) =>
@@ -294,10 +305,7 @@ export function reduceMessage(prev: State, message: any, scope: MessageScope): S
           ? {
               ...session,
               turns: capped,
-              title:
-                session.title === "New conversation" && chunk.role === "user"
-                  ? chunk.text.trim().slice(0, 60)
-                  : session.title,
+              title: titledBy(session, chunk),
             }
           : session,
       );
@@ -322,6 +330,11 @@ export function reduceMessage(prev: State, message: any, scope: MessageScope): S
         return prev.loadingProject === undefined
           ? prev
           : { ...prev, loadingProject: undefined };
+      }
+      // A pill tap the agent refused: the pill goes back, and the error
+      // still reaches the transcript below like any other.
+      if (prev.pendingConfig && message.code === "command_failed") {
+        prev = revertConfigChoice(prev);
       }
 
       if (prev.restoreTarget && (prev.loadingSession || message.code === "resume_failed")) {

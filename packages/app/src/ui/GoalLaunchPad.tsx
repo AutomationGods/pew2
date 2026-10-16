@@ -25,6 +25,7 @@ import { EASE_OUT } from "./motion/ease";
 import { DUR } from "../motion";
 import type { LaunchFxValues } from "./LaunchFx";
 import { sounds } from "./sounds";
+import { launchCaption } from "../goalsAgent";
 import { fxKenScale, fxShake, RING_DOTS, RING_SCALE, type FxScene } from "../launchFx";
 
 /** True when the user wants motion off or uses a screen reader: offer a plain button instead of hold. */
@@ -64,6 +65,10 @@ export function LaunchPad({ ready, pending, plain, fx, onFire, onLaunch, onScene
   onScene: (scene: FxScene) => void;
 }) {
   const [holding, setHolding] = useState(false);
+  // A hold let go before the ring filled: says how, for a moment.
+  const [short, setShort] = useState(false);
+  const shortTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(shortTimer.current), []);
   const ken = useRef<View>(null);
   // Loaded as the step opens, so the first hold is not a beat late.
   useEffect(() => sounds.preload(["charge", "drain", "burst", "reveal"]), []);
@@ -99,6 +104,8 @@ export function LaunchPad({ ready, pending, plain, fx, onFire, onLaunch, onScene
       return;
     }
     measure();
+    clearTimeout(shortTimer.current);
+    setShort(false);
     setHolding(true);
     haptics.tap();
     if (!plain) sounds.charge(fx.charge.value, HOLD_MS);
@@ -113,6 +120,11 @@ export function LaunchPad({ ready, pending, plain, fx, onFire, onLaunch, onScene
   };
   const release = () => {
     if (plain || fx.burst.value >= 0) return;
+    if (holding && fx.charge.value < 1) {
+      setShort(true);
+      clearTimeout(shortTimer.current);
+      shortTimer.current = setTimeout(() => setShort(false), 1800);
+    }
     setHolding(false);
     if (fx.charge.value > 0.02) {
       sounds.stop("charge", 60);
@@ -143,14 +155,26 @@ export function LaunchPad({ ready, pending, plain, fx, onFire, onLaunch, onScene
     };
   });
 
-  const caption = pending ? "Launching" : ready ? (holding ? "Keep holding" : "Hold anywhere here") : "Name and goal first";
+  // Reduce Motion / VoiceOver: the whole pad is a tap target, not a hold.
+  const tap = () => {
+    if (!plain || pending) return;
+    if (!ready) {
+      haptics.warned();
+      return;
+    }
+    onLaunch();
+  };
+
+  const caption = launchCaption({ pending, ready, plain, holding, short });
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Hold to launch goal"
+      accessibilityLabel={plain ? "Launch goal" : "Hold to launch goal"}
       accessibilityState={{ disabled: !ready }}
+      unstable_pressDelay={0}
       onPressIn={press}
       onPressOut={release}
+      onPress={plain ? tap : undefined}
       style={[styles.pad, !ready && !pending && styles.padOff]}
     >
       <View style={styles.ring}>

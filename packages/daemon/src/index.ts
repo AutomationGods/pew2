@@ -541,8 +541,20 @@ export class Daemon extends DaemonConnectSession {
 
   async setConfigOption(sessionId: string, configId: string, value: string | boolean) {
     const session = this.require(sessionId);
-    await session.ready;
-    const updated = await session.handle!.setConfigOption(configId, value);
+    // Chained, and published on the session synchronously: a prompt sent right
+    // behind this (both transports start each frame's handling in arrival order,
+    // but neither waits for the last to finish) awaits it before reaching the
+    // agent, so it runs on the model the user just picked. Successive changes
+    // chain too — the thinking options depend on the model.
+    const previous = session.configuring ?? Promise.resolve();
+    const change = previous
+      .catch(() => {})
+      .then(async () => {
+        await session.ready;
+        return session.handle!.setConfigOption(configId, value);
+      });
+    session.configuring = change;
+    const updated = await change;
     // Only after the agent accepted it: remembering a rejected choice would
     // reapply a broken setting to every session that follows.
     void writeConfigPref(session.providerId, configId, value).catch(() => {});

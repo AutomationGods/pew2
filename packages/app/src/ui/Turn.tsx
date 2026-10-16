@@ -24,6 +24,8 @@ import { isEmptyTurn } from "../chunks";
 import { touchSlop } from "./controls";
 import { haptics } from "./haptics";
 import { Led } from "./stage/Led";
+import { ToolCallCard } from "./ToolCallCard";
+import { PlanCard } from "./PlanCard";
 import {
   adaptiveUserBubbleStyle,
   blockUserBubbleStyle,
@@ -74,6 +76,17 @@ interface TurnProps {
 function TurnView(props: TurnProps) {
   const text = props.turn.text.trimEnd();
   if (isEmptyTurn(props.turn)) return null;
+  // Cards own their own press (expand), so no copy-menu wrapper. Keyed on the
+  // tool/turn id so a recycled cell never inherits another card's open state.
+  if (props.turn.tool) {
+    return (
+      <View style={styles.agentRow}>
+        <ToolCallCard key={props.turn.tool.id} tool={props.turn.tool} />
+        <ChatImages images={props.turn.images ?? []} />
+      </View>
+    );
+  }
+  if (props.turn.plan) return <PlanCard key={props.turn.id} plan={props.turn.plan} />;
   return (
     <MessageTextContext.Provider value={text}>
       <Pressable
@@ -267,7 +280,10 @@ export const Turn = memo(
     before.turn.queued === after.turn.queued &&
     // Identity is enough: images are only ever appended as a new array, and
     // comparing sources would walk megabytes of inline base64 per render.
-    before.turn.images === after.turn.images,
+    before.turn.images === after.turn.images &&
+    // Replaced only when an update for this card/plan lands.
+    before.turn.tool === after.turn.tool &&
+    before.turn.plan === after.turn.plan,
 );
 
 /**

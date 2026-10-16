@@ -3,6 +3,7 @@
  * the context chips and the length limits. Shared by the new-goal screen and
  * goal settings, so editing a goal looks and limits exactly like writing one.
  */
+import { GOAL_NAME_MAX } from "../goalsAgent";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from "react-native";
 import Reanimated, {
@@ -23,7 +24,7 @@ import { EASE_OUT } from "./motion/ease";
 import { SPRING } from "../motion";
 import type { PendingAttachment } from "../attachments";
 
-export const NAME_MAX = 15;
+export const NAME_MAX = GOAL_NAME_MAX;
 export const GOAL_MAX = 2000;
 export const CONTEXT_MAX = 20;
 export const INSTRUCTIONS_MAX = 4000;

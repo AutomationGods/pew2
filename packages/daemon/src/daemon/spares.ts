@@ -35,20 +35,43 @@ export abstract class DaemonSpares extends DaemonState {
    * Separate from `warmProvider`, which exists to refresh capabilities and can
    * only ever warm the probe's own workspace.
    */
-  protected async warmSpareFor(provider: LoadedProvider, cwd: string): Promise<void> {
-    if (this.spares.has(DaemonSpares.spareKey(provider.manifest.id, cwd))) return;
-    try {
-      const handle = await connectProvider({
-        provider,
-        cwd,
-        onUpdate: () => {},
-        onPermissionRequest: () => {},
-      });
-      this.stashSpare(provider.manifest.id, handle, cwd);
-    } catch {
-      // Best effort. The next conversation here spawns cold, which is the
-      // behaviour this is trying to improve on rather than depend on.
-    }
+  protected warmSpareFor(provider: LoadedProvider, cwd: string): Promise<void> {
+    const key = DaemonSpares.spareKey(provider.manifest.id, cwd);
+    if (this.spares.has(key)) return Promise.resolve();
+    // A boot already under way here is the one to wait for; a second would
+    // only be closed by `stashSpare` once both land.
+    const inFlight = this.spareBoots.get(key);
+    if (inFlight) return inFlight;
+    const boot = (async () => {
+      try {
+        const handle = await connectProvider({
+          provider,
+          cwd,
+          onUpdate: () => {},
+          onPermissionRequest: () => {},
+        });
+        this.stashSpare(provider.manifest.id, handle, cwd);
+      } catch {
+        // Best effort. The next conversation here spawns cold, which is the
+        // behaviour this is trying to improve on rather than depend on.
+      }
+    })().finally(() => {
+      if (this.spareBoots.get(key) === boot) this.spareBoots.delete(key);
+    });
+    this.spareBoots.set(key, boot);
+    return boot;
+  }
+
+  /**
+   * Wait for a spare already booting in exactly this directory, if any.
+   *
+   * Back-to-back opens in one project: the first consumed the spare and started
+   * the refill, and the second arriving mid-boot used to spawn its own process
+   * cold beside it. Joining the refill is never slower than that spawn, since
+   * it started earlier.
+   */
+  protected async awaitSpareBoot(providerId: string, cwd: string): Promise<void> {
+    await this.spareBoots.get(DaemonSpares.spareKey(providerId, cwd));
   }
 
   /**

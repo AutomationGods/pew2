@@ -10,6 +10,7 @@ import type { AcpSessionHandle, AgentSession } from "../acp/connect.js";
 import { PushRegistry, pushIncomingCall } from "../push.js";
 import { CallRinger } from "../voip.js";
 import type { wire } from "@pew2/protocol";
+import { WorkspaceStatusCache } from "../git.js";
 import type { ActiveSession, ProviderCapabilities } from "./types.js";
 
 export abstract class DaemonState {
@@ -115,6 +116,16 @@ export abstract class DaemonState {
   protected static readonly MAX_SPARES_PER_PROVIDER = 1;
   /** Provider boots already in flight, shared by a tap instead of duplicated. */
   protected readonly warming = new Map<string, Promise<void>>();
+
+  /**
+   * Spare boots in flight for one project (`warmSpareFor`), keyed like
+   * `spares`. Separate from `warming`/`spareReady`, which belong to the
+   * capability probe's boot in the default workspace.
+   */
+  protected readonly spareBoots = new Map<string, Promise<void>>();
+
+  /** `workspace.status` answers, coalesced and reused for a few seconds per cwd. */
+  readonly workspaceStatuses = new WorkspaceStatusCache();
   /**
    * Resolves as soon as a boot has a usable process, well before the probe it
    * belongs to has finished listing history.
@@ -275,6 +286,12 @@ export abstract class DaemonState {
 
   /** Goal folder paths (resolved) -> goal name, from the last goals list. */
   protected goalNames = new Map<string, string>();
+
+  /** The last raw goals list (no live overlay), served stale-while-revalidate. */
+  protected goalsCache?: wire.GoalSummary[];
+
+  /** The background goals refresh, while one is in flight. */
+  protected goalsRefreshing?: Promise<void>;
 
   /** One shared boot of a GG Coder connection for goal calls, while in flight. */
   protected ggConnecting?: Promise<AcpSessionHandle>;

@@ -8,11 +8,11 @@ import { needsResume } from "./agentHistory";
 import { receiptOnOpen } from "./turnReceipts";
 import { isPendingSession, pendingSession, pendingSessionKey } from "./pendingSession";
 import { enqueue, pendingStartFor } from "./outbox";
-import { withChoice } from "./configTruth";
+import { applyConfigChoice, withChoice } from "./configTruth";
 import { beginActivity, IDLE_ACTIVITY } from "./activity";
 import { attachmentImages, toWireAttachments, type PendingAttachment, type WireAttachment } from "./attachments";
 import { capTurns } from "./replayFold";
-import { closeAsk, dropQueued } from "./ggState";
+import { closeAsk, dropQueued, goalsRequested, optimisticGoalAction } from "./ggState";
 import { decidedPlan, type PlanInfo } from "./ggReview";
 import { sendsToQueue } from "./queue";
 import type { AskResult } from "./askUser";
@@ -256,6 +256,9 @@ export function createActions(refs: ActionRefs, deps: ActionDeps) {
       ...s,
       restoreTarget: undefined,
       restoreError: undefined,
+      // No message to render, so the open empty conversation is what says
+      // the tap worked; `session.started` re-addresses it.
+      startingSessionId: turn ? undefined : pendingSessionKey(requestId),
       busy: turn !== undefined && sent,
       loadingSession: false,
       turns: turn ? capTurns([...s.turns, turn]) : s.turns,
@@ -380,7 +383,9 @@ export function createActions(refs: ActionRefs, deps: ActionDeps) {
   /** Ask for the goal list (GG Coder). */
   refreshGoals: () => {
     const requestId = `goals_${++goalCounter.current}`;
-    if (post({ t: "goals", requestId })) setGg((g) => ({ ...g, goalsLoading: true }));
+    // A list already on screen stays there and refreshes silently; the
+    // spinner is only for a drawer with nothing at all to show.
+    if (post({ t: "goals", requestId })) setGg(goalsRequested);
   },
 
   /** Create a goal. Returns the request id to watch in `goalResults`. */
@@ -397,9 +402,8 @@ export function createActions(refs: ActionRefs, deps: ActionDeps) {
   ): string | undefined => {
     const requestId = `goal_${++goalCounter.current}`;
     const sent = post({ t: "goal.action", requestId, goalId, action, ...extra });
-    if (sent && action === "delete") {
-      setGg((g) => ({ ...g, goals: g.goals?.filter((goal) => goal.id !== goalId) }));
-    }
+    // Shown at once; `goal.result` settles it, or undoes it when refused.
+    if (sent) setGg((g) => optimisticGoalAction(g, requestId, goalId, action, extra));
     return sent ? requestId : undefined;
   },
 
@@ -437,7 +441,11 @@ export function createActions(refs: ActionRefs, deps: ActionDeps) {
       }));
     }
     if (sessionId) {
-      post({ t: "session.config", sessionId, configId, value });
+      // The pill reads the session's own list, so that is what changes now;
+      // the `session.config` broadcast settles it, and a refusal undoes it.
+      if (post({ t: "session.config", sessionId, configId, value })) {
+        setState((s) => applyConfigChoice(s, sessionId, configId, value));
+      }
       return;
     }
 
@@ -501,6 +509,7 @@ export function createActions(refs: ActionRefs, deps: ActionDeps) {
         permission: undefined,
         busy: true,
         loadingSession: true,
+        startingSessionId: undefined,
         restoreTarget: target,
         restoreError: undefined,
         // Both describe the conversation being left.
@@ -558,6 +567,8 @@ export function createActions(refs: ActionRefs, deps: ActionDeps) {
       turns: s.sessions.find((row) => row.id === sessionId)?.turns ?? session.turns,
       restoreTarget: undefined,
       restoreError: undefined,
+      // Reopening the empty conversation just started keeps it open.
+      startingSessionId: s.startingSessionId === sessionId ? s.startingSessionId : undefined,
       configOptions: session.configOptions,
       // This conversation's own state, not a reset: it may still be
       // mid-turn on the desktop, and clearing the spinner here would show
@@ -679,6 +690,7 @@ export function createActions(refs: ActionRefs, deps: ActionDeps) {
       commands: [],
       busy: false,
       loadingSession: false,
+      startingSessionId: undefined,
       restoreTarget: undefined,
       restoreError: undefined,
       activity: IDLE_ACTIVITY,
@@ -735,6 +747,7 @@ export function createActions(refs: ActionRefs, deps: ActionDeps) {
       commands: [],
       busy: false,
       loadingSession: false,
+      startingSessionId: undefined,
       restoreTarget: undefined,
       restoreError: undefined,
       activity: IDLE_ACTIVITY,
