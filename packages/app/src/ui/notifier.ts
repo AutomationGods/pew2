@@ -91,14 +91,18 @@ Notifications.setNotificationHandler({
     return {
       shouldShowBanner: !suppressed,
       shouldShowList: !suppressed,
-      shouldPlaySound: false,
+      shouldPlaySound: !suppressed,
       shouldSetBadge: false,
     };
   },
 });
 
-/** Android requires a channel before anything is delivered. */
-const CHANNEL = "agent-turns";
+/** Separate Android channels are required because a channel's sound is immutable. */
+const CHANNELS = {
+  complete: { id: "agent-complete", name: "Agent completed", sound: "complete.wav" },
+  input: { id: "agent-input", name: "Agent needs input", sound: "input.wav" },
+  error: { id: "agent-error", name: "Agent errors", sound: "error.wav" },
+} as const;
 
 /**
  * Groups the reply box onto the banner. No `:` or `-`: the SDK documents those
@@ -136,12 +140,15 @@ async function registerCategory(): Promise<void> {
 
 async function request(): Promise<boolean> {
   if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync(CHANNEL, {
-      name: "Agent activity",
-      // The agent finishing is the thing the user is waiting on: it earns a
-      // heads-up banner rather than a silent tray entry.
-      importance: Notifications.AndroidImportance.HIGH,
-    });
+    await Promise.all(
+      Object.values(CHANNELS).map((channel) =>
+        Notifications.setNotificationChannelAsync(channel.id, {
+          name: channel.name,
+          importance: Notifications.AndroidImportance.HIGH,
+          sound: channel.sound,
+        }),
+      ),
+    );
   }
   // Registered before the first banner, or it is delivered without the reply
   // box. Failing here must not cost the notification itself.
@@ -190,18 +197,16 @@ export async function notify(notice: Notice): Promise<void> {
     // same turn is in flight right now, and marking this late would let it
     // through as a second banner.
     rememberAnnounced(notice.sessionId);
+    const kind = notice.kind ?? "complete";
+    const channel = CHANNELS[kind];
     await Notifications.scheduleNotificationAsync({
       content: {
         title: notice.title,
         body: notice.body,
-        // Read back on tap to open the right conversation, and on a reply to
-        // address the right agent. `local` marks who scheduled it, so the
-        // handler above can tell this banner from the daemon's push for the
-        // same turn and drop the loser rather than showing both.
-        data: { sessionId: notice.sessionId, local: true },
-        // What attaches the inline reply box.
+        data: { sessionId: notice.sessionId, local: true, kind },
         categoryIdentifier: CATEGORY,
-        ...(Platform.OS === "android" ? { channelId: CHANNEL } : null),
+        sound: channel.sound,
+        ...(Platform.OS === "android" ? { channelId: channel.id } : null),
       },
       trigger: null,
     });

@@ -21,6 +21,15 @@ Dates are the day the tag was cut.
 - **The agent's plan is on screen.** When GG Coder works from a to-do list, the
   phone shows it as a checklist that ticks off as it goes.
 - **Conversations take the title the agent gives them.**
+- **Light and dark mode, and your own accent colour.** Choose System, Light or
+  Dark and an accent in the connection settings. Dark looks exactly as before.
+- **Start a new project from your phone.** Name a folder and pew2 creates it on
+  your computer (in `~/gg-projects`, or inside a folder you browse to) and opens
+  a conversation there.
+- **Notifications say why they came.** Finished, needs your answer, and error
+  each have their own sound, and an error comes with what went wrong.
+- **`pew2 setup` keeps pew2 running in the background** on macOS, Linux and
+  Windows, and says how to undo it.
 - **Goals are easy to find.** The home screen has a Goals button showing how
   many are running, and the side drawer lists your latest goals whichever agent
   you have picked, with New goal one tap away.

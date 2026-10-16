@@ -15,9 +15,11 @@ import { theme } from "../theme";
 import { haptics } from "./haptics";
 import { Sheet, SHEET_ROW_HEIGHT, SHEET_VISIBLE_ROWS } from "./Sheet";
 import { Led } from "./stage/Led";
-import { DashedRule, dashedOutline } from "./stage/DashedRule";
+import { DashedRule } from "./stage/DashedRule";
 import { Dissolve } from "./motion/Dissolve";
 import type { SlashCommand } from "../slashCommands";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 interface CommandSheetProps {
   visible: boolean;
@@ -29,6 +31,8 @@ interface CommandSheetProps {
 const ROW_HEIGHT = SHEET_ROW_HEIGHT - theme.space(4);
 
 function CommandSheetView({ visible, commands, onSelect, onClose }: CommandSheetProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const [query, setQuery] = useState("");
   // A fresh filter every open; a stale one would hide commands for no reason.
   useEffect(() => {
@@ -48,7 +52,7 @@ function CommandSheetView({ visible, commands, onSelect, onClose }: CommandSheet
           value={query}
           onChangeText={setQuery}
           placeholder="Filter"
-          placeholderTextColor={theme.color.textDim}
+          placeholderTextColor={palette.color.textDim}
           style={styles.input}
           autoCapitalize="none"
           autoCorrect={false}
@@ -86,9 +90,9 @@ function CommandSheetView({ visible, commands, onSelect, onClose }: CommandSheet
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   filter: {
-    ...dashedOutline,
+    ...p.outline,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.space(2),
@@ -97,9 +101,9 @@ const styles = StyleSheet.create({
     minHeight: theme.size.touch,
     marginBottom: theme.space(2),
   },
-  input: { flex: 1, color: theme.color.text, fontSize: theme.font.body, paddingVertical: theme.space(2) },
+  input: { flex: 1, color: p.color.text, fontSize: theme.font.body, paddingVertical: theme.space(2) },
   row: { height: ROW_HEIGHT, justifyContent: "center" },
   pressed: { opacity: 0.6 },
-});
+}));
 
 export const CommandSheet = memo(CommandSheetView);

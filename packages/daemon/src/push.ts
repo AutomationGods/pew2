@@ -23,7 +23,7 @@
  * name and the agent's opening line. Everything else in pew2 stays sealed; this
  * one string does not, and that is the price of an instant notification.
  */
-import { noticeBody, noticeTitle, type NoticeOrigin, type wire } from "@pew2/protocol";
+import { noticeBody, noticeTitle, summarise, type NoticeOrigin, type wire } from "@pew2/protocol";
 
 /** Expo's push endpoint. Needs no credentials of ours; EAS holds those. */
 const PUSH_URL = "https://exp.host/--/api/v2/push/send";
@@ -31,19 +31,32 @@ const PUSH_URL = "https://exp.host/--/api/v2/push/send";
 /** Matches what `getExpoPushTokenAsync` returns, so junk never reaches Expo. */
 const TOKEN_SHAPE = /^Expo(nent)?PushToken\[[^\]]+\]$/;
 
-/** A phone that has asked to be told when its agents finish. */
+/** A phone that has asked to be told about agent activity. */
 interface Target {
   token: string;
   platform: "ios" | "android";
-  /** Android needs the channel named on the message, not just on the device. */
-  channelId?: string;
+  /**
+   * The app predates per-kind channels and sounds (`app.push` without
+   * `kinds`). It created only `agent-turns` and bundles no sounds, and naming a
+   * channel the device lacks means the banner is not shown at all.
+   */
+  legacy?: boolean;
 }
 
-export interface FinishedTurnPush extends NoticeOrigin {
+/** What the banner is about. Absent means `complete`. */
+export type PushKind = "complete" | "input" | "error";
+
+export interface AgentPush extends NoticeOrigin {
   sessionId: string;
+  kind?: PushKind;
+  /** Agent output for a completion, or the message of a failure. */
+  text?: string;
   /** The agent's closing message, if it ended the turn by saying something. */
   lastText?: string;
 }
+
+/** @deprecated name kept for callers; same shape as `AgentPush`. */
+export type FinishedTurnPush = AgentPush;
 
 /**
  * The Android channel the app creates in `ui/notifier.ts`.
@@ -53,7 +66,21 @@ export interface FinishedTurnPush extends NoticeOrigin {
  * the device has not created means the notification is **not shown at all**, so
  * a drift here is silent and total rather than merely untidy.
  */
-const ANDROID_CHANNEL = "agent-turns";
+const ANDROID_CHANNELS: Record<PushKind, string> = {
+  complete: "agent-complete",
+  input: "agent-input",
+  error: "agent-error",
+};
+
+/** The one channel an app from before per-kind sounds created. */
+const LEGACY_ANDROID_CHANNEL = "agent-turns";
+
+/** Bundled by the app (`assets/notifications`, expo-notifications `sounds`). */
+const SOUNDS: Record<PushKind, string> = {
+  complete: "complete.wav",
+  input: "input.wav",
+  error: "error.wav",
+};
 
 /** The notification category the app registers, which carries the reply box. */
 const CATEGORY = "agentTurn";
@@ -73,13 +100,14 @@ export class PushRegistry {
    *
    * @returns whether the token was accepted, so a caller can log the refusal.
    */
-  register(deviceId: string, token: string, platform: "ios" | "android"): boolean {
+  register(
+    deviceId: string,
+    token: string,
+    platform: "ios" | "android",
+    options: { legacy?: boolean } = {},
+  ): boolean {
     if (!TOKEN_SHAPE.test(token)) return false;
-    this.targets.set(deviceId, {
-      token,
-      platform,
-      ...(platform === "android" ? { channelId: ANDROID_CHANNEL } : null),
-    });
+    this.targets.set(deviceId, { token, platform, ...(options.legacy ? { legacy: true } : null) });
     return true;
   }
 
@@ -114,8 +142,8 @@ interface ExpoMessage {
   to: string;
   title: string;
   body: string;
-  data: { sessionId: string };
-  sound: "default";
+  data: { sessionId: string; kind: PushKind };
+  sound: string;
   categoryId: string;
   channelId?: string;
   /**
@@ -137,9 +165,15 @@ interface ExpoTicket {
   details?: { error?: string };
 }
 
-export function pushMessages(registry: PushRegistry, turn: FinishedTurnPush): ExpoMessage[] {
-  const title = noticeTitle(turn);
-  const body = noticeBody(turn.lastText);
+export function pushMessages(registry: PushRegistry, notice: AgentPush): ExpoMessage[] {
+  const kind = notice.kind ?? "complete";
+  const title = noticeTitle(notice);
+  const body =
+    kind === "input"
+      ? (summarise(notice.text) ?? "Your agent needs an answer.")
+      : kind === "error"
+        ? (summarise(notice.text) ?? "The agent hit an error.")
+        : noticeBody(notice.text ?? notice.lastText);
   return registry.list().map((target) => ({
     to: target.token,
     title,
@@ -147,10 +181,12 @@ export function pushMessages(registry: PushRegistry, turn: FinishedTurnPush): Ex
     // Read back on tap to open the right conversation, and on an inline reply
     // to address the right agent. Matches the local banner's payload exactly,
     // so the app's existing handling works unchanged for both.
-    data: { sessionId: turn.sessionId },
-    sound: "default",
+    data: { sessionId: notice.sessionId, kind },
+    sound: target.legacy ? "default" : SOUNDS[kind],
     categoryId: CATEGORY,
-    ...(target.channelId ? { channelId: target.channelId } : null),
+    ...(target.platform === "android"
+      ? { channelId: target.legacy ? LEGACY_ANDROID_CHANNEL : ANDROID_CHANNELS[kind] }
+      : null),
     priority: "high",
   }));
 }
@@ -188,12 +224,12 @@ export function applyTickets(
  * phone and read the reply is noise. A dropped push degrades to what the app did
  * before: the banner appears when the socket reconnects.
  */
-export async function pushFinishedTurn(
+export async function pushAgentNotice(
   registry: PushRegistry,
-  turn: FinishedTurnPush,
+  notice: AgentPush,
 ): Promise<void> {
   if (registry.size === 0) return;
-  const messages = pushMessages(registry, turn);
+  const messages = pushMessages(registry, notice);
   try {
     const response = await fetch(PUSH_URL, {
       method: "POST",
@@ -213,6 +249,11 @@ export async function pushFinishedTurn(
     // Offline desktop, DNS failure, Expo outage. Nothing here is worth
     // interrupting the session that just finished successfully.
   }
+}
+
+/** A finished turn: `pushAgentNotice` with `kind: "complete"`. */
+export function pushFinishedTurn(registry: PushRegistry, turn: AgentPush): Promise<void> {
+  return pushAgentNotice(registry, { ...turn, kind: "complete" });
 }
 
 /** Android channel for incoming calls; the app creates it with max importance. */

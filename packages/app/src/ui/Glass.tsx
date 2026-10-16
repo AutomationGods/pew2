@@ -19,6 +19,7 @@ import { GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
 import { theme } from "../theme";
 import { useReduceTransparency } from "./accessibilityState";
+import { usePalette } from "./appearance";
 
 interface GlassProps {
   children: ReactNode;
@@ -92,8 +93,9 @@ export function Glass({
   interactive = false,
   tier = "control",
 }: GlassProps) {
+  const palette = usePalette();
   const reduceTransparency = useReduceTransparency();
-  const { fill, rim } = theme.glass[tier];
+  const { fill, rim } = palette.glass[tier];
 
   if (hasNativeLiquidGlass() && !reduceTransparency) {
     // Nothing is layered over the material, deliberately. `regular` is Apple's

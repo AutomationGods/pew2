@@ -27,8 +27,8 @@
  * inert. A cut between two cards of different heights reads as the sheet
  * flinching; this reads as one object with somewhere to go.
  */
-import { memo, useEffect, useMemo, useState } from "react";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { StageScroll } from "./stage/StageScroll";
 import Animated, {
   interpolate,
@@ -42,23 +42,26 @@ import { Dissolve } from "./motion/Dissolve";
 import { PressScale } from "./stage/PressScale";
 import { StageButton } from "./stage/StageButton";
 import { Led } from "./stage/Led";
-import { dashedOutline } from "./stage/DashedRule";
 import { useAgentColor } from "./stage/agentColor";
 import { withAlpha } from "../motion";
 import { touchSlop } from "./controls";
-import { Sheet, SHEET_ROW_HEIGHT, SHEET_VISIBLE_ROWS, sheetCardStyle } from "./Sheet";
+import { Sheet, SHEET_ROW_HEIGHT, SHEET_VISIBLE_ROWS } from "./Sheet";
 import { haptics } from "./haptics";
 import { useReducedMotion } from "./useReducedMotion";
 import type { Project } from "../projects";
 
-/** The grid's last cell when browsing is possible. */
+/** The grid's last cells: browse the disk, and make a new project. */
 const BROWSE_CELL = { browse: true } as const;
-type GridCell = Project | typeof BROWSE_CELL;
+const CREATE_CELL = { create: true } as const;
+type GridCell = Project | typeof BROWSE_CELL | typeof CREATE_CELL;
 const isBrowse = (cell: GridCell): cell is typeof BROWSE_CELL => "browse" in cell;
-const cellKey = (cell: GridCell) => (isBrowse(cell) ? "browse" : cell.path);
+const isCreate = (cell: GridCell): cell is typeof CREATE_CELL => "create" in cell;
+const cellKey = (cell: GridCell) => (isBrowse(cell) ? "browse" : isCreate(cell) ? "create" : cell.path);
 /** How many cards stagger in on open (about one screenful). */
 const STAGGERED = 8;
-import type { WorkspaceBrowse } from "../useDaemon";
+import type { WorkspaceBrowse, WorkspaceCreate, WorkspaceCreateErrorCode } from "../useDaemon";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /**
  * The push, tuned to sit just inside `Sheet`'s own arrival.
@@ -95,6 +98,15 @@ interface NewChatSheetProps {
   browse?: WorkspaceBrowse;
   /** Ask the desktop for a listing. No path means "suggest repositories". */
   onBrowse?: (path?: string) => void;
+  /**
+   * Make a new folder on the desktop: under `parent`, or the daemon's default
+   * root when absent. Only passed when the daemon advertises it.
+   */
+  onCreate?: (name: string, parent?: string) => string | undefined;
+  /** The latest create request and its answer. */
+  createState?: WorkspaceCreate;
+  /** Forget a finished attempt, so a reopened sheet starts clean. */
+  onCreateReset?: () => void;
 }
 
 function NewChatSheetView({
@@ -106,7 +118,12 @@ function NewChatSheetView({
   onClose,
   browse,
   onBrowse,
+  onCreate,
+  createState,
+  onCreateReset,
 }: NewChatSheetProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const [step, setStep] = useState(STEP_CHOICES);
   const reduceMotion = useReducedMotion();
 
@@ -120,7 +137,29 @@ function NewChatSheetView({
   // Offered whenever the daemon can answer — including, especially, when there
   // are no projects at all. That is the cold start this exists for.
   const canBrowse = onBrowse !== undefined;
-  const cells = useMemo<GridCell[]>(() => (canBrowse ? [...projects, BROWSE_CELL] : projects), [projects, canBrowse]);
+  const canCreate = canBrowse && onCreate !== undefined;
+  const cells = useMemo<GridCell[]>(
+    () => [...projects, ...(canBrowse ? [BROWSE_CELL] : []), ...(canCreate ? [CREATE_CELL] : [])],
+    [projects, canBrowse, canCreate],
+  );
+  // The "new project" form, shown above the browser. `naming` is where it goes:
+  // `undefined` for the daemon's default root, else the browsed directory.
+  const [naming, setNaming] = useState<{ parent?: string } | undefined>(undefined);
+  const [projectName, setProjectName] = useState("");
+  // Only the request this sheet sent may start a chat when it lands.
+  const submitted = useRef<string | undefined>(undefined);
+  const creating = createState?.status === "creating" && createState.requestId === submitted.current;
+  const createError =
+    createState?.status === "failed" && createState.requestId === submitted.current && createState.error
+      ? createErrorMessage(createState.error)
+      : undefined;
+  useEffect(() => {
+    if (!visible || createState?.status !== "created" || !createState.path) return;
+    if (createState.requestId !== submitted.current) return;
+    submitted.current = undefined;
+    haptics.finished();
+    onStart(createState.path);
+  }, [visible, createState, onStart]);
 
   // One value for one movement. This used to be two — a native-driven spring
   // for the slide and a JS-driven one for the height, because legacy `Animated`
@@ -160,8 +199,14 @@ function NewChatSheetView({
     if (!visible) return;
     setStep(STEP_CHOICES);
     setPicked(undefined);
+    setNaming(undefined);
+    setProjectName("");
+    submitted.current = undefined;
+    onCreateReset?.();
     setNow(Date.now());
     step$.value = STEP_CHOICES;
+    // Reset only on the way in; the callback's identity is not a reason to.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, step$]);
 
   // The browser adds an "up" row below a root, which occupies list space and is
@@ -170,7 +215,7 @@ function NewChatSheetView({
   // The refusal notice occupies a row of its own, above a list that is still
   // showing where the user was.
   const browseRows =
-    browseEntries.length + (browse?.parent ? 1 : 0) + (browse?.refused ? 1 : 0);
+    browseEntries.length + (browse?.parent ? 1 : 0) + (browse?.refused ? 1 : 0) + (canCreate && !naming ? 1 : 0);
   const browseHeight = Math.max(1, Math.min(browseRows, SHEET_VISIBLE_ROWS)) * SHEET_ROW_HEIGHT;
   const browseScrolls = browseRows > SHEET_VISIBLE_ROWS;
 
@@ -234,6 +279,19 @@ function NewChatSheetView({
     goTo(STEP_LIST);
   };
 
+  /** From the grid: a new project in the default root, browser underneath. */
+  const openCreate = () => {
+    onBrowse?.(browse?.path);
+    setNaming({});
+    goTo(STEP_LIST);
+  };
+
+  const submitCreate = () => {
+    const name = projectName.trim();
+    if (!onCreate || !naming || !name || creating) return;
+    submitted.current = onCreate(name, naming.parent);
+  };
+
   return (
     <Sheet
       visible={visible}
@@ -241,7 +299,9 @@ function NewChatSheetView({
       title={
         step === STEP_CHOICES
           ? "Where should it work?"
-          : // Named while browsing: several levels down, "Browse" alone gives
+          : naming
+            ? "New project"
+            : // Named while browsing: several levels down, "Browse" alone gives
             // no clue where you are, and the path is too long for a title.
             browse?.path
             ? folderOf(browse.path)
@@ -285,15 +345,27 @@ function NewChatSheetView({
             windowSize={5}
             removeClippedSubviews
             renderItem={({ item, index }) =>
-              isBrowse(item) ? (
+              isCreate(item) ? (
+                <Dissolve kind="row" delay={Math.min(index, STAGGERED) * 50} style={styles.cell}>
+                  <PressScale
+                    feel="tap"
+                    onPress={openCreate}
+                    accessibilityLabel="Create a new project on your computer"
+                    style={[styles.tile, palette.outline, styles.browseCard]}
+                  >
+                    <Ionicons name="add-outline" size={18} color={palette.color.textDim} />
+                    <Text style={styles.cardTitle} numberOfLines={1}>New project</Text>
+                  </PressScale>
+                </Dissolve>
+              ) : isBrowse(item) ? (
                 <Dissolve kind="row" delay={Math.min(index, STAGGERED) * 50} style={styles.cell}>
                   <PressScale
                     feel="tap"
                     onPress={openBrowser}
                     accessibilityLabel="Browse folders on your computer"
-                    style={[styles.tile, dashedOutline, styles.browseCard]}
+                    style={[styles.tile, palette.outline, styles.browseCard]}
                   >
-                    <Ionicons name="search-outline" size={18} color={theme.color.textDim} />
+                    <Ionicons name="search-outline" size={18} color={palette.color.textDim} />
                     <Text style={styles.cardTitle} numberOfLines={1}>Browse folders</Text>
                   </PressScale>
                 </Dissolve>
@@ -332,12 +404,59 @@ function NewChatSheetView({
               secondHeight.value = event.nativeEvent.layout.height;
             }}
           >
+            {naming && (
+              <View style={styles.createForm}>
+                <Led tone="dim" size={theme.stage.ledSize}>
+                  {`In ${naming.parent ? folderOf(naming.parent) : "gg-projects"}`}
+                </Led>
+                <View style={[styles.nameField, palette.outline]}>
+                  <Ionicons name="folder-outline" size={18} color={palette.color.glyph} />
+                  <TextInput
+                    style={styles.nameInput}
+                    value={projectName}
+                    onChangeText={setProjectName}
+                    placeholder="Folder name"
+                    placeholderTextColor={palette.color.placeholder}
+                    accessibilityLabel="New project folder name"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                    maxLength={255}
+                    editable={!creating}
+                    onSubmitEditing={submitCreate}
+                  />
+                </View>
+                {!!createError && (
+                  <Text style={styles.createError} accessibilityLiveRegion="polite">
+                    {createError}
+                  </Text>
+                )}
+                <StageButton
+                  feel="sent"
+                  label={creating ? "Creating…" : "Create and start"}
+                  disabled={creating || projectName.trim().length === 0}
+                  onPress={submitCreate}
+                />
+              </View>
+            )}
             {(
               <StageScroll
                 rail="inside"
                 style={{ height: browseHeight }}
                 bounces={browseScrolls}
               >
+                {canCreate && !naming && (
+                  <Row
+                    icon="add-outline"
+                    title="New folder here"
+                    detail={browse?.path ? folderOf(browse.path) : "gg-projects"}
+                    divided
+                    onPress={() => {
+                      haptics.tap();
+                      setNaming({ parent: browse?.path });
+                    }}
+                  />
+                )}
                 {browse?.parent !== undefined && (
                   <Row
                     icon="arrow-up-outline"
@@ -390,6 +509,26 @@ function NewChatSheetView({
   );
 }
 
+/** What a failed create means, in the user's terms. */
+function createErrorMessage(code: WorkspaceCreateErrorCode): string {
+  switch (code) {
+    case "invalid_name":
+      return "Use one folder name without slashes.";
+    case "invalid_parent":
+      return "That location can't be used. Pick another folder.";
+    case "already_exists":
+      return "A folder with this name already exists.";
+    case "registration_failed":
+      return "The folder could not be saved. Nothing was overwritten.";
+    case "offline":
+      return "Reconnect to your computer and try again.";
+    case "timeout":
+      return "Your computer did not answer. Try again.";
+    default:
+      return "Your computer could not create this folder.";
+  }
+}
+
 /** Three rows of cards, then the grid scrolls. */
 const GRID_MAX_HEIGHT = 3 * 84 + 2 * 8;
 
@@ -428,6 +567,8 @@ function ProjectCard({
   now: number;
   onPick: (path: string) => void;
 }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const onPress = () => onPick(project.path);
   const ago = agoLabel(project.updatedAt, now);
   const meta = [
@@ -447,7 +588,7 @@ function ProjectCard({
         accessibilityLabel={[project.name, ...meta].join(", ")}
         style={[
           styles.tile,
-          selected ? { borderWidth: 1, borderColor: agent, backgroundColor: withAlpha(agent, 0.1) } : dashedOutline,
+          selected ? { borderWidth: 1, borderColor: agent, backgroundColor: withAlpha(agent, 0.1) } : palette.outline,
         ]}
       >
         <Text style={styles.cardTitle} numberOfLines={1}>
@@ -496,6 +637,8 @@ function Row({
   onDescend?: () => void;
   descendLabel?: string;
 }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
     <View style={[styles.rowShell, divided && styles.rowDivided]}>
       <Pressable
@@ -505,7 +648,7 @@ function Row({
         onPress={onPress}
         style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       >
-        <Ionicons name={icon} size={20} color={theme.color.glyph} />
+        <Ionicons name={icon} size={20} color={palette.color.glyph} />
         <View style={styles.rowText}>
           <Text style={styles.rowTitle} numberOfLines={1}>
             {title}
@@ -518,7 +661,7 @@ function Row({
         </View>
         {/* Only on the row that leads somewhere: it promises a next step, and on
             a row that starts a chat it would be a lie. */}
-        {chevron && <Ionicons name="chevron-forward" size={16} color={theme.color.textDim} />}
+        {chevron && <Ionicons name="chevron-forward" size={16} color={palette.color.textDim} />}
       </Pressable>
       {onDescend && (
         <Pressable
@@ -529,15 +672,15 @@ function Row({
           // is visibly a second control rather than part of the row.
           style={({ pressed }) => [styles.rowDescend, pressed && styles.rowPressed]}
         >
-          <Ionicons name="chevron-forward" size={16} color={theme.color.textDim} />
+          <Ionicons name="chevron-forward" size={16} color={palette.color.textDim} />
         </Pressable>
       )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  card: sheetCardStyle,
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
+  card: p.sheetCard,
   // The first pane stays in normal flow so the card has a natural height on the
   // frame it first appears, before any measurement has come back. Everything
   // after it is measured and driven by the card's animated height instead.
@@ -558,7 +701,7 @@ const styles = StyleSheet.create({
   rowShell: { flexDirection: "row", alignItems: "center" },
   rowDivided: {
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.color.border,
+    borderBottomColor: p.color.border,
   },
   rowDescend: {
     height: SHEET_ROW_HEIGHT,
@@ -573,7 +716,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space(4),
   },
   emptyText: {
-    color: theme.color.textDim,
+    color: p.color.textDim,
     fontSize: theme.font.small,
     textAlign: "center",
   },
@@ -582,14 +725,25 @@ const styles = StyleSheet.create({
   cell: { flex: 1, maxWidth: "50%" },
   tile: { height: 84, borderRadius: theme.radius.md, padding: theme.space(3), justifyContent: "space-between" },
   browseCard: { justifyContent: "center", gap: theme.space(1) },
-  cardTitle: { color: theme.color.text, fontSize: theme.font.body },
+  createForm: { gap: theme.space(2), padding: theme.space(4), paddingBottom: theme.space(3) },
+  nameField: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.space(2),
+    height: SHEET_ROW_HEIGHT,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.space(3),
+  },
+  nameInput: { flex: 1, color: p.color.text, fontSize: theme.font.body, padding: 0 },
+  createError: { color: p.color.danger, fontSize: theme.font.small },
+  cardTitle: { color: p.color.text, fontSize: theme.font.body },
   // On the sheet's rail, like the cards above it.
   primary: { marginTop: theme.space(3), marginBottom: theme.space(4) },
-  rowPressed: { backgroundColor: theme.glass.fillPressed },
+  rowPressed: { backgroundColor: p.glass.fillPressed },
   // Yields to the chevron rather than pushing it off the row.
   rowText: { flex: 1 },
-  rowTitle: { color: theme.color.text, fontSize: theme.font.body },
-  rowDetail: { color: theme.color.textDim, fontSize: theme.font.tiny },
-});
+  rowTitle: { color: p.color.text, fontSize: theme.font.body },
+  rowDetail: { color: p.color.textDim, fontSize: theme.font.tiny },
+}));
 
 export const NewChatSheet = memo(NewChatSheetView);

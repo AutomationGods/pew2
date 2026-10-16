@@ -1,8 +1,8 @@
 /**
  * Canvas-coloured, progressively blurred cover for the nav and composer rails.
  *
- * The tint always uses the conversation canvas's exact RGB (`theme.color.bg`,
- * derived via `canvasOverlay(theme.color.bg)`, never a literal: a literal went
+ * The tint always uses the conversation canvas's exact RGB (`palette.color.bg`,
+ * derived via `canvasOverlay(palette.color.bg)`, never a literal: a literal went
  * stale when the palette moved and both rails turned lighter than the thread).
  *
  * Under the tint sits ONE `BlurView` per rail, masked by a vertical gradient
@@ -25,15 +25,18 @@ import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { memo, useEffect, useState } from "react";
 import { AccessibilityInfo, Platform, StyleSheet, View } from "react-native";
-import { theme } from "../theme";
 import { canvasOverlay } from "./canvasOverlay";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 // The exact canvas RGB: the flat fallback's colour.
-const CANVAS_OVERLAY = canvasOverlay(theme.color.bg);
-// Lighter tint over the blur, so the blur is visible but text stays quiet.
 const BLUR_TINT_ALPHA = 0.55;
-const BLUR_TINT = canvasOverlay(theme.color.bg, BLUR_TINT_ALPHA);
-const CLEAR = canvasOverlay(theme.color.bg, 0);
+const overlays = themedStyles((p: Palette) => ({
+  canvas: canvasOverlay(p.color.bg),
+  tint: canvasOverlay(p.color.bg, BLUR_TINT_ALPHA),
+  clear: canvasOverlay(p.color.bg, 0),
+}));
+// Lighter tint over the blur, so the blur is visible but text stays quiet.
 // How far past `height` the cover fades out into the content.
 const FADE = 28;
 const BLUR_INTENSITY = 40;
@@ -71,7 +74,8 @@ function CanvasCoverView({ height, edge = "top", style }: CanvasCoverProps) {
   const start = edge === "top" ? { x: 0, y: 0 } : { x: 0, y: 1 };
   const end = edge === "top" ? { x: 0, y: 1 } : { x: 0, y: 0 };
   const locations = [0, solid, 1] as const;
-  const tint = blur ? BLUR_TINT : CANVAS_OVERLAY;
+  const cover = overlays(usePalette());
+  const tint = blur ? cover.tint : cover.canvas;
 
   return (
     <View
@@ -96,7 +100,7 @@ function CanvasCoverView({ height, edge = "top", style }: CanvasCoverProps) {
       )}
       <LinearGradient
         style={StyleSheet.absoluteFill}
-        colors={[tint, tint, CLEAR]}
+        colors={[tint, tint, cover.clear]}
         locations={locations}
         start={start}
         end={end}

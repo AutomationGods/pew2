@@ -19,10 +19,10 @@ import Animated, {
   withSequence,
   withTiming,
 } from "react-native-reanimated";
-import { theme } from "../../theme";
 import { withAlpha } from "../../motion";
 import { useReducedMotion } from "../useReducedMotion";
 import { useAgentColor } from "./agentColor";
+import { usePalette } from "../appearance";
 
 export type PixelKind = "live" | "attention" | "unread";
 
@@ -45,11 +45,12 @@ function Bar({ delay, color, still }: { delay: number; color: string; still: boo
 }
 
 function PixelView({ kind, color, paused = false }: { kind: PixelKind; color?: string; paused?: boolean }) {
+  const palette = usePalette();
   const agent = useAgentColor();
   // Paused (off screen, a closed drawer) holds still exactly like Reduce
   // Motion: the state still reads, nothing animates where nobody can see it.
   const reduce = useReducedMotion() || paused;
-  const ink = color ?? (kind === "attention" ? theme.color.attention : agent);
+  const ink = color ?? (kind === "attention" ? palette.color.attention : agent);
   const blink = useSharedValue(1);
   useEffect(() => {
     if (kind !== "attention" || reduce) {

@@ -17,6 +17,8 @@ import { Pew } from "../pew/Pew";
 import { Led } from "./stage/Led";
 import { DashedRule } from "./stage/DashedRule";
 import { useAgentColor } from "./stage/agentColor";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 const RING = 168;
 const DOTS = 48;
@@ -34,6 +36,8 @@ function tokens(n: number): string {
 }
 
 function DotRing({ fraction, color, visible }: { fraction: number; color: string; visible: boolean }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduce = useReducedMotion();
   const lit = useSharedValue(0);
   useEffect(() => {
@@ -57,7 +61,7 @@ function DotRing({ fraction, color, visible }: { fraction: number; color: string
     <Canvas style={styles.canvas}>
       <Group>
         {POINTS.map((pt, i) => (
-          <Circle key={i} cx={pt.x} cy={pt.y} r={DOT_R} color={theme.stage.dash} />
+          <Circle key={i} cx={pt.x} cy={pt.y} r={DOT_R} color={palette.stage.dash} />
         ))}
       </Group>
       <Path path={path} color={color} />
@@ -79,6 +83,8 @@ export function ContextDetailsSheet({
   inConversation?: boolean;
   onClose: () => void;
 }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const agent = useAgentColor();
   const details = contextDetails(workspace, usage);
   const percent = usage ? usagePercent(usage) : undefined;
@@ -91,7 +97,7 @@ export function ContextDetailsSheet({
     : inConversation
       ? "Appears once the agent reports it."
       : "Starts with your first message.";
-  const ringColor = percent !== undefined && percent > 85 ? theme.color.danger : agent;
+  const ringColor = percent !== undefined && percent > 85 ? palette.color.danger : agent;
   return (
     <Sheet visible={visible} label="Context" title={title} onClose={onClose} dismissLabel="Close context details">
       <StageScroll style={styles.scroll} contentContainerStyle={styles.content}>
@@ -126,14 +132,14 @@ export function ContextDetailsSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   scroll: { maxHeight: SHEET_CARD_HEIGHT + theme.space(20) },
   content: { gap: theme.space(4), paddingBottom: theme.space(2) },
-  sub: { color: theme.color.textDim, fontSize: theme.font.small, lineHeight: 18 },
+  sub: { color: p.color.textDim, fontSize: theme.font.small, lineHeight: 18 },
   ring: { alignSelf: "center", width: RING, height: RING },
   canvas: { width: RING, height: RING },
   center: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
   rows: { gap: theme.space(3) },
   row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.space(4) },
-  value: { flexShrink: 1, color: theme.color.text, fontSize: theme.font.body, textAlign: "right" },
-});
+  value: { flexShrink: 1, color: p.color.text, fontSize: theme.font.body, textAlign: "right" },
+}));

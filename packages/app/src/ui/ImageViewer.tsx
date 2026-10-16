@@ -24,6 +24,8 @@ import { haptics } from "./haptics";
 import { saveImageToDevice, shareImage, type SaveResult } from "./imageSaver";
 import type { ChatImage as ChatImageModel } from "../images";
 import { SPRING } from "../motion";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /** The picture's file name for the top bar, from its path; data URIs have none. */
 function fileName(image: ChatImageModel): string {
@@ -69,6 +71,8 @@ export function ImageViewer({
   visible: boolean;
   onClose: () => void;
 }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState<"save" | "share" | undefined>(undefined);
   const [feedback, setFeedback] = useState<Feedback | undefined>(undefined);
@@ -143,7 +147,7 @@ export function ImageViewer({
             <Text
               style={[
                 styles.feedback,
-                feedback.tone === "bad" && { color: theme.color.danger },
+                feedback.tone === "bad" && { color: palette.color.danger },
               ]}
             >
               {feedback.text}
@@ -164,9 +168,9 @@ export function ImageViewer({
               ]}
             >
               {busy === "save" ? (
-                <ActivityIndicator color={theme.color.text} size="small" />
+                <ActivityIndicator color={palette.color.text} size="small" />
               ) : (
-                <Ionicons name="download-outline" size={18} color={theme.color.text} />
+                <Ionicons name="download-outline" size={18} color={palette.color.text} />
               )}
               <Text style={styles.buttonText}>Save</Text>
             </Pressable>
@@ -178,14 +182,14 @@ export function ImageViewer({
               onPress={() => void run("share")}
               style={({ pressed }) => [
                 styles.button,
-                pressed && { backgroundColor: theme.color.surfacePressed },
+                pressed && { backgroundColor: palette.color.surfacePressed },
                 !!busy && { opacity: 0.6 },
               ]}
             >
               {busy === "share" ? (
-                <ActivityIndicator color={theme.color.text} size="small" />
+                <ActivityIndicator color={palette.color.text} size="small" />
               ) : (
-                <Ionicons name="share-outline" size={18} color={theme.color.text} />
+                <Ionicons name="share-outline" size={18} color={palette.color.text} />
               )}
               <Text style={styles.buttonText}>Share</Text>
             </Pressable>
@@ -198,6 +202,8 @@ export function ImageViewer({
 
 /** iOS supplies native pinch/pan; a tap is a single-pointer zoom alternative. */
 function ViewerImage({ uri, alt }: { uri: string; alt: string }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const scroll = useRef<ScrollView>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [zoomed, setZoomed] = useState(false);
@@ -286,7 +292,7 @@ function ViewerImage({ uri, alt }: { uri: string; alt: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   backdrop: {
     flex: 1,
     // Nearly opaque rather than a tint: a picture judged against the
@@ -302,7 +308,7 @@ const styles = StyleSheet.create({
     paddingBottom: theme.space(2),
     zIndex: 2,
   },
-  title: { flex: 1, color: theme.color.text, fontSize: theme.font.body, fontWeight: "600" },
+  title: { flex: 1, color: p.color.text, fontSize: theme.font.body, fontWeight: "600" },
   hint: { alignSelf: "center", marginTop: theme.space(2) },
   closeButton: {
     width: theme.size.control,
@@ -310,7 +316,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.pill,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: theme.color.surfaceRaised,
+    backgroundColor: p.color.surfaceRaised,
   },
   image: { flex: 1, width: "100%" },
   imageFill: { flex: 1, width: "100%" },
@@ -321,7 +327,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   feedback: {
-    color: theme.color.textDim,
+    color: p.color.textDim,
     fontSize: theme.font.small,
     textAlign: "center",
   },
@@ -333,8 +339,8 @@ const styles = StyleSheet.create({
     minHeight: theme.size.control,
     paddingHorizontal: theme.space(5),
     borderRadius: theme.radius.pill,
-    backgroundColor: theme.color.surface,
+    backgroundColor: p.color.surface,
   },
-  primaryButton: { backgroundColor: theme.color.surfaceRaised },
-  buttonText: { color: theme.color.text, fontSize: theme.font.body, fontWeight: "600" },
-});
+  primaryButton: { backgroundColor: p.color.surfaceRaised },
+  buttonText: { color: p.color.text, fontSize: theme.font.body, fontWeight: "600" },
+}));

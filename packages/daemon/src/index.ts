@@ -17,7 +17,7 @@ import { folderName } from "./workspace.js";
 import { writeConfigPref } from "./config-prefs.js";
 import { writeSessionPrefs } from "./session-prefs.js";
 import type { wire } from "@pew2/protocol";
-import { pushFinishedTurn } from "./push.js";
+import { pushAgentNotice, pushFinishedTurn } from "./push.js";
 import { saveVoiceCall, voiceCallNote } from "./voice-calls.js";
 import { desktopAskId, kenNeedsYou, readDesktopState, SHARED_DESKTOP_PROVIDER } from "./acp/sharedDesktop.js";
 import { DaemonConnectSession } from "./daemon/connect-session.js";
@@ -77,6 +77,11 @@ export class Daemon extends DaemonConnectSession {
     void this.calls
       .ringForInput({ sessionId, providerId: session?.providerId, folder: notice.folder, agentName: notice.agentName })
       .catch(() => {});
+  }
+
+  /** Push an "input" banner for a session waiting on the user. Never throws. */
+  pushInputNeeded(sessionId: string): void {
+    void pushAgentNotice(this.pushTargets, { sessionId, kind: "input", ...this.sessionNotice(sessionId) });
   }
 
   /** Record a pending update and tell every client at once. */
@@ -307,6 +312,7 @@ export class Daemon extends DaemonConnectSession {
       // the daemon, so this is how it learns that an id it still shows died
       // with the previous process and must be resumed, not prompted.
       activeSessions: [...this.sessions.keys()],
+      canCreateWorkspace: true,
       // Omitted entirely when there is nothing to say, so an app that has been
       // told once does not keep a stale banner when the update lands.
       update: this.updateStatus,

@@ -17,9 +17,10 @@
  */
 import { Alert, Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from "react-native";
 import * as WebBrowser from "expo-web-browser";
-import { theme } from "../theme";
 import { touchSlop } from "./controls";
 import { haptics } from "./haptics";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /**
  * Where the policy is published. The same URL as `privacyPolicyUrl` in
@@ -33,6 +34,8 @@ const PRIVACY_URL = "https://github.com/KenKaiii/pew2/blob/main/PRIVACY.md";
 const LINE = 19;
 
 export function PrivacyLink({ style }: { style?: StyleProp<ViewStyle> }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
     <Pressable
       accessibilityRole="link"
@@ -41,8 +44,8 @@ export function PrivacyLink({ style }: { style?: StyleProp<ViewStyle> }) {
       onPress={() => {
         haptics.tap();
         void WebBrowser.openBrowserAsync(PRIVACY_URL, {
-          toolbarColor: theme.color.surface,
-          controlsColor: theme.color.accent,
+          toolbarColor: palette.color.surface,
+          controlsColor: palette.color.accent,
         }).catch(() => {
           Alert.alert(
             "Could not open privacy policy",
@@ -57,12 +60,12 @@ export function PrivacyLink({ style }: { style?: StyleProp<ViewStyle> }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   text: {
-    color: theme.color.textFaint,
+    color: p.color.textFaint,
     fontSize: 13,
     lineHeight: LINE,
     textDecorationLine: "underline",
   },
   pressed: { opacity: 0.6 },
-});
+}));

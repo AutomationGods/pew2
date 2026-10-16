@@ -9,6 +9,48 @@ import { DashedRule } from "./stage/DashedRule";
 import { Dissolve } from "./motion/Dissolve";
 import { theme } from "../theme";
 import type { Status } from "../useDaemon";
+import { useAppearance } from "./appearance";
+import { ACCENT_NAMES, APPEARANCE_MODES, type AccentName, type AppearanceMode } from "../appearancePreference";
+import { ACCENTS } from "../palette";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
+
+const MODE_LABEL: Record<AppearanceMode, string> = { system: "System", light: "Light", dark: "Dark" };
+const ACCENT_LABEL: Record<AccentName, string> = { periwinkle: "Periwinkle", coral: "Coral", ocean: "Ocean", violet: "Violet", mint: "Mint" };
+
+/** Mode and accent, applied the moment they are tapped and persisted beside the other preferences. */
+function AppearanceRows({ index }: { index: number }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
+  const { preference, setPreference } = useAppearance();
+  const c = palette.color;
+  return <>
+    <Row label="Mode" index={index}>
+      <View style={styles.segments} accessibilityRole="radiogroup">
+        {APPEARANCE_MODES.map((mode) => {
+          const on = preference.mode === mode;
+          return <Pressable key={mode} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={`${MODE_LABEL[mode]} appearance`}
+            onPress={() => { haptics.tap(); setPreference({ ...preference, mode }); }}
+            style={[styles.segment, on ? { borderStyle: "solid", borderColor: c.accent, backgroundColor: c.accentSoft } : { borderColor: palette.stage.dash }]}>
+            <Text style={[styles.segmentText, { color: on ? c.text : c.textDim }]}>{MODE_LABEL[mode]}</Text>
+          </Pressable>;
+        })}
+      </View>
+    </Row>
+    <Row label="Accent" index={index + 1}>
+      <View style={styles.segments} accessibilityRole="radiogroup">
+        {ACCENT_NAMES.map((accent) => {
+          const on = preference.accent === accent;
+          return <Pressable key={accent} hitSlop={4} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={`${ACCENT_LABEL[accent]} accent`}
+            onPress={() => { haptics.tap(); setPreference({ ...preference, accent }); }}
+            style={[styles.swatchRing, { borderColor: on ? c.text : "transparent" }]}>
+            <View style={[styles.swatch, { backgroundColor: ACCENTS[palette.scheme][accent].accent }]} />
+          </Pressable>;
+        })}
+      </View>
+    </Row>
+  </>;
+}
 
 // Same fixed desktop install/update instruction formerly shown in Sidebar.
 const INSTALL_COMMAND = "curl -fsSL https://raw.githubusercontent.com/KenKaiii/pew2/main/install.sh | sh";
@@ -28,6 +70,8 @@ interface Props {
 const PHASE = { online: "paired", connecting: "pairing", offline: "waiting" } satisfies Record<Status, HandshakePhase>;
 
 function Row({ label, index, children }: { label: string; index: number; children: React.ReactNode }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
     <Dissolve kind="row" delay={index * 50}>
       <View style={styles.row}>
@@ -39,6 +83,8 @@ function Row({ label, index, children }: { label: string; index: number; childre
 }
 
 export function ConnectionSheet({ visible, machineLabel, machineRemote, status, update, onClose, onUnpair }: Props) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const { height: screenHeight } = useWindowDimensions();
   const title = status === "online" ? "Connected" : status === "connecting" ? "Connecting…" : "Offline";
   return <Sheet visible={visible} label="Connection" labelTone={status === "connecting" ? "attention" : "agent"} pewMood={status === "online" ? "happy" : status === "connecting" ? "thinking" : "sleepy"} title={title} onClose={onClose} dismissLabel="Close connection details">
@@ -47,10 +93,10 @@ export function ConnectionSheet({ visible, machineLabel, machineRemote, status, 
       <DashedRule />
       <Row label="Computer" index={0}>
         {/* The computer's own name, never the relay's address. */}
-        <Text selectable numberOfLines={1} style={styles.value}>{machineLabel}</Text>
+        <Text selectable numberOfLines={1} style={[styles.value, { color: palette.color.text }]}>{machineLabel}</Text>
       </Row>
       <Row label="Route" index={1}>
-        <Text numberOfLines={1} style={styles.value}>{machineRemote ? "Relay, sealed end to end" : "Same network"}</Text>
+        <Text numberOfLines={1} style={[styles.value, { color: palette.color.text }]}>{machineRemote ? "Relay, sealed end to end" : "Same network"}</Text>
       </Row>
       {update && <Row label="pew2" index={2}>
         {update.automatic ? <Text numberOfLines={1} style={styles.value}>Updating to {update.latest}…</Text> :
@@ -60,6 +106,8 @@ export function ConnectionSheet({ visible, machineLabel, machineRemote, status, 
           }}><Text numberOfLines={1} style={[styles.value, styles.link]}>{update.latest} available · How</Text></Pressable>}
       </Row>}
       <DashedRule />
+      <AppearanceRows index={3} />
+      <DashedRule />
       <PrivacyLink />
       <Pressable accessibilityRole="button" accessibilityLabel={`Forget pairing with ${machineLabel}`} style={styles.action} onPress={() => {
         haptics.warned();
@@ -67,19 +115,24 @@ export function ConnectionSheet({ visible, machineLabel, machineRemote, status, 
           { text: "Cancel", style: "cancel" },
           { text: "Forget", style: "destructive", onPress: () => { haptics.warned(); onUnpair(); } },
         ]);
-      }}><Text style={styles.destructive}>Unpair this computer</Text></Pressable>
+      }}><Text style={[styles.destructive, { color: palette.color.danger }]}>Unpair this computer</Text></Pressable>
     </StageScroll>
   </Sheet>;
 }
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   // Everything shows at once (it is short); only a very small screen scrolls.
   scroll: { flexGrow: 0 },
   content: { paddingBottom: theme.sectionGap, gap: theme.space(3) },
   row: { flexDirection: "row", alignItems: "center", minHeight: theme.size.touch },
   rowLabel: { width: LABEL_WIDTH },
   rowValue: { flex: 1, alignItems: "flex-end" },
-  value: { color: theme.color.text, fontSize: theme.font.body, lineHeight: theme.line.body, textAlign: "right" },
-  link: { color: theme.color.accent },
+  value: { color: p.color.text, fontSize: theme.font.body, lineHeight: theme.line.body, textAlign: "right" },
+  link: { color: p.color.accent },
   action: { minHeight: theme.size.touch, justifyContent: "center" },
-  destructive: { color: theme.color.danger, fontSize: theme.font.body, lineHeight: 20 },
-});
+  segments: { flexDirection: "row", gap: theme.space(1.5), justifyContent: "flex-end" },
+  segment: { minHeight: 32, paddingHorizontal: theme.space(2.5), justifyContent: "center", borderRadius: theme.radius.pill, borderWidth: 1, borderStyle: "dashed" },
+  segmentText: { fontSize: theme.font.small },
+  swatchRing: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, alignItems: "center", justifyContent: "center" },
+  swatch: { width: 22, height: 22, borderRadius: 11 },
+  destructive: { color: p.color.danger, fontSize: theme.font.body, lineHeight: 20 },
+}));

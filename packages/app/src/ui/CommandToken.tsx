@@ -14,6 +14,7 @@
 import { memo } from "react";
 import { theme } from "../theme";
 import { ShimmerText } from "./ShimmerText";
+import { usePalette } from "./appearance";
 
 /** One pass of the sheen. Unhurried, so it reads as a sheen and not a flicker. */
 const SWEEP_DURATION = 1800;
@@ -31,12 +32,13 @@ function CommandTokenView({
   size?: number;
   lineHeight?: number;
 }) {
+  const palette = usePalette();
   return (
     <ShimmerText
       text={text}
       // The accent is what the token is when the sheen is elsewhere, and its
       // whole appearance under reduced motion.
-      color={theme.color.accent}
+      color={palette.color.accent}
       size={size}
       lineHeight={lineHeight}
       weight="700"

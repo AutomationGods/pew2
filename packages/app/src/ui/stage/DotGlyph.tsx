@@ -8,6 +8,7 @@
 import { createContext, memo, useContext, useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { theme } from "../../theme";
+import { usePalette } from "../appearance";
 
 export type DotGlyphName =
   | "menu"
@@ -59,9 +60,10 @@ interface DotGlyphProps {
 }
 
 function DotGlyphView({ name, size = 18, color, lit }: DotGlyphProps) {
+  const palette = usePalette();
   const litColor = useContext(GlyphLitContext);
   const on = lit ?? litColor !== null;
-  const ink = color ?? (on && litColor ? litColor : theme.color.text);
+  const ink = color ?? (on && litColor ? litColor : palette.color.text);
   const dots = useMemo(() => parse(BITMAPS[name]), [name]);
   const step = size / GRID;
   const dot = step * 0.78;

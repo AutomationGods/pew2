@@ -39,8 +39,26 @@ module.exports = () => {
   const owner = process.env.EAS_OWNER ?? local.owner;
   const projectId = process.env.EAS_PROJECT_ID ?? local.projectId;
 
+  const notificationSounds = [
+    "./assets/notifications/complete.wav",
+    "./assets/notifications/input.wav",
+    "./assets/notifications/error.wav",
+  ];
+
   return {
     ...expo,
+    plugins: [
+      // Bundled so the daemon's push can name a per-kind sound (complete /
+      // input / error); Android channels' sounds are fixed at creation.
+      ...(expo.plugins ?? []).map((plugin) =>
+        plugin === "expo-notifications"
+          ? ["expo-notifications", { sounds: notificationSounds }]
+          : plugin,
+      ),
+      // Pairing uses a device-local ws:// URL; Android 9+ blocks it unless the
+      // native manifest opts in. Session payloads remain encrypted by pew2.
+      ["expo-build-properties", { android: { usesCleartextTraffic: true } }],
+    ],
     // Android push (and so Android ringing) needs Firebase. The file is
     // per-account like eas-project.json, so it is picked up when present and
     // never committed (root .gitignore).

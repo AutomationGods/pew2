@@ -31,6 +31,8 @@ import { Handshake, type HandshakePhase } from "./Handshake";
 import { Led } from "./stage/Led";
 import { StageButton } from "./stage/StageButton";
 import { pewInk } from "../pew/palette";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /** pew2's own coral: nobody has picked an agent yet. */
 const PEW_CORAL = pewInk();
@@ -44,6 +46,8 @@ interface Props {
 }
 
 export function PairingScreen({ onPaired, onBack, notice }: Props) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -128,7 +132,7 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
       <View style={[styles.nav, { paddingTop: insets.top + theme.headerInset }]}>
         {onBack ? (
           <CircleButton label="Back" size={theme.size.touch} onPress={onBack}>
-            <Ionicons name="chevron-back" size={24} color={theme.color.text} />
+            <Ionicons name="chevron-back" size={24} color={palette.color.text} />
           </CircleButton>
         ) : null}
       </View>
@@ -205,7 +209,7 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
             if (phase === "failed") setPhase("waiting");
           }}
           placeholder="ws://192.168.0.10:8787/?token=[REDACTED]"
-          placeholderTextColor={theme.color.placeholder}
+          placeholderTextColor={palette.color.placeholder}
           autoCapitalize="none"
           autoCorrect={false}
           autoComplete="off"
@@ -229,7 +233,7 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
         style={styles.connectGap}
         disabled={busy || !draft.trim()}
         label={busy ? "Connecting…" : "Connect"}
-        icon={busy ? <ActivityIndicator color={theme.color.text} /> : undefined}
+        icon={busy ? <ActivityIndicator color={palette.color.text} /> : undefined}
         onPress={() => void submit()}
       />
 
@@ -258,9 +262,9 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   connectGap: { marginTop: theme.space(3) },
-  root: { flex: 1, backgroundColor: theme.color.bg },
+  root: { flex: 1, backgroundColor: p.color.bg },
   scroll: { flex: 1 },
   content: { paddingHorizontal: theme.gutter, paddingTop: theme.space(4) },
   nav: {
@@ -273,20 +277,20 @@ const styles = StyleSheet.create({
     paddingLeft: theme.gutter,
   },
   status: { marginTop: theme.space(4), marginBottom: theme.space(2) },
-  reason: { color: theme.color.danger, fontSize: 14, lineHeight: 20, marginBottom: theme.space(2) },
+  reason: { color: p.color.danger, fontSize: 14, lineHeight: 20, marginBottom: theme.space(2) },
   body: {
-    color: theme.color.textDim,
+    color: p.color.textDim,
     fontSize: 15,
     lineHeight: 22,
     marginBottom: theme.space(6),
   },
   commandText: {
-    color: theme.color.accent,
+    color: p.color.accent,
     fontSize: 14,
     fontFamily: "Menlo",
   },
   notice: {
-    color: theme.color.accent,
+    color: p.color.accent,
     fontSize: 14,
     lineHeight: 20,
     marginBottom: theme.space(5),
@@ -299,31 +303,31 @@ const styles = StyleSheet.create({
     paddingVertical: theme.space(4),
     minHeight: 52,
   },
-  scanText: { color: theme.color.text, fontSize: 16, fontWeight: "600" },
+  scanText: { color: p.color.text, fontSize: 16, fontWeight: "600" },
   orRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.space(3),
     marginVertical: theme.space(5),
   },
-  rule: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: theme.color.border },
-  orText: { color: theme.color.textFaint, fontSize: 13 },
+  rule: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: p.color.border },
+  orText: { color: p.color.textFaint, fontSize: 13 },
   label: {
-    color: theme.color.textFaint,
+    color: p.color.textFaint,
     fontSize: 13,
     marginBottom: theme.space(2),
   },
   inputShell: { minHeight: 50 },
   input: {
     minHeight: 50,
-    color: theme.color.text,
+    color: p.color.text,
     fontSize: 15,
     paddingHorizontal: theme.space(4),
     paddingVertical: theme.space(3.5),
   },
-  inputError: { borderWidth: 1, borderColor: theme.color.danger },
+  inputError: { borderWidth: 1, borderColor: p.color.danger },
   error: {
-    color: theme.color.danger,
+    color: p.color.danger,
     fontSize: 14,
     lineHeight: 20,
     marginTop: theme.space(2),
@@ -335,14 +339,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minHeight: 52,
   },
-  buttonPressed: { backgroundColor: theme.glass.fillPressed },
+  buttonPressed: { backgroundColor: p.glass.fillPressed },
   buttonDisabled: { opacity: 0.48 },
-  buttonText: { color: theme.color.text, fontSize: 16, fontWeight: "700" },
+  buttonText: { color: p.color.text, fontSize: 16, fontWeight: "700" },
   footnote: {
-    color: theme.color.textFaint,
+    color: p.color.textFaint,
     fontSize: 13,
     lineHeight: 19,
     marginTop: theme.space(8),
   },
   privacy: { marginTop: theme.space(4), alignSelf: "flex-start" },
-});
+}));

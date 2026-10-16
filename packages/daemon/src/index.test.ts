@@ -39,9 +39,12 @@ function daemonWithCollector() {
  * up the reply to the tap that set it — so "has it happened yet" is the only
  * honest question, and a fixed sleep is a flake waiting for a slow disk.
  */
-async function until<T>(read: () => T | undefined, what: string): Promise<T> {
+async function until<T>(
+  read: () => T | undefined | Promise<T | undefined>,
+  what: string,
+): Promise<T> {
   for (let attempt = 0; attempt < 200; attempt++) {
-    const value = read();
+    const value = await read();
     if (value !== undefined) return value;
     await Bun.sleep(1);
   }
@@ -132,6 +135,7 @@ test("the provider announcement names the sessions this process still holds", ()
 
   const announce: any = sent.findLast((m: any) => m.t === "providers");
   expect(announce.activeSessions).toEqual(["alive-1", "alive-2"]);
+  expect(announce.canCreateWorkspace).toBe(true);
 
   // A closed session drops out, which is the whole signal: the app must not go
   // on prompting an id the daemon no longer has.
@@ -233,7 +237,10 @@ test("a selector set on a session is remembered against that conversation", asyn
   try {
     await daemon.setConfigOption("live", "__acp_model", "sonnet");
     // Written in the background, deliberately: the reply must not wait on disk.
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await until(async () => {
+      const prefs = await readSessionPrefs("test", "agent-3");
+      return prefs.__acp_model === "sonnet" ? true : undefined;
+    }, "session preferences to reach disk");
 
     // Both records: the provider one seeds the *next* new conversation, the
     // session one survives leaving this conversation and coming back.

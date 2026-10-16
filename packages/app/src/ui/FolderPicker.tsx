@@ -12,12 +12,13 @@ import Reanimated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withSpri
 import { useReducedMotion } from "./useReducedMotion";
 import { Led } from "./stage/Led";
 import { StageButton } from "./stage/StageButton";
-import { dashedOutline } from "./stage/DashedRule";
 import { useAgentColor } from "./stage/agentColor";
 import { SPRING, withAlpha } from "../motion";
 import { theme } from "../theme";
 import { haptics } from "./haptics";
 import type { WorkspaceBrowse } from "../useDaemon";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 interface FolderPickerProps {
   chosen: readonly string[];
@@ -44,6 +45,8 @@ function lastSegment(path: string): string {
 }
 
 function FolderPickerView({ chosen, onChange, browse, onBrowse: browseTo, online = true, allowFiles = false, hideChosen = false, onPickPhoneFiles }: FolderPickerProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   // Phone files replace browsing the computer for files: the computer listing
   // is then folders only.
   const desktopFiles = allowFiles && !onPickPhoneFiles;
@@ -96,7 +99,7 @@ function FolderPickerView({ chosen, onChange, browse, onBrowse: browseTo, online
       {!hideChosen && chosen.map((path) => (
         <Dissolve key={path}>
         <View style={styles.chosen}>
-          <Ionicons name={isFile(path) ? "document-text" : "folder"} size={14} color={theme.color.accent} />
+          <Ionicons name={isFile(path) ? "document-text" : "folder"} size={14} color={palette.color.accent} />
           <Text style={styles.chosenText} numberOfLines={1}>
             {path}
           </Text>
@@ -106,7 +109,7 @@ function FolderPickerView({ chosen, onChange, browse, onBrowse: browseTo, online
             hitSlop={12}
             onPress={() => onChange(chosen.filter((entry) => entry !== path))}
           >
-            <Ionicons name="close" size={14} color={theme.color.textDim} />
+            <Ionicons name="close" size={14} color={palette.color.textDim} />
           </Pressable>
         </View>
         </Dissolve>
@@ -135,7 +138,7 @@ function FolderPickerView({ chosen, onChange, browse, onBrowse: browseTo, online
                 }}
                 style={styles.mode}
               >
-                <Ionicons name={m === "files" ? "document-text-outline" : "folder-outline"} size={13} color={mode === m ? agent : theme.color.textDim} />
+                <Ionicons name={m === "files" ? "document-text-outline" : "folder-outline"} size={13} color={mode === m ? agent : palette.color.textDim} />
                 <Led tone={mode === m ? "agent" : "dim"}>{m === "files" ? "Files" : "Folders"}</Led>
               </Pressable>
             ))}
@@ -150,7 +153,7 @@ function FolderPickerView({ chosen, onChange, browse, onBrowse: browseTo, online
               compact
               style={styles.phoneBtn}
               label="Choose files"
-              icon={<Ionicons name="document-attach-outline" size={15} color={theme.color.text} />}
+              icon={<Ionicons name="document-attach-outline" size={15} color={palette.color.text} />}
               onPress={onPickPhoneFiles}
             />
           </Reanimated.View>
@@ -159,7 +162,7 @@ function FolderPickerView({ chosen, onChange, browse, onBrowse: browseTo, online
         <View style={styles.bar}>
           {browse?.parent !== undefined ? (
             <Pressable accessibilityRole="button" accessibilityLabel="Up one folder" hitSlop={10} onPress={() => onBrowse(browse.parent)}>
-              <Ionicons name="arrow-up" size={16} color={theme.color.textDim} />
+              <Ionicons name="arrow-up" size={16} color={palette.color.textDim} />
             </Pressable>
           ) : null}
           <View style={styles.where}>
@@ -187,7 +190,7 @@ function FolderPickerView({ chosen, onChange, browse, onBrowse: browseTo, online
                 <Ionicons
                   name={entry.kind === "file" ? "document-text-outline" : entry.repo ? "git-branch-outline" : "folder-outline"}
                   size={15}
-                  color={theme.color.textDim}
+                  color={palette.color.textDim}
                 />
                 <Text style={styles.entryName} numberOfLines={1}>
                   {entry.name}
@@ -203,7 +206,7 @@ function FolderPickerView({ chosen, onChange, browse, onBrowse: browseTo, online
                 <Ionicons
                   name={chosen.includes(entry.path) ? "checkmark-circle" : "add-circle-outline"}
                   size={20}
-                  color={chosen.includes(entry.path) ? agent : theme.color.textDim}
+                  color={chosen.includes(entry.path) ? agent : palette.color.textDim}
                 />
               </Pressable>
             </View>
@@ -228,15 +231,15 @@ function FolderPickerView({ chosen, onChange, browse, onBrowse: browseTo, online
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   host: { gap: theme.space(2) },
   chosen: { flexDirection: "row", alignItems: "center", gap: theme.space(2), paddingHorizontal: theme.space(1) },
-  chosenText: { flex: 1, color: theme.color.text, fontSize: theme.font.small },
+  chosenText: { flex: 1, color: p.color.text, fontSize: theme.font.small },
   // Stage: a dashed box on the strip colour, like the other pickers' panels.
   browser: {
-    ...dashedOutline,
+    ...p.outline,
     borderRadius: theme.radius.lg,
-    backgroundColor: theme.stage.strip,
+    backgroundColor: p.stage.strip,
     overflow: "hidden",
   },
   bar: {
@@ -264,12 +267,12 @@ const styles = StyleSheet.create({
   modeThumb: { position: "absolute", top: 4, bottom: 4, left: 0, borderRadius: theme.radius.md, borderWidth: 1 },
   list: { maxHeight: 200 },
   entry: { flexDirection: "row", alignItems: "center", paddingHorizontal: theme.space(3), minHeight: theme.size.touch },
-  entryRule: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.stage.dash },
+  entryRule: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: p.stage.dash },
   entryMain: { flex: 1, flexDirection: "row", alignItems: "center", gap: theme.space(2) },
-  entryName: { flex: 1, color: theme.color.text, fontSize: theme.font.body },
+  entryName: { flex: 1, color: p.color.text, fontSize: theme.font.body },
   empty: { padding: theme.space(3) },
   phone: { alignItems: "center", gap: theme.space(2), paddingVertical: theme.space(6), paddingHorizontal: theme.space(4) },
   phoneBtn: { alignSelf: "stretch", marginTop: theme.space(2) },
-});
+}));
 
 export const FolderPicker = memo(FolderPickerView);

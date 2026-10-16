@@ -29,6 +29,8 @@ import { receiptLength, receiptParts, receiptText, revealParts, tickerLine, tick
 import type { TurnReceipt } from "../activity";
 import { useStatusRowHeight } from "./useStatusRowHeight";
 import { SPRING } from "../motion";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 const PEW = 40;
 const STRIP = 34;
@@ -38,6 +40,8 @@ const SPEED = 40;
 type Props = TickerInput & { color?: string };
 
 function Marquee({ text, tone, color }: { text: string; tone: "agent" | "attention" | "dim"; color?: string }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduced = useReducedMotion();
   const [box, setBox] = useState(0);
   const [width, setWidth] = useState(0);
@@ -69,6 +73,8 @@ function Marquee({ text, tone, color }: { text: string; tone: "agent" | "attenti
 }
 
 function TickerView({ color, ...input }: Props) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduced = useReducedMotion();
   const line = tickerLine(input);
   const steps = useMemo(() => tickerSteps(input.activity), [input.activity]);
@@ -103,7 +109,7 @@ function TickerView({ color, ...input }: Props) {
         <Pew size={PEW} mood={line.mood} color={color} style={styles.pew} />
         <Marquee text={line.text} tone={line.tone} color={color} />
         <Animated.View style={chevron}>
-          <Ionicons name="chevron-down" size={14} color={theme.color.textDim} />
+          <Ionicons name="chevron-down" size={14} color={palette.color.textDim} />
         </Animated.View>
       </Pressable>
       {/* Hangs over the thread rather than sitting in the measured top area:
@@ -123,7 +129,7 @@ function TickerView({ color, ...input }: Props) {
                     <Ionicons
                       name={step.state === "failed" ? "close" : "checkmark"}
                       size={12}
-                      color={step.state === "failed" ? theme.color.danger : theme.color.textDim}
+                      color={step.state === "failed" ? palette.color.danger : palette.color.textDim}
                     />
                   )}
                 </View>
@@ -144,14 +150,14 @@ function TickerView({ color, ...input }: Props) {
 
 export const Ticker = memo(TickerView);
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   strip: {
     height: STRIP,
     marginHorizontal: theme.gutter,
     marginBottom: theme.space(2),
     borderRadius: STRIP / 2,
     overflow: "hidden",
-    backgroundColor: theme.stage.strip,
+    backgroundColor: p.stage.strip,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.space(2),
@@ -172,7 +178,7 @@ const styles = StyleSheet.create({
     right: theme.gutter,
     zIndex: 10,
     overflow: "hidden",
-    backgroundColor: theme.stage.strip,
+    backgroundColor: p.stage.strip,
     borderBottomLeftRadius: theme.radius.lg,
     borderBottomRightRadius: theme.radius.lg,
     shadowColor: "#000",
@@ -188,13 +194,15 @@ const styles = StyleSheet.create({
   // the full width, so the row carries the gutter itself (the receipt it
   // replaced did too; without it the LED line ran off the left edge).
   receipt: { marginTop: theme.space(5), paddingHorizontal: theme.gutter, flexDirection: "row", alignItems: "center", gap: theme.space(2), overflow: "hidden" },
-});
+}));
 
 /** Per character of the receipt's type-on. */
 const TYPE_MS = 28;
 
 /** The finished turn under the thread, typed on left to right the first time. */
 function LedReceiptView({ receipt }: { receipt: TurnReceipt }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduced = useReducedMotion();
   const height = useStatusRowHeight();
   const parts = useMemo(() => receiptParts(receipt), [receipt]);

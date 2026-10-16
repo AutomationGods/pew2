@@ -17,6 +17,7 @@
  */
 import { PALETTE, styler, glyphs } from "./ui.js";
 import { rail, plural, wrapDetail, detailWidth, type RenderOptions } from "./rail.js";
+import type { ServiceStatus } from "./service.js";
 
 // The type travels with the render functions below, since callers need it to
 // build the options they pass in. The rail itself is imported from `rail.js`.
@@ -434,6 +435,51 @@ export function agentSections(agents: AgentState[], options: RenderOptions = {})
 function signinHint(agent: AgentState): string {
   const detail = agent.verify?.detail;
   return detail ? detail.split("\n")[0]!.trim() : "finish this agent's own setup, then run pew2 setup again";
+}
+
+/**
+ * What setup did about the background service on this run.
+ *
+ * `removed` is only set when the install did not start: whether setup managed to
+ * take it off the machine again, so the screen never claims a cleanup that did
+ * not happen.
+ */
+export type ServiceOutcome = ServiceStatus & { removed?: boolean };
+
+/**
+ * The background service, when setup installed it on this run.
+ *
+ * Setup adds a login item on the user's behalf, so it says that it did and how
+ * to take it back. Whatever the supervisor reported is shown in full: on Linux
+ * the install can half-succeed (running now, stopped at logout because
+ * lingering was refused), and the command that fixes it ends the sentence.
+ */
+export function serviceSection(status: ServiceOutcome, options: RenderOptions = {}): string[] {
+  const s = options.style ?? styler();
+  const g = options.glyph ?? glyphs();
+  const r = rail(options);
+  const detail = status.detail
+    ? wrapDetail(status.detail, detailWidth(options)).map((text, i) =>
+        r.line(i === 0 ? `${s.hex(PALETTE.warning, g.dot)} ${text}` : `  ${text}`),
+      )
+    : [];
+
+  if (status.state !== "running") {
+    return [
+      ...r.step("Could not run in the background"),
+      ...detail,
+      r.line(
+        status.removed
+          ? s.hex(PALETTE.faint, "Setup removed it again, so nothing is left half-installed.")
+          : `${s.hex(PALETTE.faint, "Setup could not remove it again. To remove it:")} pew2 service uninstall`,
+      ),
+    ];
+  }
+  return [
+    ...r.step("Running in the background", "starts when you log in"),
+    ...detail,
+    r.line(`${s.hex(PALETTE.faint, "To turn it off:")} pew2 service uninstall`),
+  ];
 }
 
 /**

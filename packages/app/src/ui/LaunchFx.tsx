@@ -15,7 +15,7 @@ import { beginFrame, blankPicture, endFrame } from "./skiaFrame";
 import { useFrameCallback, useSharedValue, type FrameInfo, type SharedValue } from "react-native-reanimated";
 import { paintLaunch, type FxPainter, type FxPalette, type FxRGB, type FxScene } from "../launchFx";
 import { pewPalette } from "../pew/palette";
-import { theme } from "../theme";
+import { usePalette } from "./appearance";
 
 export interface LaunchFxValues {
   /** Seconds; advanced by the ticker. */
@@ -144,10 +144,11 @@ function Ticker({ scene, palette, values, picture }: { scene: FxScene; palette: 
 
 /** Full-screen, touch-through. Mount it only while the launch step is up. */
 export function LaunchFx({ scene, color, values }: { scene: FxScene; color: string; values: LaunchFxValues }) {
+  const stage = usePalette();
   const palette = useMemo<FxPalette>(() => {
     const pal = pewPalette(color);
-    return { bg: hexRgb(theme.color.bg), base: pal.base, light: pal.light, off: hexRgb(theme.stage.dash) };
-  }, [color]);
+    return { bg: hexRgb(stage.color.bg), base: pal.base, light: pal.light, off: hexRgb(stage.stage.dash) };
+  }, [color, stage]);
   const picture = useSharedValue<SkPicture>(blankPicture());
   return (
     // A plain View owns the touch-through: a Skia Canvas is not guaranteed

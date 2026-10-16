@@ -56,8 +56,9 @@ import { Pew } from "../pew/Pew";
 import type { PewMood } from "../pew/engine";
 import { Led } from "./stage/Led";
 import { DotGrid } from "./stage/DotGrid";
-import { dashedOutline } from "./stage/DashedRule";
 import { useAgentColor } from "./stage/agentColor";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /** Rows visible in a list sheet before it scrolls. */
 export const SHEET_VISIBLE_ROWS = 5;
@@ -162,6 +163,8 @@ const SHEET_PAD = theme.space(5);
 const STRIP_PEW = 40;
 
 function SheetView({ visible, title, onClose, onBack, dismissLabel, label, labelTone, pewMood, keepKeyboard = false, children }: SheetProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const insets = useSafeAreaInsets();
   const agentColor = useAgentColor();
   const reduceMotion = useReducedMotion();
@@ -340,6 +343,7 @@ function SheetView({ visible, title, onClose, onBack, dismissLabel, label, label
         }}
         style={[
           styles.sheet,
+          { backgroundColor: palette.color.surface },
           // The home indicator's clearance is inside the sheet, not under it,
           // so the content clears the indicator while the surface still
           // reaches the physical edge.
@@ -356,12 +360,12 @@ function SheetView({ visible, title, onClose, onBack, dismissLabel, label, label
               of its own, and gesture-handler needs a real native view to attach
               to. */}
           <View collapsable={false}>
-            <View style={styles.grabber} />
+            <View style={[styles.grabber, { backgroundColor: palette.color.textFaint }]} />
 
             {/* The Terminal strip: Pew and an LED label on a dotted panel, the
                 way a machine labels its own displays. Full-bleed across the
                 card, ruled off with a dash. */}
-            <View style={styles.strip}>
+            <View style={[styles.strip, { backgroundColor: palette.stage.strip, borderColor: palette.stage.dash }]}>
               <DotGrid fine />
               {onBack ? (
                 <CircleButton key="back" label="Back" onPress={onBack} size={36}>
@@ -415,6 +419,8 @@ function SheetView({ visible, title, onClose, onBack, dismissLabel, label, label
  * carries the sense of direction.
  */
 function CrossfadeTitle({ title }: { title: string }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduceMotion = useReducedMotion();
   const shown = useRef(title);
   const fade = useSharedValue(1);
@@ -444,7 +450,7 @@ function CrossfadeTitle({ title }: { title: string }) {
   const style = useAnimatedStyle(() => ({ opacity: fade.value }));
 
   return (
-    <Animated.Text style={[styles.title, style]} numberOfLines={1} accessibilityRole="header">
+    <Animated.Text style={[styles.title, { color: palette.color.text }, style]} numberOfLines={1} accessibilityRole="header">
       {rendered}
     </Animated.Text>
   );
@@ -464,7 +470,7 @@ function CrossfadeIcon({ name }: { name: DotGlyphName }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   dissolveBody: { flexShrink: 1 },
   host: { ...StyleSheet.absoluteFillObject, zIndex: 20, justifyContent: "flex-end" },
   scrim: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)" },
@@ -477,7 +483,7 @@ const styles = StyleSheet.create({
   // body adds no horizontal padding of its own.
   sheet: {
     marginHorizontal: theme.gutter,
-    backgroundColor: theme.color.surface,
+    backgroundColor: p.color.surface,
     borderTopLeftRadius: theme.radius.pane,
     borderTopRightRadius: theme.radius.pane,
     paddingHorizontal: SHEET_PAD,
@@ -487,7 +493,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: theme.color.textFaint,
+    backgroundColor: p.color.textFaint,
     marginTop: theme.space(2),
   },
   // Full-bleed across the card: the sheet's own padding is cancelled so the
@@ -501,7 +507,7 @@ const styles = StyleSheet.create({
     marginHorizontal: -(SHEET_PAD - STRIP_INSET),
     marginTop: theme.space(2),
     borderRadius: theme.radius.lg,
-    ...dashedOutline,
+    ...p.outline,
     // Pew's globe fills the middle ~60% of its box, so the box starts 8pt
     // short of the rail and the globe's edge lands on it. The close button's
     // edge lands 4pt inside the right rail.
@@ -511,7 +517,7 @@ const styles = StyleSheet.create({
     // touches the strip's edge or the dashed rule under it. Every sheet.
     minHeight: 56,
     paddingVertical: theme.space(2.5),
-    backgroundColor: theme.stage.strip,
+    backgroundColor: p.stage.strip,
     overflow: "hidden",
   },
   stripPew: { marginVertical: -4 },
@@ -529,12 +535,12 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     minWidth: 0,
-    color: theme.color.text,
+    color: p.color.text,
     fontSize: 19,
     lineHeight: 24,
     fontWeight: "600",
   },
-});
+}));
 
 /** The card the sheet's content sits in: one rounded, clipped raised surface. */
 export const sheetCardStyle = {

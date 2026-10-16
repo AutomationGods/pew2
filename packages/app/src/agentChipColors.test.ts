@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { agentChipColors } from "./agentChipColors";
 import { contrastRatio } from "./ui/providerGradient";
-const source = readFileSync(join(import.meta.dir, "theme.ts"), "utf8");
+const source = readFileSync(join(import.meta.dir, "palette.ts"), "utf8");
 function token(name: string): string {
   const match = source.match(new RegExp(`\\b${name}:\\s*"(#[0-9a-fA-F]{6})"`));
   if (!match) throw new Error(`Missing theme color ${name}`);

@@ -24,7 +24,7 @@ export const HELP_GROUPS: Group[] = [
   {
     title: "Setup",
     entries: [
-      { command: "pew2 setup [--json]", note: "Detect, verify and diagnose in one call" },
+      { command: "pew2 setup [--json]", note: "Detect, verify, run in the background, diagnose" },
       {
         command: "pew2 pair [--rotate]",
         note: "Show the QR a phone scans, then confirm it connected",

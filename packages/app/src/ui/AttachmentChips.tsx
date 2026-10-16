@@ -20,6 +20,8 @@ import { theme } from "../theme";
 import { touchSlop } from "./controls";
 import { haptics } from "./haptics";
 import { formatSize, isImageAttachment, type PendingAttachment } from "../attachments";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 interface AttachmentChipsProps {
   attachments: readonly PendingAttachment[];
@@ -37,6 +39,8 @@ function glyphFor(mimeType: string): keyof typeof Ionicons.glyphMap {
 }
 
 function AttachmentChipsView({ attachments, onRemove }: AttachmentChipsProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
     <ScrollView
       horizontal
@@ -57,7 +61,7 @@ function AttachmentChipsView({ attachments, onRemove }: AttachmentChipsProps) {
             />
           ) : (
             <View style={styles.glyph}>
-              <Ionicons name={glyphFor(file.mimeType)} size={16} color={theme.color.glyph} />
+              <Ionicons name={glyphFor(file.mimeType)} size={16} color={palette.color.glyph} />
             </View>
           )}
 
@@ -81,7 +85,7 @@ function AttachmentChipsView({ attachments, onRemove }: AttachmentChipsProps) {
                 onRemove(file.id);
               }}
             >
-              <Ionicons name="close" size={13} color={theme.color.textDim} />
+              <Ionicons name="close" size={13} color={palette.color.textDim} />
             </Pressable>
           )}
         </View>
@@ -90,7 +94,7 @@ function AttachmentChipsView({ attachments, onRemove }: AttachmentChipsProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   row: { gap: theme.space(2), paddingHorizontal: theme.space(1) },
   chip: {
     flexDirection: "row",
@@ -100,9 +104,9 @@ const styles = StyleSheet.create({
     paddingRight: theme.space(2),
     paddingVertical: theme.space(1),
     borderRadius: theme.radius.pill,
-    backgroundColor: theme.color.surface,
+    backgroundColor: p.color.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.border,
+    borderColor: p.color.border,
     // A name is elided rather than allowed to push the row wide enough that a
     // second attachment is off screen and unnoticed.
     maxWidth: 220,
@@ -114,24 +118,24 @@ const styles = StyleSheet.create({
     borderRadius: theme.space(2),
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: theme.color.surfaceRaised,
+    backgroundColor: p.color.surfaceRaised,
   },
   labels: { flexShrink: 1, gap: 1 },
   name: {
-    color: theme.color.text,
+    color: p.color.text,
     fontSize: theme.font.small,
     fontWeight: "600",
   },
-  size: { color: theme.color.textFaint, fontSize: theme.font.tiny },
+  size: { color: p.color.textFaint, fontSize: theme.font.tiny },
   remove: {
     width: 18,
     height: 18,
     borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: theme.color.surfacePressed,
+    backgroundColor: p.color.surfacePressed,
   },
   removePressed: { opacity: 0.6 },
-});
+}));
 
 export const AttachmentChips = memo(AttachmentChipsView);

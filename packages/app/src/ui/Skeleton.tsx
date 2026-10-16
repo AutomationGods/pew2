@@ -10,9 +10,13 @@ import { Animated, StyleSheet, View, type ViewStyle } from "react-native";
 import { theme } from "../theme";
 import { useReducedMotion } from "./useReducedMotion";
 import { useAppActive } from "./useAppActive";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /** One pulsing block. Compose these into the shape of the coming content. */
 export function Skeleton({ style }: { style?: ViewStyle | ViewStyle[] }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduceMotion = useReducedMotion();
   const appActive = useAppActive();
   const opacity = useRef(new Animated.Value(0.4)).current;
@@ -40,6 +44,8 @@ export function Skeleton({ style }: { style?: ViewStyle | ViewStyle[] }) {
 
 /** The drawer's history list (chats or goals) while it is on its way. */
 export function HistorySkeleton({ label = "Loading chat history" }: { label?: string }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
     <View accessibilityLabel={label}>
       {[0, 1, 2].map((row) => (
@@ -52,13 +58,13 @@ export function HistorySkeleton({ label = "Loading chat history" }: { label?: st
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   block: {
-    backgroundColor: theme.color.surfacePressed,
+    backgroundColor: p.color.surfacePressed,
     borderRadius: theme.radius.sm,
   },
   historyRow: {
     paddingVertical: theme.space(3),
     paddingHorizontal: theme.space(1),
   },
-});
+}));

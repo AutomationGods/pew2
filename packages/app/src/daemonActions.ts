@@ -122,6 +122,9 @@ export function deliverPrompt(
   return true;
 }
 
+/** How long a `workspace.create` may go unanswered before the sheet says so. */
+const WORKSPACE_CREATE_TIMEOUT = 15_000;
+
 /** The hook's refs and setters the actions read and write. */
 export type ActionRefs = Pick<
   DaemonRefs,
@@ -657,6 +660,47 @@ export function createActions(refs: ActionRefs, deps: ActionDeps) {
         unsent: !sent,
       },
     }));
+  },
+
+  /**
+   * Make a new project folder on the desktop — under `parent` (a browsed
+   * directory) or, when absent, the daemon's default root.
+   *
+   * Not queued offline: a folder named on a train and created hours later is
+   * a surprise, and the sheet is open right now to say it did not happen.
+   */
+  createWorkspace: (name: string, parent?: string): string | undefined => {
+    const providerId = targetProviderRef.current;
+    if (!providerId) return undefined;
+    const requestId = `create_${deviceId}_${Date.now()}`;
+    const sent = post({ t: "workspace.create", requestId, name, ...(parent ? { parent } : {}) });
+    setState((s) => ({
+      ...s,
+      createProject: {
+        requestId,
+        providerId,
+        name,
+        parent,
+        status: sent ? "creating" : "failed",
+        error: sent ? undefined : "offline",
+      },
+    }));
+    if (!sent) return requestId;
+    // A daemon that dropped mid-request never answers; the sheet must not
+    // spin for ever over it.
+    setTimeout(() => {
+      setState((s) =>
+        s.createProject?.requestId === requestId && s.createProject.status === "creating"
+          ? { ...s, createProject: { ...s.createProject, status: "failed", error: "timeout" } }
+          : s,
+      );
+    }, WORKSPACE_CREATE_TIMEOUT);
+    return requestId;
+  },
+
+  /** Forget the last "new project" attempt (the sheet reopened or moved on). */
+  clearCreateWorkspace: () => {
+    setState((s) => (s.createProject ? { ...s, createProject: undefined } : s));
   },
 
   /** Choose which agent the composer targets. Ends any open session. */

@@ -6,8 +6,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { EdgeInsets } from "react-native-safe-area-context";
-import { theme } from "../theme";
-import { styles } from "../appStyles";
+import { makeStyles as makeAppStyles } from "../appStyles";
 import type { Provider, useDaemon } from "../useDaemon";
 import type { useGoalControls } from "../useGoalControls";
 import { CircleButton } from "./controls";
@@ -15,6 +14,7 @@ import { DotGlyph } from "./stage/DotGlyph";
 import { Ticker } from "./Ticker";
 import { CrewRow } from "./CrewRow";
 import { CanvasCover } from "./CanvasCover";
+import { usePalette } from "./appearance";
 
 export function ScreenTopBar({
   daemon,
@@ -46,6 +46,8 @@ export function ScreenTopBar({
   voiceAvailable: boolean;
   onStartCall: () => void;
 }) {
+  const palette = usePalette();
+  const styles = makeAppStyles(palette);
   const { inGoal, goalPaused, goalId, resumeGoal, pauseGoal, openGoalSettings, askHere, kenSays, goalState } = goals;
   return (
     <>
@@ -73,8 +75,8 @@ export function ScreenTopBar({
                 {
                   backgroundColor:
                     daemon.status === "connecting"
-                      ? theme.color.accent
-                      : theme.color.danger,
+                      ? palette.color.accent
+                      : palette.color.danger,
                 },
               ]}
             />
@@ -122,7 +124,7 @@ export function ScreenTopBar({
             disabled={daemon.status !== "online"}
             onPress={onStartCall}
           >
-            <Ionicons name="call-outline" size={17} color={theme.color.glyph} />
+            <Ionicons name="call-outline" size={17} color={palette.color.glyph} />
           </CircleButton>
         )}
         </View>

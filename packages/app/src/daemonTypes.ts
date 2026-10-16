@@ -177,6 +177,32 @@ export interface Workspace {
   uncommitted?: number;
 }
 
+/** Why the desktop (or the phone) could not create a project. */
+export type WorkspaceCreateErrorCode =
+  | "invalid_name"
+  | "invalid_parent"
+  | "already_exists"
+  | "create_failed"
+  | "registration_failed"
+  | "offline"
+  | "timeout";
+
+/**
+ * One "new project" request from the picker, matched on `requestId` so a late
+ * answer to an abandoned attempt cannot claim the sheet.
+ */
+export interface WorkspaceCreate {
+  requestId: string;
+  providerId: string;
+  name: string;
+  /** Absent means the daemon's default root (`~/gg-projects`). */
+  parent?: string;
+  status: "creating" | "created" | "failed";
+  /** Set once created: the folder, already a known project on the desktop. */
+  path?: string;
+  error?: WorkspaceCreateErrorCode;
+}
+
 /** A directory offered by the picker: a suggested repo, or a browsed folder. */
 export interface WorkspaceEntry {
   path: string;

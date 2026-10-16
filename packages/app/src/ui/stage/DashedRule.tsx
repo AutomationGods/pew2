@@ -8,6 +8,7 @@
 import { memo } from "react";
 import { View, type StyleProp, type ViewStyle } from "react-native";
 import { theme } from "../../theme";
+import { usePalette } from "../appearance";
 
 interface DashedRuleProps {
   color?: string;
@@ -19,7 +20,9 @@ interface DashedRuleProps {
   style?: StyleProp<ViewStyle>;
 }
 
-function DashedRuleView({ color = theme.stage.dash, vertical = false, dotted = false, weight = 1, style }: DashedRuleProps) {
+function DashedRuleView({ color: colorProp, vertical = false, dotted = false, weight = 1, style }: DashedRuleProps) {
+  const palette = usePalette();
+  const color = colorProp ?? palette.stage.dash;
   return (
     <View
       style={[vertical ? { width: weight, alignSelf: "stretch", overflow: "hidden" } : { height: weight, alignSelf: "stretch", overflow: "hidden" }, style]}

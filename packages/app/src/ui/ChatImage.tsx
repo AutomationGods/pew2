@@ -24,6 +24,8 @@ import { haptics } from "./haptics";
 import { ImageViewer } from "./ImageViewer";
 import { imageSourceKind, isDisplayableImage, type ChatImage as ChatImageModel } from "../images";
 import type { ImageEntry } from "../useDaemon";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 export interface ImageResolver {
   images: Record<string, ImageEntry>;
@@ -94,10 +96,14 @@ function Placeholder({
   ratio: number;
   children: React.ReactNode;
 }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return <View style={[styles.frame, styles.placeholder, { aspectRatio: ratio }]}>{children}</View>;
 }
 
 function ChatImageView({ image }: { image: ChatImageModel }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const resolved = useResolvedSource(image.src, image.origin);
   // Sized from the picture itself once it decodes; until then a stable box, so
   // the transcript does not jump as each image lands.
@@ -121,7 +127,7 @@ function ChatImageView({ image }: { image: ChatImageModel }) {
   if (resolved.status === "loading") {
     return (
       <Placeholder ratio={ratio}>
-        <ActivityIndicator color={theme.color.textDim} />
+        <ActivityIndicator color={palette.color.textDim} />
       </Placeholder>
     );
   }
@@ -139,10 +145,10 @@ function ChatImageView({ image }: { image: ChatImageModel }) {
         style={({ pressed }) => [
           styles.frame,
           styles.errorCard,
-          pressed && { backgroundColor: theme.color.surfacePressed },
+          pressed && { backgroundColor: palette.color.surfacePressed },
         ]}
       >
-        <Ionicons name="image-outline" size={20} color={theme.color.textDim} />
+        <Ionicons name="image-outline" size={20} color={palette.color.textDim} />
         <Text style={styles.errorText} numberOfLines={3}>
           {message}
         </Text>
@@ -214,6 +220,8 @@ export const ChatImage = memo(
 
 /** The image strip under a message's text. */
 export function ChatImages({ images }: { images: readonly ChatImageModel[] }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   if (images.length === 0) return null;
   return (
     <View style={styles.stack}>
@@ -227,7 +235,7 @@ export function ChatImages({ images }: { images: readonly ChatImageModel[] }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   // The markdown block above ends on a negative margin, so the strip provides
   // its own separation from text rather than relying on the paragraph's.
   stack: { width: "100%", gap: theme.space(2), marginTop: theme.space(1) },
@@ -236,8 +244,8 @@ const styles = StyleSheet.create({
     maxHeight: MAX_HEIGHT,
     borderRadius: theme.radius.md,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.border,
-    backgroundColor: theme.color.surface,
+    borderColor: p.color.border,
+    backgroundColor: p.color.surface,
     overflow: "hidden",
   },
   placeholder: { alignItems: "center", justifyContent: "center" },
@@ -248,6 +256,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space(3),
     paddingVertical: theme.space(3),
   },
-  errorText: { flex: 1, color: theme.color.textDim, fontSize: theme.font.small },
-  retryText: { color: theme.color.accent, fontSize: theme.font.tiny, fontWeight: "600" },
-});
+  errorText: { flex: 1, color: p.color.textDim, fontSize: theme.font.small },
+  retryText: { color: p.color.accent, fontSize: theme.font.tiny, fontWeight: "600" },
+}));

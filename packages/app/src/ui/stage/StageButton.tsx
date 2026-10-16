@@ -28,11 +28,13 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { theme } from "../../theme";
+import { usePalette } from "../appearance";
 import { SPRING, withAlpha } from "../../motion";
 import { haptics } from "../haptics";
 import { useReducedMotion } from "../useReducedMotion";
 import { useAgentColor } from "./agentColor";
 import { DotGrid } from "./DotGrid";
+import { themedStyles, type Palette } from "../../palette";
 
 export type StageButtonKind = "primary" | "secondary" | "danger";
 
@@ -72,9 +74,11 @@ function StageButtonView({
   style,
   compact = false,
 }: StageButtonProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const agent = useAgentColor();
   const reduce = useReducedMotion();
-  const ink = kind === "danger" ? theme.color.danger : color ?? agent;
+  const ink = kind === "danger" ? palette.color.danger : color ?? agent;
   const lit = kind === "primary" && !disabled;
 
   const scale = useSharedValue(1);
@@ -150,7 +154,7 @@ function StageButtonView({
       style={[
         styles.base,
         { height, borderRadius: height / 2 },
-        lit ? styles.lit : styles.unlit,
+        lit ? styles.lit : [styles.unlit, { borderColor: palette.stage.dash }],
         lit && live,
         kind === "danger" && !disabled && { borderColor: withAlpha(ink, 0.55) },
         disabled && styles.disabled,
@@ -170,7 +174,7 @@ function StageButtonView({
           numberOfLines={1}
           style={[
             styles.label,
-            { color: kind === "danger" ? ink : disabled ? theme.color.textDim : theme.color.text },
+            { color: kind === "danger" ? ink : disabled ? palette.color.textDim : palette.color.text },
             lit && styles.litText,
             lit && liveText,
           ]}
@@ -184,12 +188,12 @@ function StageButtonView({
 
 export const StageButton = memo(StageButtonView);
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   base: {
     alignSelf: "stretch",
     borderWidth: 1,
     borderStyle: "solid",
-    backgroundColor: theme.stage.strip,
+    backgroundColor: p.stage.strip,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: theme.space(5),
@@ -197,7 +201,7 @@ const styles = StyleSheet.create({
   lit: { shadowOpacity: 0.55, shadowRadius: 10, shadowOffset: { width: 0, height: 0 } },
   litText: { textShadowRadius: 8, textShadowOffset: { width: 0, height: 0 } },
   // Resting secondary: a dashed outline, the way unchosen things look in Stage.
-  unlit: { borderStyle: "dashed", borderColor: theme.stage.dash },
+  unlit: { borderStyle: "dashed", borderColor: p.stage.dash },
   disabled: { opacity: 0.55 },
   clip: { overflow: "hidden" },
   band: { position: "absolute", top: -10, bottom: -10, width: 46, backgroundColor: "rgba(255,255,255,0.16)" },
@@ -209,4 +213,4 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
     textTransform: "uppercase",
   },
-});
+}));

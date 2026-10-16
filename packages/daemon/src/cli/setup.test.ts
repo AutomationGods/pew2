@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { doctor } from "./doctor.js";
 import { setup } from "./setup.js";
 import { fakeExecutable } from "../testing/platform.js";
-import { isCompiled } from "./service.js";
+import { isCompiled, type ServiceStatus } from "./service.js";
 
 /** An isolated machine: empty PATH, empty home, no daemon. */
 async function sandbox() {
@@ -321,4 +321,191 @@ test("a daemon that was simply never started still says so plainly", async () =>
   // And never a path from a source checkout when this is a compiled binary:
   // someone who ran the installer has no such directory.
   if (isCompiled()) expect(problem.fix).toBe("pew2 serve");
+});
+
+interface ServiceSituation {
+  /** A released binary rather than a source checkout. */
+  compiled: boolean;
+  /** What the supervisor reports before setup touches anything. */
+  existing: string;
+  /** Whether something already answers on the daemon's port. */
+  serving: boolean;
+  /** What installing reports. A started service unless a test says otherwise. */
+  installs?: ServiceStatus;
+}
+
+/**
+ * Every service dependency of setup, faked.
+ *
+ * A test that reached the real installer would put a login item on the machine
+ * running the suite, so nothing here is left to its default.
+ */
+function serviceFakes(situation: ServiceSituation) {
+  const installs: ServiceStatus = situation.installs ?? { state: "running", pid: 4242 };
+  const calls = { install: 0, uninstall: 0 };
+  let installed = false;
+  return {
+    calls,
+    options: {
+      compiled: situation.compiled,
+      // Answers like the real daemon: up if something was already serving, or
+      // once a service this run installed has actually started.
+      probeDaemon: async () => situation.serving || (installed && installs.state === "running"),
+      // A failed start is the case under test, not something to sit through.
+      startTimeoutMs: 0,
+      service: async () => ({ state: installed ? installs.state : situation.existing }),
+      installService: async () => {
+        calls.install++;
+        installed = true;
+        return installs;
+      },
+      uninstallService: async () => {
+        calls.uninstall++;
+        installed = false;
+      },
+      pairing: async () => ({ token: "t".repeat(48), relay: "wss://relay.test" }),
+    },
+  };
+}
+
+test("setup starts pew2 in the background on a released binary with no service", async () => {
+  // `pew2 serve` stops when its terminal closes, and the separate `pew2 service
+  // install` was the step people missed. Setup is the command everyone runs.
+  const { bin, providersDir, env } = await sandbox();
+  await install(bin, "claude");
+  await install(bin, "npx");
+  const fakes = serviceFakes({ compiled: true, existing: "not-installed", serving: false });
+
+  const result = await setup({ env, searchDirs: [providersDir], verify: false, ...fakes.options });
+
+  expect(fakes.calls.install).toBe(1);
+  expect(result.serviceInstall?.state).toBe("running");
+  // Diagnosed after the daemon answered, so nothing says it is down or will
+  // not come back after a reboot.
+  const ids = result.doctor.problems.map((p) => p.id);
+  expect(ids).not.toContain("daemon-unreachable");
+  expect(ids).not.toContain("not-autostarted");
+  expect(result.ok).toBe(true);
+});
+
+test.each([
+  // A login item pointing at a working tree, holding the dev server's port.
+  ["a source checkout", { compiled: false, existing: "not-installed", serving: false }],
+  // Reinstalling restarts a daemon someone may be using, on every run.
+  ["a service that is already installed", { compiled: true, existing: "installed", serving: false }],
+  ["a service that is already running", { compiled: true, existing: "running", serving: true }],
+  // `pew2 serve` in a terminal. A supervised second copy would crash-loop on
+  // the port until that one stopped; doctor says what to run instead.
+  ["a daemon running in a terminal", { compiled: true, existing: "not-installed", serving: true }],
+  ["a platform with no supervisor", { compiled: true, existing: "unsupported", serving: false }],
+] satisfies [string, ServiceSituation][])("setup leaves the service alone on %s", async (_name, situation) => {
+  const { providersDir, env } = await sandbox();
+  const fakes = serviceFakes(situation);
+
+  const result = await setup({ env, searchDirs: [providersDir], verify: false, ...fakes.options });
+
+  expect(fakes.calls.install).toBe(0);
+  expect(result.serviceInstall).toBeUndefined();
+});
+
+test("a service that cannot start is removed again, and reported", async () => {
+  // The updater reads a service file on disk as "something will restart me".
+  // Keeping one that never ran — a Linux machine with no user systemd, say —
+  // would let it swap the binary and exit a daemon nothing brings back.
+  const { providersDir, env } = await sandbox();
+  const fakes = serviceFakes({
+    compiled: true,
+    existing: "not-installed",
+    serving: false,
+    installs: { state: "installed", detail: "Written, but systemctl enable failed: no user bus" },
+  });
+
+  const result = await setup({ env, searchDirs: [providersDir], verify: false, ...fakes.options });
+
+  expect(fakes.calls.install).toBe(1);
+  expect(fakes.calls.uninstall).toBe(1);
+  expect(result.serviceInstall?.removed).toBe(true);
+  expect(result.serviceInstall?.detail).toContain("systemctl enable failed");
+  // The fix is the one for no daemon at all. Rerunning the install that just
+  // failed would be a loop an agent can never leave.
+  const problem = result.doctor.problems.find((p) => p.id === "daemon-unreachable");
+  expect(problem).toBeDefined();
+  expect(problem?.fix).not.toBe("pew2 service install");
+});
+
+test("a service whose daemon answers is kept, however slow and whatever the supervisor calls it", async () => {
+  // Task Scheduler's status text is translated on a non-English Windows, so a
+  // task that is running reads as merely "installed". And a supervisor reports
+  // the process before it has bound its port. Removing the service on either
+  // would take a working one away: whether the daemon answers is what decides.
+  const { providersDir, env } = await sandbox();
+  const fakes = serviceFakes({
+    compiled: true,
+    existing: "not-installed",
+    serving: false,
+    installs: { state: "installed" },
+  });
+  // Silent for the first two asks after the install, then up.
+  let asked = 0;
+  const probeDaemon = async () => fakes.calls.install > 0 && ++asked > 2;
+
+  const result = await setup({
+    env,
+    searchDirs: [providersDir],
+    verify: false,
+    ...fakes.options,
+    probeDaemon,
+    startTimeoutMs: 5_000,
+  });
+
+  expect(asked).toBeGreaterThan(2);
+  expect(fakes.calls.uninstall).toBe(0);
+  expect(result.serviceInstall?.state).toBe("running");
+  expect(result.serviceInstall?.removed).toBeUndefined();
+});
+
+test("an install that throws is reported, and setup still finishes", async () => {
+  // A home folder that cannot be written to is a reason not to run in the
+  // background, not a reason for the whole of setup to fail.
+  const { providersDir, env } = await sandbox();
+  const fakes = serviceFakes({ compiled: true, existing: "not-installed", serving: false });
+
+  const result = await setup({
+    env,
+    searchDirs: [providersDir],
+    verify: false,
+    ...fakes.options,
+    installService: async () => {
+      throw new Error("EACCES: permission denied, mkdir '/home/alice/.config/systemd/user'");
+    },
+  });
+
+  expect(result.serviceInstall?.state).not.toBe("running");
+  expect(result.serviceInstall?.detail).toContain("permission denied");
+  // Whatever it managed to write before failing is cleaned up all the same.
+  expect(fakes.calls.uninstall).toBe(1);
+  expect(result.serviceInstall?.removed).toBe(true);
+});
+
+test("a failed install that cannot be removed says so", async () => {
+  // Setup must not claim it cleaned up when it could not.
+  const { providersDir, env } = await sandbox();
+  const fakes = serviceFakes({
+    compiled: true,
+    existing: "not-installed",
+    serving: false,
+    installs: { state: "installed", detail: "Written, but schtasks /create failed: access denied" },
+  });
+
+  const result = await setup({
+    env,
+    searchDirs: [providersDir],
+    verify: false,
+    ...fakes.options,
+    uninstallService: async () => {
+      throw new Error("EPERM: operation not permitted");
+    },
+  });
+
+  expect(result.serviceInstall?.removed).toBe(false);
 });

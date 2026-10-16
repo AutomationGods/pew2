@@ -40,6 +40,7 @@ export interface Notice {
   body: string;
   /** Carried through the notification so a tap can open this conversation. */
   sessionId: string;
+  kind?: "complete" | "input" | "error";
 }
 
 // Imported, not restated. The daemon composes the same banner when it pushes a

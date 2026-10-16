@@ -16,6 +16,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Animated, StyleSheet, Text, View, type TextStyle } from "react-native";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { LinearGradient } from "expo-linear-gradient";
+import { usePalette } from "./appearance";
 import { theme } from "../theme";
 import { useReducedMotion } from "./useReducedMotion";
 import { useAppActive } from "./useAppActive";
@@ -65,7 +66,7 @@ export type ShimmerTextProps = {
 
 function ShimmerTextView({
   text,
-  color = theme.color.textDim,
+  color: colorProp,
   size = theme.font.body,
   lineHeight = theme.line.body,
   weight = "500",
@@ -74,6 +75,8 @@ function ShimmerTextView({
   numberOfLines,
   maxFontSizeMultiplier,
 }: ShimmerTextProps) {
+  const palette = usePalette();
+  const color = colorProp ?? palette.color.textDim;
   const sweep = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReducedMotion();
   const appActive = useAppActive();

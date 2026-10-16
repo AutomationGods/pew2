@@ -47,6 +47,8 @@ export type {
   Workspace,
   WorkspaceEntry,
   WorkspaceBrowse,
+  WorkspaceCreate,
+  WorkspaceCreateErrorCode,
 } from "./daemonTypes";
 import type { Provider, ConfigOption, Session } from "./daemonTypes";
 

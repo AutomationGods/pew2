@@ -18,11 +18,12 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { theme } from "../theme";
 import { haptics } from "./haptics";
 import { Led } from "./stage/Led";
-import { dashedOutline } from "./stage/DashedRule";
 import { KEN_COLOR } from "../pew/palette";
 import { EASE_OUT } from "./motion/ease";
 import { SPRING } from "../motion";
 import type { PendingAttachment } from "../attachments";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 export const NAME_MAX = GOAL_NAME_MAX;
 export const GOAL_MAX = 2000;
@@ -31,6 +32,8 @@ export const INSTRUCTIONS_MAX = 4000;
 export const INSTRUCTIONS_PLACEHOLDER = "Keep the current design. Ask before adding dependencies.";
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
     <View style={styles.field}>
       <Led tone="dim">{label}</Led>
@@ -42,10 +45,12 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 
 /** Text input on the surface with the composer border; focus lights it GG Goals purple. */
 export function StageInput(props: TextInputProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const [focused, setFocused] = useState(false);
   return (
     <TextInput
-      placeholderTextColor={theme.composer.placeholder}
+      placeholderTextColor={palette.composer.placeholder}
       {...props}
       editable={props.editable}
       style={[styles.input, focused && styles.inputFocused, props.editable === false && styles.inputOff, props.style]}
@@ -76,6 +81,8 @@ export function ContextChips({
   phoneFiles?: readonly PendingAttachment[];
   onRemovePhoneFile?: (id: string) => void;
 }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduce = useReducedMotion();
   if (chosen.length === 0 && phoneFiles.length === 0) return null;
   return (
@@ -91,7 +98,7 @@ export function ContextChips({
       {chosen.map((path) => (
         <Reanimated.View
           key={path}
-          style={[styles.chip, dashedOutline]}
+          style={[styles.chip, palette.outline]}
           entering={reduce ? undefined : ZoomIn.duration(SPRING.arrive.duration).easing(EASE_OUT)}
           exiting={reduce ? undefined : ZoomOut.duration(160)}
           layout={reduce ? undefined : CHIP_LAYOUT}
@@ -107,7 +114,7 @@ export function ContextChips({
                 onChange(chosen.filter((entry) => entry !== path));
               }}
             >
-              <Ionicons name="close" size={13} color={theme.color.textDim} />
+              <Ionicons name="close" size={13} color={palette.color.textDim} />
             </Pressable>
           )}
         </Reanimated.View>
@@ -115,12 +122,12 @@ export function ContextChips({
       {phoneFiles.map((file) => (
         <Reanimated.View
           key={file.id}
-          style={[styles.chip, dashedOutline]}
+          style={[styles.chip, palette.outline]}
           entering={reduce ? undefined : ZoomIn.duration(SPRING.arrive.duration).easing(EASE_OUT)}
           exiting={reduce ? undefined : ZoomOut.duration(160)}
           layout={reduce ? undefined : CHIP_LAYOUT}
         >
-          <Ionicons name="phone-portrait-outline" size={12} color={theme.color.textDim} />
+          <Ionicons name="phone-portrait-outline" size={12} color={palette.color.textDim} />
           <Text style={styles.chipText} numberOfLines={1}>{file.name}</Text>
           {disabled || !onRemovePhoneFile ? null : (
             <Pressable
@@ -132,7 +139,7 @@ export function ContextChips({
                 onRemovePhoneFile(file.id);
               }}
             >
-              <Ionicons name="close" size={13} color={theme.color.textDim} />
+              <Ionicons name="close" size={13} color={palette.color.textDim} />
             </Pressable>
           )}
         </Reanimated.View>
@@ -144,16 +151,16 @@ export function ContextChips({
 /** One spring for everything that moves to make room (chips, the list below). */
 export const CHIP_LAYOUT = LinearTransition.duration(SPRING.settle.duration).easing(EASE_OUT);
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   field: { gap: theme.space(2) },
-  hint: { color: theme.color.textDim, fontSize: theme.font.small },
+  hint: { color: p.color.textDim, fontSize: theme.font.small },
   input: {
     minHeight: theme.size.touch,
     borderRadius: theme.composer.radius,
     borderWidth: 1,
-    borderColor: theme.composer.border,
-    backgroundColor: theme.composer.fill,
-    color: theme.color.text,
+    borderColor: p.composer.border,
+    backgroundColor: p.composer.fill,
+    color: p.color.text,
     fontSize: theme.font.body,
     paddingHorizontal: theme.space(3),
     paddingVertical: theme.space(2.5),
@@ -162,5 +169,5 @@ const styles = StyleSheet.create({
   inputOff: { opacity: 0.5 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: theme.space(2) },
   chip: { flexDirection: "row", alignItems: "center", gap: theme.space(1.5), maxWidth: "100%", paddingHorizontal: theme.space(3), paddingVertical: theme.space(1.5), borderRadius: theme.radius.pill },
-  chipText: { flexShrink: 1, color: theme.color.text, fontSize: theme.font.small },
-});
+  chipText: { flexShrink: 1, color: p.color.text, fontSize: theme.font.small },
+}));

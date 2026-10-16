@@ -1,5 +1,6 @@
 import { Easing } from "react-native";
 import { DUR, EASE } from "./motion";
+import { DARK_COLORS, DARK_COMPOSER, DARK_STAGE } from "./palette";
 import { approvalActionColors, fallbackGlassTokens } from "./materialTokens";
 
 /**
@@ -23,56 +24,17 @@ import { approvalActionColors, fallbackGlassTokens } from "./materialTokens";
  * accent on accentSoft 7.2, text on accentSoft 12.5, onAccent on accent 9.9.
  */
 export const theme = {
-  color: {
-    /** Conversation canvas. The upper plane, and the darker of the two. */
-    bg: "#0a0a0c",
-    /** Drawer canvas. The lower plane, revealed as the conversation slides. */
-    drawer: "#141519",
-    /** Resting control: chips, composer. */
-    surface: "#141519",
-    /** Raised control: top bar pills, sheets. */
-    surfaceRaised: "#1c1e23",
-    /** Pressed feedback for any surface. */
-    surfacePressed: "#24262c",
-    border: "#2a2c33",
-
-    text: "#f2f3f7",
-    textDim: "#9a9ba5",
-    textFaint: "#90919c",
-    /** Icon glyphs on a glass control. Sampled from the reference. */
-    glyph: "#c8c9d2",
-    /** Placeholder text inside the composer. */
-    placeholder: "#90919c",
-
-    accent: "#b0b6ff",
-    /**
-     * The accent at control-fill strength, for a button that is *on* rather
-     * than merely tappable — the mic while it is listening. Opaque rather than
-     * a transparency, so it reads the same over glass as over a flat surface.
-     */
-    accentSoft: "#262a4d",
-    success: "#7fe89a",
-    /**
-     * Needs a look, not broken: an interrupted goal, a check that is due.
-     * Amber so red stays reserved for real failures. 9.09:1 on surfaceRaised.
-     */
-    attention: "#f2b45a",
-    danger: "#ff6b60",
-    thought: "#ff8fd0",
-    /** Neutral orb base, used when a provider declares no colour. */
-    orb: "#b0b6ff",
-    /** Ink on an accent fill. */
-    onAccent: "#0c0e26",
-  },
+  /**
+   * The dark Stage palette (palette.ts holds the literals so a light variant
+   * and accents can sit beside it). This static object is the default for
+   * anything not yet reading `usePalette()` from ui/appearance.tsx.
+   */
+  color: DARK_COLORS,
 
   /** Libraries.dev Beam composer: opaque card, quiet inset pills. */
   composer: {
     radius: 20,
-    fill: "#141519",
-    border: "#3a3c44",
-    chip: "#1c1e23",
-    ink: "#c8c9d2",
-    placeholder: "#9a9ba5",
+    ...DARK_COMPOSER,
   },
 
   /**
@@ -81,17 +43,13 @@ export const theme = {
    * glow is the agent's colour, so these are geometry, not colours.
    */
   stage: {
-    /** Dashed rules and resting card outlines. 3.4:1 on bg: decoration, not text. */
-    dash: "#34363e",
-    /** Terminal sheet header strip. */
-    strip: "#121317",
+    /** dash (rules, 3.4:1 on bg), strip (sheet header), gridColor, fineColor. */
+    ...DARK_STAGE,
     /** Canvas dot grid: spacing, dot radius, dot colour. */
     grid: 14,
     gridDot: 1,
-    gridColor: "rgba(255,255,255,0.055)",
     /** Strip/ticker texture: a finer grid. */
     fine: 5,
-    fineColor: "rgba(255,255,255,0.06)",
     /** LED label type. */
     ledSize: 11,
     ledSpacing: 1.6,

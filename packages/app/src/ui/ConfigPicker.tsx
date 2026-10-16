@@ -25,10 +25,12 @@ import { useReducedMotion } from "./useReducedMotion";
 import { Sheet } from "./Sheet";
 import { Led } from "./stage/Led";
 import { Dissolve } from "./motion/Dissolve";
-import { DashedRule, dashedOutline } from "./stage/DashedRule";
+import { DashedRule } from "./stage/DashedRule";
 import { useAgentColor } from "./stage/agentColor";
 import { ThinkingDial, levelMood } from "./ThinkingDial";
 import { summarise, valueName } from "./configSlots";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 // Slot assignment lives in a react-native-free module so it can be unit tested.
 export { summarise, valueName } from "./configSlots";
@@ -53,6 +55,8 @@ const FILTER_AFTER = 8;
 const LEVEL_CONFIRM_MS = 4000;
 
 function ConfigPickerView({ visible, onClose, options, onSelect }: ConfigPickerProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const agent = useAgentColor();
   const { model, mode, level: reported } = summarise(options);
   // The level moves the moment it is tapped. Waiting for the agent's answer
@@ -165,6 +169,8 @@ interface ModelListProps {
 }
 
 function ModelList({ option, color, visible, onPick }: ModelListProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduceMotion = useReducedMotion();
   const [query, setQuery] = useState("");
   useEffect(() => {
@@ -188,7 +194,7 @@ function ModelList({ option, color, visible, onPick }: ModelListProps) {
             value={query}
             onChangeText={setQuery}
             placeholder="Filter models"
-            placeholderTextColor={theme.color.textDim}
+            placeholderTextColor={palette.color.textDim}
             autoCapitalize="none"
             autoCorrect={false}
             clearButtonMode="while-editing"
@@ -237,12 +243,12 @@ function ModelList({ option, color, visible, onPick }: ModelListProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   body: { gap: theme.space(4), paddingBottom: theme.space(2) },
-  sub: { color: theme.color.textDim, fontSize: theme.font.small },
+  sub: { color: p.color.textDim, fontSize: theme.font.small },
   modelWrap: { gap: theme.space(2) },
   filter: {
-    ...dashedOutline,
+    ...p.outline,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.space(2),
@@ -250,12 +256,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space(3),
     height: 40,
   },
-  filterInput: { flex: 1, color: theme.color.text, fontSize: theme.font.small, paddingVertical: 0 },
+  filterInput: { flex: 1, color: p.color.text, fontSize: theme.font.small, paddingVertical: 0 },
   modelList: { maxHeight: LIST_MAX, flexGrow: 0 },
   modelRow: { flexDirection: "row", alignItems: "center", height: ROW - 1, gap: theme.space(3) },
   modelText: { flex: 1, minWidth: 0 },
-  modelName: { color: theme.color.text, fontSize: theme.font.body, fontWeight: "600" },
-  modelDetail: { color: theme.color.textDim, fontSize: theme.font.small },
+  modelName: { color: p.color.text, fontSize: theme.font.body, fontWeight: "600" },
+  modelDetail: { color: p.color.textDim, fontSize: theme.font.small },
   pressed: { opacity: 0.7 },
   row: {
     flexDirection: "row",
@@ -263,8 +269,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     minHeight: theme.size.touch,
   },
-  rowText: { color: theme.color.text, fontSize: theme.font.body, lineHeight: theme.line.body },
-});
+  rowText: { color: p.color.text, fontSize: theme.font.body, lineHeight: theme.line.body },
+}));
 
 // Memoized: a streamed chunk re-renders the screen many times a second, and
 // none of those chunks change anything here.

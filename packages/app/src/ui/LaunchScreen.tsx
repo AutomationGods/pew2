@@ -26,6 +26,8 @@ import { DotGrid } from "./stage/DotGrid";
 import { Led } from "./stage/Led";
 import { Dissolve } from "./motion/Dissolve";
 import { pewInk } from "../pew/palette";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /** pew2's own coral: nobody has picked an agent yet. */
 const PEW_CORAL = pewInk();
@@ -38,6 +40,8 @@ interface Props {
 const AUTO_WAKE_MS = 6000;
 
 export function LaunchScreen({ onConnect }: Props) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const insets = useSafeAreaInsets();
   const reduce = useReducedMotion();
   const [awake, setAwake] = useState(false);
@@ -139,8 +143,8 @@ export function LaunchScreen({ onConnect }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.color.bg },
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
+  root: { flex: 1, backgroundColor: p.color.bg },
   skipRow: {
     minHeight: theme.size.touch,
     alignItems: "flex-end",
@@ -151,11 +155,11 @@ const styles = StyleSheet.create({
   // The globe fills ~60% of its box; pull the copy up under it.
   pew: { marginBottom: -theme.space(10) },
   copy: { alignSelf: "stretch", alignItems: "center", gap: theme.space(2) },
-  title: { color: theme.color.text, fontFamily: theme.display.regular, fontSize: 32, letterSpacing: 0.5 },
-  body: { color: theme.color.textDim, fontSize: 15, lineHeight: theme.line.body, textAlign: "center" },
+  title: { color: p.color.text, fontFamily: theme.display.regular, fontSize: 32, letterSpacing: 0.5 },
+  body: { color: p.color.textDim, fontSize: 15, lineHeight: theme.line.body, textAlign: "center" },
   actions: { paddingHorizontal: theme.gutter },
   button: { paddingVertical: theme.space(4), alignItems: "center", justifyContent: "center", minHeight: 56 },
   buttonSpace: { minHeight: 56 },
-  buttonPressed: { backgroundColor: theme.glass.fillPressed },
-  buttonText: { color: theme.color.text, fontSize: theme.font.title, fontWeight: "600" },
-});
+  buttonPressed: { backgroundColor: p.glass.fillPressed },
+  buttonText: { color: p.color.text, fontSize: theme.font.title, fontWeight: "600" },
+}));

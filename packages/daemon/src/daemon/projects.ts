@@ -2,7 +2,10 @@
  * Which projects a client may name: the agent's own history, directories just
  * offered to a browsing client, and the durable `known-projects.json` record.
  */
+import { rmdir } from "node:fs/promises";
+import type { wire } from "@pew2/protocol";
 import type { AgentSession } from "../acp/connect.js";
+import { createWorkspaceDirectory } from "../workspaces.js";
 import { readProbeCache } from "../probe-cache.js";
 import { readKnownProjects, rememberKnownProject } from "../known-projects.js";
 import { hydrateMessageCounts } from "../acp/messageCounts.js";
@@ -138,6 +141,35 @@ export abstract class DaemonProjects extends DaemonProbes {
       );
     await this.chosenWrites;
     return cwd;
+  }
+
+  /**
+   * Create a project from a client and durably register it, as one operation.
+   *
+   * Registration is awaited and a failure is reported (unlike `rememberProject`)
+   * because a created folder the daemon then refuses in `session.start` is
+   * worse than no folder: the empty directory is removed again with `rmdir`,
+   * which never touches anything that reached it in the meantime.
+   */
+  async createWorkspace(name: string, parent?: string): Promise<wire.WorkspaceCreateResult["result"]> {
+    const created = await createWorkspaceDirectory(name, parent, { env: this.env, home: this.env.HOME });
+    if (!created.ok) return created;
+    try {
+      const chosen = await this.chosenProjects();
+      const write = this.chosenWrites.then(() => rememberKnownProject(created.path, this.env));
+      this.chosenWrites = write.then(
+        (stored) => {
+          chosen.clear();
+          for (const path of stored) chosen.add(path);
+        },
+        () => {},
+      );
+      await write;
+    } catch {
+      await rmdir(created.path).catch(() => {});
+      return { ok: false, error: "registration_failed" };
+    }
+    return { ok: true, project: { path: created.path, name: created.name, sessions: 0 } };
   }
 
   /**

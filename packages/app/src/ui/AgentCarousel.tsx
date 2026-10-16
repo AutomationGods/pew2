@@ -29,6 +29,8 @@ import { pageForScroll, type PagingHold } from "../carouselPaging";
 import { DotGlyph } from "./stage/DotGlyph";
 import { StageButton } from "./stage/StageButton";
 import { useReducedMotion } from "./useReducedMotion";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 export interface CarouselAgent {
   id: string;
@@ -52,6 +54,8 @@ const SMILE_HOLD_MS = 1100;
 const PEW = 200;
 
 export function AgentCarousel({ agents, currentId, onSelect, onClose, arriveSmiling = false }: AgentCarouselProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const [smiling, setSmiling] = useState(arriveSmiling);
   useEffect(() => {
     if (!smiling) return;
@@ -165,7 +169,7 @@ export function AgentCarousel({ agents, currentId, onSelect, onClose, arriveSmil
           accessibilityLabel="Close"
           hitSlop={12}
         >
-          <DotGlyph name="close" size={20} color={theme.color.text} />
+          <DotGlyph name="close" size={20} color={palette.color.text} />
         </Pressable>
       </View>
       {/* ONE Pew, fixed in the middle: swiping recolours and renames it rather
@@ -220,7 +224,7 @@ export function AgentCarousel({ agents, currentId, onSelect, onClose, arriveSmil
       </View>
       <View style={[styles.bottom, { paddingBottom: insets.bottom + theme.space(4) }]}>
         <Pressable onPress={() => goTo(page - 1)} accessibilityRole="button" accessibilityLabel="Previous agent" style={styles.arrow} disabled={page === 0}>
-          <DotGlyph name="back" size={20} color={page === 0 ? theme.color.textDim : theme.color.text} />
+          <DotGlyph name="back" size={20} color={page === 0 ? palette.color.textDim : palette.color.text} />
         </Pressable>
         {/* One button for every agent: its colour blends and its label
             changes in place. It used to be re-keyed per agent, which faded it
@@ -247,7 +251,7 @@ export function AgentCarousel({ agents, currentId, onSelect, onClose, arriveSmil
         >
           {/* The back chevron, mirrored: one pixel glyph for both directions. */}
           <View style={styles.mirror}>
-            <DotGlyph name="back" size={20} color={page >= agents.length - 1 ? theme.color.textDim : theme.color.text} />
+            <DotGlyph name="back" size={20} color={page >= agents.length - 1 ? palette.color.textDim : palette.color.text} />
           </View>
         </Pressable>
       </View>
@@ -255,8 +259,8 @@ export function AgentCarousel({ agents, currentId, onSelect, onClose, arriveSmil
   );
 }
 
-const styles = StyleSheet.create({
-  root: { backgroundColor: theme.color.bg, zIndex: 50 },
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
+  root: { backgroundColor: p.color.bg, zIndex: 50 },
   pewSpot: { width: PEW, height: PEW, alignItems: "center", justifyContent: "center" },
   mirror: { transform: [{ scaleX: -1 }] },
   top: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: theme.gutter },
@@ -265,10 +269,10 @@ const styles = StyleSheet.create({
   // Fixed height, so the text pages and the Pew overlay lay out identically.
   label: { height: 96, alignSelf: "stretch", alignItems: "center", justifyContent: "flex-start", gap: theme.space(2) },
   page: { alignItems: "center", justifyContent: "center", paddingHorizontal: theme.gutter, gap: theme.space(2) },
-  name: { color: theme.color.text, fontFamily: theme.display.regular, fontSize: 34, alignSelf: "stretch", textAlign: "center" },
+  name: { color: p.color.text, fontFamily: theme.display.regular, fontSize: 34, alignSelf: "stretch", textAlign: "center" },
   dots: { flexDirection: "row", justifyContent: "center", gap: theme.space(1.5), marginBottom: theme.space(4) },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: theme.stage.dash },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: p.stage.dash },
   bottom: { flexDirection: "row", alignItems: "center", paddingHorizontal: theme.gutter, gap: theme.space(3) },
   arrow: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   primaryWrap: { flex: 1 },
-});
+}));

@@ -10,6 +10,8 @@
 import { memo } from "react";
 import { Text, type StyleProp, type TextStyle } from "react-native";
 import { theme } from "../../theme";
+import type { Palette } from "../../palette";
+import { usePalette } from "../appearance";
 import { withAlpha } from "../../motion";
 import { useAgentColor } from "./agentColor";
 
@@ -27,18 +29,14 @@ export interface LedProps {
   numberOfLines?: number;
 }
 
-const TONE: Record<Exclude<LedTone, "agent">, string> = {
-  dim: theme.color.textDim,
-  attention: theme.color.attention,
-  plus: theme.color.success,
-  minus: theme.color.danger,
-  danger: theme.color.danger,
-  text: theme.color.text,
-};
+function toneInk(tone: Exclude<LedTone, "agent">, c: Palette["color"]): string {
+  return { dim: c.textDim, attention: c.attention, plus: c.success, minus: c.danger, danger: c.danger, text: c.text }[tone];
+}
 
 function LedView({ children, tone = "agent", color, size = theme.stage.ledSize, unlit = false, style, numberOfLines = 1 }: LedProps) {
   const agent = useAgentColor();
-  const ink = color ?? (tone === "agent" ? agent : TONE[tone]);
+  const palette = usePalette();
+  const ink = color ?? (tone === "agent" ? agent : toneInk(tone, palette.color));
   const lit = !unlit && tone !== "dim";
   return (
     <Text

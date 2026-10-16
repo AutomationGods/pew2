@@ -32,7 +32,8 @@ import {
   applyReviewMessage,
 } from "./ggState";
 import type { StreamChunk } from "./streamBatch";
-import type { ConfigOption, Workspace, WorkspaceEntry } from "./daemonTypes";
+import type { ConfigOption, Workspace, WorkspaceCreateErrorCode, WorkspaceEntry } from "./daemonTypes";
+import type { WireProject } from "./projects";
 import { NOTICE_BUFFER, type TurnFinished } from "./daemonState";
 import type { DaemonRefs } from "./daemonContext";
 import { reduceMessage } from "./daemonReducer";
@@ -539,7 +540,7 @@ export function handleSealedFrame(refs: FrameRefs, connection: FrameConnection, 
         // `error` below and puts this back to false.
         const sent = address !== undefined && ws.readyState === WebSocket.OPEN;
         if (sent) {
-          ws.send(JSON.stringify(secure.seal({ t: "app.push", ...address })));
+          ws.send(JSON.stringify(secure.seal({ t: "app.push", ...address, kinds: true })));
         }
         optionsRef.current.onPushRegistered?.(sent);
       });
@@ -700,6 +701,36 @@ export function handleSealedFrame(refs: FrameRefs, connection: FrameConnection, 
         refused,
       },
     }));
+    return;
+  }
+
+  // The answer to the picker's "new project". Only the request still on the
+  // sheet may land; a created folder is filed under its agent's projects at
+  // once, since it has no session yet for the probe to fold it from.
+  if (message.t === "workspace.created" && typeof message.requestId === "string") {
+    const result = message.result;
+    setState((s) => {
+      const pending = s.createProject;
+      if (!pending || pending.requestId !== message.requestId || pending.status !== "creating") return s;
+      if (result?.ok === true && typeof result.project?.path === "string") {
+        const project: WireProject = {
+          path: result.project.path,
+          name: typeof result.project.name === "string" ? result.project.name : pending.name,
+          sessions: 0,
+        };
+        const known = s.projects[pending.providerId] ?? [];
+        return {
+          ...s,
+          createProject: { ...pending, status: "created", path: project.path },
+          projects: known.some((p) => p.path === project.path)
+            ? s.projects
+            : { ...s.projects, [pending.providerId]: [project, ...known] },
+        };
+      }
+      const error: WorkspaceCreateErrorCode =
+        typeof result?.error === "string" ? result.error : "create_failed";
+      return { ...s, createProject: { ...pending, status: "failed", error } };
+    });
     return;
   }
 

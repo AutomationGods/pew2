@@ -2,6 +2,7 @@
 import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { theme } from "../theme";
+import { usePalette } from "./appearance";
 import { agentChipColors } from "../agentChipColors";
 import { Glass } from "./Glass";
 import { Pew } from "../pew/Pew";
@@ -15,7 +16,8 @@ interface AgentChipProps {
 }
 function AgentChipView({ provider, selected, onPress }: AgentChipProps) {
   const enabled = provider.available;
-  const colors = agentChipColors(provider.color, selected, enabled, theme.color);
+  const palette = usePalette();
+  const colors = agentChipColors(provider.color, selected, enabled, palette.color);
   return <Glass radius={theme.radius.pill} interactive={enabled} style={styles.chip}>
     <Pressable
       disabled={!enabled}

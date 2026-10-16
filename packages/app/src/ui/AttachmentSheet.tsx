@@ -18,9 +18,10 @@ import { theme } from "../theme";
 import { Sheet } from "./Sheet";
 import { PressScale } from "./stage/PressScale";
 import { Led } from "./stage/Led";
-import { dashedOutline } from "./stage/DashedRule";
 import { useAgentColor } from "./stage/agentColor";
 import { Dissolve } from "./motion/Dissolve";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 export type AttachmentSource = "library" | "camera" | "files";
 
@@ -42,6 +43,8 @@ const SOURCES: {
 ];
 
 function AttachmentSheetView({ visible, onSelect, onClose }: AttachmentSheetProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const agent = useAgentColor();
   return (
     <Sheet visible={visible} label="Attach" title="Add to the message" onClose={onClose} dismissLabel="Close attachments">
@@ -72,17 +75,17 @@ function AttachmentSheetView({ visible, onSelect, onClose }: AttachmentSheetProp
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   tiles: { flexDirection: "row", gap: theme.space(3) },
   cell: { flex: 1 },
   tile: {
-    ...dashedOutline,
+    ...p.outline,
     borderRadius: theme.space(3),
     aspectRatio: 1,
     alignItems: "center",
     justifyContent: "center",
     gap: theme.space(3),
   },
-});
+}));
 
 export const AttachmentSheet = memo(AttachmentSheetView);

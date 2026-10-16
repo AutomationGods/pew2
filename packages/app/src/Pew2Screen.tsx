@@ -17,7 +17,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import Reanimated from "react-native-reanimated";
 import { StatusBar } from "expo-status-bar";
 import { theme } from "./theme";
-import { styles } from "./appStyles";
+import { makeStyles as makeAppStyles } from "./appStyles";
 import { useDaemon, type Provider } from "./useDaemon";
 import { projectDrawerRows } from "./historyMetadata";
 import { restorePresentation } from "./restoreState";
@@ -58,6 +58,7 @@ import { sounds } from "./ui/sounds";
 import { AgentCarousel } from "./ui/AgentCarousel";
 import { orderProvidersByRecency } from "./providerRecency";
 import { AgentColorProvider } from "./ui/stage/agentColor";
+import { usePalette } from "./ui/appearance";
 import { pewInk } from "./pew/palette";
 import { showsStop } from "./composerState";
 import { ConfigPicker, summarise, valueName } from "./ui/ConfigPicker";
@@ -84,6 +85,8 @@ const PEW_HANDOFF_MS = 320;
 const NOOP = () => {};
 
 export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void }) {
+  const palette = usePalette();
+  const styles = makeAppStyles(palette);
   const { choice, setChoice, pushExpected, announceTurn } = useTurnBanners();
 
   // The relay identifies devices by this, and it must match the id baked into
@@ -834,8 +837,8 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
   return (
     <ImageResolverProvider value={imageResolver}>
     <AgentColorProvider value={agentInk}>
-    <View style={styles.root}>
-      <StatusBar style="light" />
+    <View style={[styles.root, { backgroundColor: palette.color.bg }]}>
+      <StatusBar style={palette.scheme === "light" ? "dark" : "light"} />
 
       <GestureDetector gesture={drawerSwipe}>
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -896,7 +899,7 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
       </GestureDetector>
 
       {/* The conversation pane. Slides right to reveal the drawer beneath. */}
-      <Reanimated.View style={[styles.pane, paneSlide]}>
+      <Reanimated.View style={[styles.pane, { backgroundColor: palette.color.bg }, paneSlide]}>
       {/* Starts below the nav: this strip is the hit target for anything it
           covers, and over the nav it would swallow taps on the menu button. */}
       {!menuOpen && (
@@ -1104,6 +1107,9 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
         onClose={closeNewChat}
         browse={daemon.browse}
         onBrowse={daemon.browseWorkspaces}
+        onCreate={daemon.canCreateWorkspace ? daemon.createWorkspace : undefined}
+        createState={daemon.createProject}
+        onCreateReset={daemon.clearCreateWorkspace}
       />
 
       <AttachmentSheet visible={attachOpen} onSelect={pickAttachment} onClose={closeAttach} />

@@ -26,10 +26,11 @@ import Reanimated, {
 } from "react-native-reanimated";
 import { DUR } from "../../motion";
 import { railDots, railThumb } from "../../scrollRail";
-import { theme } from "../../theme";
 import { EASE_OUT } from "../motion/ease";
 import { useReducedMotion } from "../useReducedMotion";
 import { useAgentColor } from "./agentColor";
+import { usePalette } from "../appearance";
+import { themedStyles, type Palette } from "../../palette";
 
 const RAIL_WIDTH = 3;
 const DOT = 2;
@@ -51,6 +52,8 @@ export interface StageScrollProps extends Omit<ScrollViewProps, "showsVerticalSc
 }
 
 export function StageScroll({ children, style, contentContainerStyle, rail = "outside", railGap = 10, onLayout, onContentSizeChange, ...rest }: StageScrollProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduce = useReducedMotion();
   const agent = useAgentColor();
   const y = useSharedValue(0);
@@ -94,7 +97,7 @@ export function StageScroll({ children, style, contentContainerStyle, rail = "ou
     return {
       height: t.length,
       transform: [{ translateY: t.offset }],
-      backgroundColor: interpolateColor(lit.value, [0, 1], [theme.color.textFaint, agent]),
+      backgroundColor: interpolateColor(lit.value, [0, 1], [palette.color.textFaint, agent]),
       opacity: 0.55 + 0.45 * lit.value,
     };
   });
@@ -147,12 +150,12 @@ export function StageScroll({ children, style, contentContainerStyle, rail = "ou
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   host: { flexShrink: 1 },
   lane: { paddingRight: INSIDE_LANE },
   rail: { position: "absolute", top: 0, bottom: 0, width: RAIL_WIDTH },
   railInside: { right: (INSIDE_LANE - RAIL_WIDTH) / 2 },
   track: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "space-between", paddingVertical: 1 },
-  dot: { width: DOT, height: DOT, borderRadius: DOT / 2, backgroundColor: theme.stage.dash },
+  dot: { width: DOT, height: DOT, borderRadius: DOT / 2, backgroundColor: p.stage.dash },
   thumb: { position: "absolute", top: 0, left: 0, width: RAIL_WIDTH, borderRadius: RAIL_WIDTH / 2 },
-});
+}));

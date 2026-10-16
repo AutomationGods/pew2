@@ -12,6 +12,7 @@ import type { Workspace } from "../useDaemon";
 import { StageChip, STAGE_CHIP_HEIGHT } from "./StageChip";
 import { DotGlyph } from "./stage/DotGlyph";
 import { Pixel } from "./stage/Pixel";
+import { usePalette } from "./appearance";
 
 export interface ContextBarProps {
   workspace?: Workspace;
@@ -25,6 +26,7 @@ export interface ContextBarProps {
   planMode?: boolean;
 }
 function ContextBarView({ workspace, usage, showCommands, onCommands, onDetails, onChecklist, planMode }: ContextBarProps) {
+  const palette = usePalette();
   const details = contextDetails(workspace, usage);
   const critical = details.level === "critical";
   return (
@@ -37,14 +39,14 @@ function ContextBarView({ workspace, usage, showCommands, onCommands, onDetails,
     >
       {showCommands && (
         <StageChip label="Commands" accessibilityLabel="Show commands" onPress={onCommands}
-          trailing={<DotGlyph name="chevron-down" size={10} color={theme.color.textDim} />} />
+          trailing={<DotGlyph name="chevron-down" size={10} color={palette.color.textDim} />} />
       )}
       <StageChip label={workspace?.folder || "Project"} maxLabelWidth={140}
         accessibilityLabel={`${details.project}. Show project details`} onPress={onDetails}
-        trailing={<DotGlyph name="chevron-down" size={10} color={theme.color.textDim} />} />
+        trailing={<DotGlyph name="chevron-down" size={10} color={palette.color.textDim} />} />
       {details.warning && (
         <StageChip label={details.usage} lit tone={critical ? "danger" : "attention"}
-          leading={<Pixel kind="attention" color={critical ? theme.color.danger : undefined} />}
+          leading={<Pixel kind="attention" color={critical ? palette.color.danger : undefined} />}
           accessibilityLabel={details.usageAccessibility} />
       )}
       {onChecklist && (

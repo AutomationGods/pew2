@@ -11,11 +11,12 @@ import { roleColor, workerMood } from "../pew/palette";
 import { elapsedLabel, workerElapsed, type GoalWorker } from "../ggState";
 import { Led } from "./stage/Led";
 import { PressScale } from "./stage/PressScale";
-import { dashedOutline } from "./stage/DashedRule";
 import Reanimated, { FadeIn, FadeOut, LinearTransition, ZoomIn, ZoomOut } from "react-native-reanimated";
 import { useReducedMotion } from "./useReducedMotion";
 import { EASE_OUT } from "./motion/ease";
 import { SPRING } from "../motion";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 export interface CrewRowProps {
   workers: readonly GoalWorker[];
@@ -34,6 +35,8 @@ export function liveWorkers(workers: readonly GoalWorker[]): GoalWorker[] {
 }
 
 export function CrewRow({ workers: all, onPressWorker }: CrewRowProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const workers = liveWorkers(all);
   const [selected, setSelected] = useState<string | undefined>();
   const [now, setNow] = useState(() => Date.now());
@@ -109,10 +112,10 @@ export function CrewRow({ workers: all, onPressWorker }: CrewRowProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   row: { paddingHorizontal: theme.gutter, gap: theme.space(2) },
   chip: {
-    ...dashedOutline,
+    ...p.outline,
     flexDirection: "row",
     alignItems: "center",
     height: 32,
@@ -123,5 +126,5 @@ const styles = StyleSheet.create({
   },
   pew: { width: 24, height: 24, alignItems: "center", justifyContent: "center", overflow: "visible" },
   name: { maxWidth: 140 },
-  tip: { color: theme.color.textDim, fontSize: 12, marginTop: theme.space(2), paddingHorizontal: theme.gutter },
-});
+  tip: { color: p.color.textDim, fontSize: 12, marginTop: theme.space(2), paddingHorizontal: theme.gutter },
+}));

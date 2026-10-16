@@ -29,6 +29,8 @@ import { Led } from "./stage/Led";
 import { haptics } from "./haptics";
 import { CircleButton } from "./controls";
 import { Glass } from "./Glass";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 interface Props {
   visible: boolean;
@@ -48,6 +50,8 @@ interface Props {
 }
 
 export function QrScanner({ visible, onClose, onScan, error, busy }: Props) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   // The camera fires continuously while a code is in frame. Without a latch the
@@ -128,7 +132,7 @@ export function QrScanner({ visible, onClose, onScan, error, busy }: Props) {
         <View style={[styles.overlay, { paddingTop: insets.top + theme.space(2) }]}>
           <View style={styles.bar}>
             <CircleButton label="Cancel scanning" size={40} onPress={close}>
-              <Ionicons name="close" size={22} color={theme.color.text} />
+              <Ionicons name="close" size={22} color={palette.color.text} />
             </CircleButton>
 
             {granted ? (
@@ -141,7 +145,7 @@ export function QrScanner({ visible, onClose, onScan, error, busy }: Props) {
                 <Ionicons
                   name={torch ? "flashlight" : "flashlight-outline"}
                   size={20}
-                  color={theme.color.text}
+                  color={palette.color.text}
                 />
               </CircleButton>
             ) : null}
@@ -155,7 +159,7 @@ export function QrScanner({ visible, onClose, onScan, error, busy }: Props) {
             </View>
           ) : (
             <View style={styles.centre}>
-              <Ionicons name="camera-outline" size={40} color={theme.color.textFaint} />
+              <Ionicons name="camera-outline" size={40} color={palette.color.textFaint} />
               <Text style={styles.permissionTitle}>
                 {permission?.canAskAgain === false ? "Camera is off" : "Camera needed"}
               </Text>
@@ -220,6 +224,8 @@ const CORNER = 44;
 const CORAL = "#ff7a66";
 
 function Corner({ at, color }: { at: "tl" | "tr" | "bl" | "br"; color: string; }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const top = at[0] === "t";
   const left = at[1] === "l";
   return (
@@ -242,6 +248,8 @@ function Corner({ at, color }: { at: "tl" | "tr" | "bl" | "br"; color: string; }
 
 /** Four dotted coral brackets and a sweeping line; solid green once read. */
 function Viewfinder({ read }: { read: boolean }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduce = useReducedMotion();
   const t = useSharedValue(0);
   const sweeping = !reduce && !read;
@@ -254,7 +262,7 @@ function Viewfinder({ read }: { read: boolean }) {
     return () => cancelAnimation(t);
   }, [sweeping, t]);
   const line = useAnimatedStyle(() => ({ transform: [{ translateY: t.value * (RETICLE - 2) }] }));
-  const color = read ? theme.color.success : CORAL;
+  const color = read ? palette.color.success : CORAL;
   return (
     <View style={styles.reticle}>
       <Corner at="tl" color={color} />
@@ -266,7 +274,7 @@ function Viewfinder({ read }: { read: boolean }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
   overlay: {
     position: "absolute",
@@ -304,15 +312,15 @@ const styles = StyleSheet.create({
   // The globe fills ~60% of its box.
   footerPew: { margin: -theme.space(2) },
   footerText: { flex: 1 },
-  error: { color: theme.color.danger, fontSize: theme.font.body },
+  error: { color: p.color.danger, fontSize: theme.font.body },
   permissionTitle: {
-    color: theme.color.text,
+    color: p.color.text,
     fontFamily: theme.display.semibold,
     fontSize: 18,
     letterSpacing: 0.4,
   },
   permissionBody: {
-    color: theme.color.textDim,
+    color: p.color.textDim,
     fontSize: 15,
     lineHeight: 21,
     textAlign: "center",
@@ -324,12 +332,12 @@ const styles = StyleSheet.create({
     paddingVertical: theme.space(3.5),
     paddingHorizontal: theme.space(8),
   },
-  allowText: { color: theme.color.text, fontSize: 16, fontWeight: "700" },
+  allowText: { color: p.color.text, fontSize: 16, fontWeight: "700" },
   secondary: {
     minHeight: theme.size.touch,
     justifyContent: "center",
     paddingVertical: theme.space(2),
     paddingHorizontal: theme.space(8),
   },
-  secondaryText: { color: theme.color.text, fontSize: 15, fontWeight: "600" },
-});
+  secondaryText: { color: p.color.text, fontSize: 15, fontWeight: "600" },
+}));

@@ -38,6 +38,8 @@ import { BitcountPropSingle_400Regular } from "@expo-google-fonts/bitcount-prop-
 import { BitcountPropSingle_600SemiBold } from "@expo-google-fonts/bitcount-prop-single/600SemiBold";
 import { BitcountPropSingle_700Bold } from "@expo-google-fonts/bitcount-prop-single/700Bold";
 
+import { AppearanceProvider } from "./src/ui/appearance";
+
 export default function App() {
   const [fontsLoaded, fontError] = useFonts({
     BitcountPropSingle_400Regular,
@@ -102,7 +104,9 @@ export default function App() {
             it. Coordinating two animation systems made the thread land twice. */}
         <KeyboardProvider>
           <SafeAreaProvider>
-            <Root />
+            <AppearanceProvider>
+              <Root />
+            </AppearanceProvider>
           </SafeAreaProvider>
         </KeyboardProvider>
       </GestureHandlerRootView>

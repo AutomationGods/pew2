@@ -25,6 +25,8 @@ import { theme } from "../theme";
 import { Glass } from "./Glass";
 import { haptics } from "./haptics";
 import { projectLabel, type Project } from "../projects";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 interface ProjectSelectProps {
   /** The chosen project, or undefined for all of them. */
@@ -38,6 +40,8 @@ interface ProjectSelectProps {
 }
 
 function ProjectSelectView({ selected, count, open, onToggle, onLayout }: ProjectSelectProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   // An agent that has never been used has nothing to choose between, and an
   // empty dropdown is a control that can only disappoint. One project still
   // earns the row: it says where the next conversation will open.
@@ -68,7 +72,7 @@ function ProjectSelectView({ selected, count, open, onToggle, onLayout }: Projec
           <Ionicons
             name="folder-outline"
             size={15}
-            color={selected ? theme.color.text : theme.color.textDim}
+            color={selected ? palette.color.text : palette.color.textDim}
           />
           <Text
             style={[styles.label, !selected && styles.labelAll]}
@@ -81,7 +85,7 @@ function ProjectSelectView({ selected, count, open, onToggle, onLayout }: Projec
           <Ionicons
             name={open ? "chevron-up" : "chevron-down"}
             size={14}
-            color={theme.color.textDim}
+            color={palette.color.textDim}
           />
         </Pressable>
       </Glass>
@@ -89,7 +93,7 @@ function ProjectSelectView({ selected, count, open, onToggle, onLayout }: Projec
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   // Same gutter as the chips above and the list below: this is a rail the whole
   // drawer shares, and stepping it in would read as a nested panel.
   host: { marginHorizontal: theme.gutter, marginTop: theme.sectionGap },
@@ -103,7 +107,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space(4),
   },
   label: {
-    color: theme.color.text,
+    color: p.color.text,
     fontSize: theme.font.small,
     lineHeight: theme.font.small + 4,
     // Takes the row, so the chevron stays pinned to the right edge however long
@@ -112,8 +116,8 @@ const styles = StyleSheet.create({
   },
   // Unset reads as a default rather than a choice, so it is dimmed to the same
   // weight as the "Latest chats" label below it.
-  labelAll: { color: theme.color.textDim },
+  labelAll: { color: p.color.textDim },
   pressed: { opacity: 0.6 },
-});
+}));
 
 export const ProjectSelect = memo(ProjectSelectView);

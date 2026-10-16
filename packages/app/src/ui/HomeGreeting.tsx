@@ -15,8 +15,9 @@ import { homeMood, pewInk } from "../pew/palette";
 import type { PewMood } from "../pew/engine";
 import { Led } from "./stage/Led";
 import { PressScale } from "./stage/PressScale";
-import { dashedOutline } from "./stage/DashedRule";
 import { AgentGlow } from "./AgentGlow";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 export interface HomeChat {
   id: string;
@@ -62,6 +63,8 @@ const GLOW = 340;
 const MAX_CHATS = 6;
 
 export function HomeGreeting({ color, busy, online = true, failed = false, text, status, onPressPew, chats, onOpenChat, typing, smiling = false }: HomeGreetingProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const mood: PewMood = smiling ? "happy" : failed ? "oops" : homeMood(online, busy);
   const ink = pewInk(color);
   const shown = (chats ?? []).slice(0, MAX_CHATS);
@@ -177,7 +180,7 @@ const GREETING_LINE = theme.line.greeting;
 /** A recent-chat card's height, fixed so the row is the same before and after. */
 const CARD_HEIGHT = 76;
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   root: { alignItems: "center", justifyContent: "center", alignSelf: "stretch" },
   rest: { alignSelf: "stretch", alignItems: "center" },
   spot: { width: HERO, height: HERO, alignItems: "center", justifyContent: "center" },
@@ -185,17 +188,17 @@ const styles = StyleSheet.create({
   textHold: { alignSelf: "stretch", marginTop: theme.space(2), minHeight: GREETING_LINE },
   textWrap: { alignSelf: "stretch", paddingHorizontal: theme.gutter },
   text: {
-    color: theme.color.text,
+    color: p.color.text,
     fontFamily: theme.display.regular,
     fontSize: theme.font.greeting,
     lineHeight: theme.line.greeting,
     textAlign: "center",
   },
-  hint: { color: theme.color.textDim, fontSize: 13, marginTop: theme.space(1) },
+  hint: { color: p.color.textDim, fontSize: 13, marginTop: theme.space(1) },
   cards: { alignSelf: "stretch", marginTop: theme.space(6), flexGrow: 0 },
   cardsRow: { paddingHorizontal: theme.gutter, gap: theme.space(2) },
-  card: { ...dashedOutline, width: 148, height: CARD_HEIGHT, borderRadius: 12, padding: theme.space(3), gap: theme.space(1.5) },
+  card: { ...p.outline, width: 148, height: CARD_HEIGHT, borderRadius: 12, padding: theme.space(3), gap: theme.space(1.5) },
   // The cards' space while there are none yet: the row's own height.
   cardsHold: { alignSelf: "stretch", marginTop: theme.space(6), height: CARD_HEIGHT },
-  cardTitle: { color: theme.color.text, fontSize: 13, lineHeight: 17 },
-});
+  cardTitle: { color: p.color.text, fontSize: 13, lineHeight: 17 },
+}));

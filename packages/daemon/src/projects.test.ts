@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { foldProjects, sessionsInProject } from "./projects.js";
+import { foldProjects, sessionsInProject, withRememberedProjects } from "./projects.js";
 
 test("a project is counted once however many conversations it holds", () => {
   const projects = foldProjects([
@@ -34,6 +34,19 @@ test("a project's stamp is the newest of its sessions even when a later row is t
 
 test("sessions with no project are skipped rather than listed as a nameless row", () => {
   expect(foldProjects([{ cwd: "" }, { cwd: "   " }])).toEqual([]);
+});
+
+test("remembered zero-session projects survive beside agent history without duplication", () => {
+  expect(
+    withRememberedProjects(
+      [{ path: "/a/active", name: "active", sessions: 2 }],
+      ["/a/old-empty", "/a/active", "/a/new-empty"],
+    ),
+  ).toEqual([
+    { path: "/a/active", name: "active", sessions: 2 },
+    { path: "/a/new-empty", name: "new-empty", sessions: 0 },
+    { path: "/a/old-empty", name: "old-empty", sessions: 0 },
+  ]);
 });
 
 test("choosing a project lists only its own conversations, capped", () => {

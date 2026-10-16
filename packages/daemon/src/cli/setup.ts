@@ -7,16 +7,24 @@
  * configuration, and ends by saying — in machine-readable form — exactly what is
  * still wrong and what command fixes it.
  *
- * So setup is: detect what is installed, prove it really speaks ACP, then
- * diagnose. Each stage is a function elsewhere; this only sequences them.
+ * So setup is: detect what is installed, prove it really speaks ACP, keep the
+ * daemon running in the background, then diagnose. Each stage is a function
+ * elsewhere; this only sequences them.
  */
 import { detectProviders, type DetectResult } from "../providers/detect.js";
 import { verifyAll, type VerifyReport } from "../providers/verify.js";
 import { loadProviders, providerDirs, isAvailable } from "../providers/registry.js";
 import { readDisabled, retireLegacyDisabled } from "../providers/enabled.js";
-import { doctor, type DoctorReport } from "./doctor.js";
+import { daemonUrl, doctor, probeDaemonHealth, type DoctorReport } from "./doctor.js";
+import {
+  installService,
+  isCompiled,
+  serviceStatus,
+  uninstallService,
+  type ServiceStatus,
+} from "./service.js";
 import { CATALOG } from "../providers/detect.js";
-import type { AgentState } from "./setup-view.js";
+import type { AgentState, ServiceOutcome } from "./setup-view.js";
 
 export interface SetupResult {
   /** True when nothing blocking remains. The agent's stop condition. */
@@ -43,6 +51,15 @@ export interface SetupResult {
    * the other direction — they get told, once, and choose again.
    */
   restored: string[];
+  /**
+   * The background service this run installed, and whether it started.
+   *
+   * Absent when setup left the service alone: one already existed, something
+   * was already serving, or this is a source checkout. An install that did not
+   * start is reported here and removed again, so it is never left on disk;
+   * `removed` says whether that worked.
+   */
+  serviceInstall?: ServiceOutcome;
 }
 
 export interface SetupOptions {
@@ -65,12 +82,103 @@ export interface SetupOptions {
   /** Read service state. Injectable so tests never inspect real launchd. */
   service?: () => Promise<{ state: string }>;
   /**
+   * A released binary rather than a source checkout. Only a release gets the
+   * background service: from a checkout it would be a login item pointing at a
+   * working tree, holding the port the dev server needs.
+   */
+  compiled?: boolean;
+  /** Install the background service. Injectable so tests never touch a real supervisor. */
+  installService?: () => Promise<ServiceStatus>;
+  /** Remove it again. Injectable for the same reason. */
+  uninstallService?: () => Promise<unknown>;
+  /**
+   * How long a service this run installed has to answer before it counts as not
+   * started. Injectable so a test of a failed start does not sit out the wait.
+   */
+  startTimeoutMs?: number;
+  /**
    * Run verification. Injectable so a test can describe a mix of working and
    * unconfigured agents without spawning any, which is the only way to cover
    * the rule that one working agent is enough.
    */
   verifyProviders?: typeof verifyAll;
-  onProgress?: (stage: "detect" | "verify" | "doctor", note?: string) => void;
+  onProgress?: (stage: "detect" | "verify" | "service" | "doctor", note?: string) => void;
+}
+
+/**
+ * How long to wait for a service this run installed to answer.
+ *
+ * A supervisor reports the process before it has bound its port, and a
+ * diagnosis taken in that gap says "nothing serving" about a daemon a second
+ * away from working.
+ */
+const START_TIMEOUT_MS = 10_000;
+const START_POLL_MS = 250;
+
+/** Does the daemon answer within `timeoutMs`? Always asks at least once. */
+async function answersWithin(
+  probe: (url: string) => Promise<boolean>,
+  url: string,
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (await probe(url)) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, START_POLL_MS));
+  }
+}
+
+/**
+ * Take a service that did not start off the machine again.
+ *
+ * A service file that never ran is worse than none. The updater reads its
+ * presence as "something will restart me", and would swap the binary and exit a
+ * daemon nothing brings back.
+ */
+async function removeAgain(
+  status: ServiceStatus,
+  uninstall: () => Promise<unknown>,
+): Promise<ServiceOutcome> {
+  const removed = await uninstall().then(
+    () => true,
+    () => false,
+  );
+  return { ...status, removed };
+}
+
+/**
+ * Install the background service, and take it off again if it does not start.
+ *
+ * Whether the daemon answers decides, not the supervisor's word for it. Task
+ * Scheduler's status is translated on a non-English Windows, so a task that is
+ * running there reads as merely "installed", and removing it on that word would
+ * take a working service away.
+ *
+ * Never throws. A home folder that cannot be written to is a reason not to run
+ * in the background, not a reason for the whole of setup to fail.
+ */
+async function startInBackground(
+  install: () => Promise<ServiceStatus>,
+  uninstall: () => Promise<unknown>,
+  answers: () => Promise<boolean>,
+): Promise<ServiceOutcome> {
+  let status: ServiceStatus;
+  try {
+    status = await install();
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    // Cleaned up all the same: the install may have written the file first.
+    return removeAgain({ state: "not-installed", detail: `Could not write the service: ${reason}` }, uninstall);
+  }
+
+  // Nothing answered before the install, so a daemon that answers now is the
+  // one this service started.
+  if (await answers()) return { ...status, state: "running" };
+  // Running by the supervisor's own account, only slow to answer: a busy
+  // machine, not a failed install. Doctor says so if it never comes up.
+  if (status.state === "running") return status;
+  return removeAgain(status, uninstall);
 }
 
 export async function setup(options: SetupOptions = {}): Promise<SetupResult> {
@@ -117,11 +225,38 @@ export async function setup(options: SetupOptions = {}): Promise<SetupResult> {
     verify = await (options.verifyProviders ?? verifyAll)(runnable);
   }
 
+  // Keep the daemon running once this terminal closes. Setup used to end by
+  // suggesting `pew2 serve`, which stops with the window, and the separate
+  // `pew2 service install` was the step people missed.
+  //
+  // Left alone, in the order checked:
+  // - a source checkout, which would get a login item pointing at a working
+  //   tree, holding the port the dev server needs;
+  // - an existing service, which may be a daemon someone is using right now;
+  // - a daemon already answering, which is `pew2 serve` in a terminal. A
+  //   supervised second copy would crash-loop on the port until that one
+  //   stopped; doctor's `not-autostarted` warning names the command instead.
+  const url = daemonUrl(env);
+  const probe = options.probeDaemon ?? probeDaemonHealth;
+  let serviceInstall: ServiceOutcome | undefined;
+  if (
+    (options.compiled ?? isCompiled()) &&
+    (await (options.service ?? serviceStatus)()).state === "not-installed" &&
+    !(await probe(url))
+  ) {
+    progress("service");
+    serviceInstall = await startInBackground(
+      options.installService ?? (() => installService({ env })),
+      options.uninstallService ?? (() => uninstallService()),
+      () => answersWithin(probe, url, options.startTimeoutMs ?? START_TIMEOUT_MS),
+    );
+  }
+
   progress("doctor");
   const report = await doctor({
     env,
     searchDirs,
-    probeDaemon: options.probeDaemon,
+    probeDaemon: probe,
     pairing: options.pairing,
     service: options.service,
   });
@@ -192,5 +327,5 @@ export async function setup(options: SetupOptions = {}): Promise<SetupResult> {
     };
   });
 
-  return { ok, detect: detected, verify, doctor: report, agents, nextSteps, restored };
+  return { ok, detect: detected, verify, doctor: report, agents, nextSteps, restored, serviceInstall };
 }

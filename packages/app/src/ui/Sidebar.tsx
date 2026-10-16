@@ -29,10 +29,12 @@ import { Pew } from "../pew/Pew";
 import { pewInk } from "../pew/palette";
 import { Led } from "./stage/Led";
 import { Pixel } from "./stage/Pixel";
-import { DashedRule, dashedOutline } from "./stage/DashedRule";
+import { DashedRule } from "./stage/DashedRule";
 import { useAgentColor } from "./stage/agentColor";
+import { usePalette } from "./appearance";
 import { Dissolve } from "./motion/Dissolve";
 import { DotGlyph } from "./stage/DotGlyph";
+import { themedStyles, type Palette } from "../palette";
 
 /**
  * The whole screen: the drawer is a page of its own now, with room for long
@@ -161,6 +163,8 @@ interface SessionRowProps {
 const RAIL_SLEEP = [0, 5, 8, 3, 7, 2, 9, 4, 6, 1] as const;
 
 const SessionRow = memo(function SessionRow({ session, index, active, reduceMotion, paused, onOpen, meta, onLongPress }: SessionRowProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   // Only rows that mount while the drawer is open cascade, captured at mount:
   // the list remounts behind a shut drawer when the daemon answers late, and a
   // cascade replayed on every open is the glitch this avoids.
@@ -195,6 +199,8 @@ const SessionRow = memo(function SessionRow({ session, index, active, reduceMoti
 
 /** "+ New chat" / "+ New goal": an LED action on the list heading's line. */
 function LedAction({ label, a11y, onPress }: { label: string; a11y: string; onPress: () => void }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
     <Dissolve kind="in">
       <Pressable
@@ -214,6 +220,8 @@ function LedAction({ label, a11y, onPress }: { label: string; a11y: string; onPr
 }
 
 function ListHead({ label, children }: { label: string; children?: ReactNode }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
     <View style={styles.listHead}>
       <Led tone="dim">{label}</Led>
@@ -224,6 +232,8 @@ function ListHead({ label, children }: { label: string; children?: ReactNode }) 
 
 /** GG Goals' half of the drawer: its goals in the same row style as chats. */
 function GoalsSection({ goals, activeSessionId, reduceMotion, paused }: { goals: SidebarGoals; activeSessionId?: string; reduceMotion: boolean; paused: boolean }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const sorted = useMemo(() => sortGoals([...(goals.list ?? [])]), [goals.list]);
   const byId = useMemo(() => new Map(sorted.map((goal) => [goal.id, goal])), [sorted]);
   // The system spinner only ever answers a pull the user made.
@@ -273,7 +283,7 @@ function GoalsSection({ goals, activeSessionId, reduceMotion, paused }: { goals:
               setPulled(true);
               goals.onRefresh();
             }}
-            tintColor={theme.color.textDim}
+            tintColor={palette.color.textDim}
           />
         }
         ListEmptyComponent={
@@ -308,6 +318,8 @@ const PEEK_GOALS = 3;
 
 /** The compact goals block: same rows as GoalsSection, latest few only. */
 function GoalsPeek({ goals, activeSessionId, reduceMotion, paused }: { goals: SidebarGoals & { onAll: () => void }; activeSessionId?: string; reduceMotion: boolean; paused: boolean }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const latest = useMemo(() => sortGoals([...(goals.list ?? [])]).slice(0, PEEK_GOALS), [goals.list]);
   const { onOpen } = goals;
   const open = useCallback(
@@ -367,6 +379,8 @@ function GoalsPeek({ goals, activeSessionId, reduceMotion, paused }: { goals: Si
 const RailAgent = memo(function RailAgent({
   provider, selected, mark, index, paused, reduceMotion, onPress,
 }: { provider: Provider; selected: boolean; mark: Mark; index: number; paused: boolean; reduceMotion: boolean; onPress: (id: string) => void }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const enabled = provider.available;
   const ink = pewInk(provider.color);
   const [revealing] = useState(() => !paused);
@@ -396,6 +410,8 @@ const RailAgent = memo(function RailAgent({
 const ALL_TAB = "\u0000all";
 
 const ProjectTab = memo(function ProjectTab({ path, label, a11y, selected, onSelect }: { path?: string; label: string; a11y: string; selected: boolean; onSelect: (path?: string) => void }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const agent = useAgentColor();
   return (
     <Pressable
@@ -437,6 +453,8 @@ function SidebarView({
   goals,
   goalsPeek,
 }: SidebarProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const insets = useSafeAreaInsets();
   const appActive = useAppActive();
   // Nothing animates while the drawer is shut or the app is off screen.
@@ -485,7 +503,7 @@ function SidebarView({
 
   return (
     <View
-      style={[styles.panel, { width: DRAWER_WIDTH }]}
+      style={[styles.panel, { width: DRAWER_WIDTH, backgroundColor: palette.color.drawer }]}
       pointerEvents={open ? "auto" : "none"}
       // Mounted while closed, but not on screen: unreachable by swipe navigation.
       accessibilityElementsHidden={!open}
@@ -518,7 +536,7 @@ function SidebarView({
             }}
             style={({ pressed }) => [styles.railButton, pressed && styles.pressed]}
           >
-            <Ionicons name="settings-outline" size={22} color={theme.color.textDim} />
+            <Ionicons name="settings-outline" size={22} color={palette.color.textDim} />
             {update && <View style={styles.railBadge}><Pixel kind="attention" paused={rowsStill} /></View>}
           </Pressable>
         </View>
@@ -642,14 +660,14 @@ function SidebarView({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   // Static lower layer: the conversation slides right to reveal it.
   panel: {
     position: "absolute",
     top: 0,
     left: 0,
     bottom: 0,
-    backgroundColor: theme.color.drawer,
+    backgroundColor: p.color.drawer,
     borderTopRightRadius: theme.radius.pane,
     borderBottomRightRadius: theme.radius.pane,
     overflow: "hidden",
@@ -664,7 +682,7 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
     // Brighter than an in-panel rule: it draws the drawer's curved edge
     // against a canvas of nearly the same colour.
-    borderColor: "rgba(255,255,255,0.28)",
+    borderColor: p.scheme === "light" ? "rgba(0,0,0,0.22)" : "rgba(255,255,255,0.28)",
     borderTopRightRadius: theme.radius.pane,
     borderBottomRightRadius: theme.radius.pane,
   },
@@ -697,13 +715,13 @@ const styles = StyleSheet.create({
   tabScroller: { flexGrow: 0, marginTop: theme.space(4) },
   tabs: { paddingHorizontal: COLUMN_PAD, gap: theme.space(2), alignItems: "center" },
   tab: {
-    ...dashedOutline,
+    ...p.outline,
     borderRadius: theme.radius.pill,
     minHeight: theme.size.chip,
     paddingHorizontal: theme.space(3),
     justifyContent: "center",
   },
-  tabText: { color: theme.color.textDim, fontSize: theme.font.small },
+  tabText: { color: p.color.textDim, fontSize: theme.font.small },
 
   peek: { marginBottom: theme.space(3) },
   peekActions: { flexDirection: "row", alignItems: "center", gap: theme.space(3) },
@@ -734,15 +752,15 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.sm,
   },
   statusCol: { width: STATUS_COL, alignItems: "center", justifyContent: "center" },
-  rowTitle: { flex: 1, color: theme.color.text, fontSize: theme.font.body, lineHeight: theme.line.body },
-  rowWhen: { color: theme.color.textDim, fontSize: theme.font.tiny },
+  rowTitle: { flex: 1, color: p.color.text, fontSize: theme.font.body, lineHeight: theme.line.body },
+  rowWhen: { color: p.color.textDim, fontSize: theme.font.tiny },
   empty: {
-    color: theme.color.textDim,
+    color: p.color.textDim,
     fontSize: theme.font.small,
     lineHeight: 20,
     paddingTop: theme.space(2),
   },
-});
+}));
 
 // Memoized: a streamed chunk re-renders the screen many times a second, and
 // none of those chunks change anything here.

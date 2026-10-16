@@ -1,3 +1,4 @@
+/* global performance, URLSearchParams */
 /**
  * Latency check: times every request/reply the app makes, as the app makes
  * them, over the relay and (optionally) the LAN socket, and prints p50/p95.
@@ -55,7 +56,7 @@ async function connect(transport) {
     const frame = JSON.parse(e.data);
     const m = e2e.isEnvelope(frame) ? channel.open(frame) : frame;
     if (m === undefined) return;
-    for (const w of waiters) if (w.pred(m)) (waiters.delete(w), w.resolve(m));
+    for (const w of waiters) if (w.pred(m)) { waiters.delete(w); w.resolve(m); }
   });
   await new Promise((resolve, reject) => {
     ws.addEventListener("open", resolve);
@@ -77,7 +78,8 @@ async function connect(transport) {
     async time(msg, pred, ms) {
       const p = c.waitFor(pred, ms);
       const t = now();
-      typeof msg === "string" ? c.raw(msg) : c.send(msg);
+      if (typeof msg === "string") c.raw(msg);
+      else c.send(msg);
       const m = await p;
       return { ms: now() - t, m };
     },

@@ -10,6 +10,8 @@ import Markdown, {
   type RenderRules,
 } from "react-native-markdown-renderer";
 import { theme } from "../theme";
+import { DARK_PALETTE, type Palette } from "../palette";
+import { usePalette } from "./appearance";
 import { ChatImage } from "./ChatImage";
 import { isDisplayableImage } from "../images";
 import { writeToClipboard } from "./clipboard";
@@ -134,6 +136,7 @@ export const markdownRules: Partial<RenderRules> = {
 };
 
 function stylesFor(
+  c: Palette["color"],
   color: string,
   fontSize: number,
   lineHeight: number,
@@ -158,7 +161,7 @@ function stylesFor(
     strong: { color, fontWeight: "700" },
     em: { color, fontStyle: "italic" },
     strikethrough: { color, textDecorationLine: "line-through" },
-    link: { color: theme.color.accent, textDecorationLine: "underline" },
+    link: { color: c.accent, textDecorationLine: "underline" },
     headingContainer: {
       flexDirection: "row",
       marginTop: theme.space(1),
@@ -174,16 +177,16 @@ function stylesFor(
     heading1Container: {
       paddingBottom: theme.space(1.5),
       borderBottomWidth: StyleSheetHairline,
-      borderBottomColor: theme.color.border,
+      borderBottomColor: c.border,
     },
     heading2Container: {
       paddingBottom: theme.space(1),
       borderBottomWidth: StyleSheetHairline,
-      borderBottomColor: theme.color.border,
+      borderBottomColor: c.border,
     },
     codeInline: {
-      color: theme.color.text,
-      backgroundColor: theme.color.surfacePressed,
+      color: c.text,
+      backgroundColor: c.surfacePressed,
       borderRadius: theme.radius.sm,
       paddingHorizontal: theme.space(1),
       fontFamily: monospace,
@@ -193,9 +196,9 @@ function stylesFor(
     codeBlockContainer: {
       ...fencedCodeContainerStyle,
       marginBottom: BLOCK_GAP,
-      backgroundColor: theme.color.surface,
+      backgroundColor: c.surface,
       borderWidth: StyleSheetHairline,
-      borderColor: theme.color.border,
+      borderColor: c.border,
       borderRadius: theme.radius.md,
     },
     codeBlockContent: {
@@ -204,7 +207,7 @@ function stylesFor(
       minWidth: 0,
     },
     codeBlock: {
-      color: theme.color.text,
+      color: c.text,
       // The renderer's default code style is GitHub-light (#f6f8fa). The dark
       // container owns the surface; the inner Text must not repaint it white.
       ...fencedCodeTextStyle,
@@ -217,7 +220,7 @@ function stylesFor(
     pre: { marginBottom: 0 },
     // A dim panel, not a left rule: no coloured left edges anywhere (the user's call).
     blockquote: {
-      backgroundColor: theme.color.surfaceRaised,
+      backgroundColor: c.surfaceRaised,
       borderRadius: theme.radius.sm,
       paddingLeft: theme.space(3),
       paddingRight: theme.space(3),
@@ -238,7 +241,7 @@ function stylesFor(
       lineHeight,
     },
     listOrderedItemIcon: {
-      color: theme.color.textDim,
+      color: c.textDim,
       marginLeft: 0,
       marginRight: theme.space(2),
       fontSize,
@@ -248,38 +251,38 @@ function stylesFor(
     listOrderedItemText: { color, fontSize, lineHeight },
     hr: {
       height: StyleSheetHairline,
-      backgroundColor: theme.color.border,
+      backgroundColor: c.border,
       marginTop: theme.space(2),
       marginBottom: theme.space(4.5),
     },
     table: {
       borderWidth: StyleSheetHairline,
-      borderColor: theme.color.border,
+      borderColor: c.border,
       borderRadius: theme.radius.sm,
       overflow: "hidden",
       marginBottom: BLOCK_GAP,
     },
-    tableHeader: { backgroundColor: theme.color.surfaceRaised },
+    tableHeader: { backgroundColor: c.surfaceRaised },
     tableHeaderCell: {
       flex: 1,
       paddingVertical: theme.space(2),
       paddingHorizontal: theme.space(2),
       borderWidth: StyleSheetHairline,
-      borderColor: theme.color.border,
+      borderColor: c.border,
       color,
       fontWeight: "700",
     },
     tableRow: {
       flexDirection: "row",
       borderBottomWidth: StyleSheetHairline,
-      borderBottomColor: theme.color.border,
+      borderBottomColor: c.border,
     },
     tableRowCell: {
       flex: 1,
       paddingVertical: theme.space(2),
       paddingHorizontal: theme.space(2),
       borderWidth: StyleSheetHairline,
-      borderColor: theme.color.border,
+      borderColor: c.border,
       color,
     },
     image: {
@@ -295,12 +298,22 @@ function stylesFor(
 
 // Kept outside render: the markdown renderer memoises its AST renderer by the
 // identity of these objects while streamed chunks update only the source text.
+export function markdownStylesFor(palette: Palette): Record<MarkdownTone, Partial<MarkdownStyles>> {
+  const c = palette.color;
+  return {
+    body: stylesFor(c, c.text, theme.font.body, theme.line.body),
+    thought: stylesFor(c, c.textDim, 14, 21, true),
+    system: stylesFor(c, c.danger, theme.font.small, 20),
+  };
+}
+
+/** Default (dark) styles, for callers outside the appearance provider. */
 export const markdownStyles: Record<MarkdownTone, Partial<MarkdownStyles>> = {
-  body: stylesFor(theme.color.text, theme.font.body, theme.line.body),
+  body: stylesFor(DARK_PALETTE.color, theme.color.text, theme.font.body, theme.line.body),
   // Reasoning reads as notes in the margin: italic, a touch larger than
   // small type so a long one is comfortable to read in the thought sheet.
-  thought: stylesFor(theme.color.textDim, 14, 21, true),
-  system: stylesFor(theme.color.danger, theme.font.small, 20),
+  thought: stylesFor(DARK_PALETTE.color, theme.color.textDim, 14, 21, true),
+  system: stylesFor(DARK_PALETTE.color, theme.color.danger, theme.font.small, 20),
 };
 
 /**
@@ -373,11 +386,14 @@ const MarkdownBlock = memo(function MarkdownBlock({
   live?: boolean;
   animate?: boolean;
 }) {
-  if (live) return <StreamingMarkdown source={source} animate={animate} rules={markdownRules as RenderRules} style={markdownStyles[tone]} onLinkPress={openLink} />;
+  const palette = usePalette();
+  // One object per palette, so the renderer's identity memo still holds while streaming.
+  const style = useMemo(() => (palette === DARK_PALETTE ? markdownStyles : markdownStylesFor(palette))[tone], [palette, tone]);
+  if (live) return <StreamingMarkdown source={source} animate={animate} rules={markdownRules as RenderRules} style={style} onLinkPress={openLink} />;
   return (
     <Markdown
       rules={markdownRules as RenderRules}
-      style={markdownStyles[tone]}
+      style={style}
       onLinkPress={openLink}
       // No `allowedImageHandlers`: that list only gates the library's own image
       // rule, which is replaced above precisely because it cannot load a file

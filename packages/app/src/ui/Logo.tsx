@@ -10,6 +10,8 @@
 import { StyleSheet, Text, View } from "react-native";
 import { Pew } from "../pew/Pew";
 import { theme } from "../theme";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 interface LogoProps {
   /** Visual size of the mark. The wordmark scales with it. */
@@ -17,6 +19,8 @@ interface LogoProps {
 }
 
 export function Logo({ size = 72 }: LogoProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
     <View
       style={styles.root}
@@ -54,13 +58,13 @@ export function Logo({ size = 72 }: LogoProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   root: { alignItems: "center", gap: theme.space(2) },
   mark: { marginVertical: -theme.space(4) },
   word: {
-    color: theme.color.text,
+    color: p.color.text,
     // The wordmark is the purest expression of the display face, so it uses the
     // same family as every other title rather than a bespoke treatment.
     fontFamily: theme.display.semibold,
   },
-});
+}));

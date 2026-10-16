@@ -21,6 +21,8 @@ import { withAlpha } from "../motion";
 import { Pew } from "../pew/Pew";
 import { Led } from "./stage/Led";
 import { haptics } from "./haptics";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 export type HandshakePhase = "waiting" | "pairing" | "paired" | "failed";
 
@@ -28,6 +30,8 @@ const PEW = 104;
 const PACKET = 6;
 
 function Packet({ width, offset }: { width: SharedValue<number>; offset: number }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const t = useSharedValue(0);
   useEffect(() => {
     t.value = withRepeat(withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.quad) }), -1);
@@ -45,6 +49,8 @@ interface Props {
 }
 
 export function Handshake({ phase }: Props) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduce = useReducedMotion();
   const width = useSharedValue(0);
   const paired = phase === "paired";
@@ -68,7 +74,7 @@ export function Handshake({ phase }: Props) {
         {paired ? (
           <View style={styles.lineSolid} />
         ) : (
-          <DashedRule dotted weight={2} color={failed ? withAlpha(theme.color.danger, 0.5) : theme.stage.dash} />
+          <DashedRule dotted weight={2} color={failed ? withAlpha(palette.color.danger, 0.5) : palette.stage.dash} />
         )}
         {phase === "pairing" && !reduce ? (
           <>
@@ -82,7 +88,7 @@ export function Handshake({ phase }: Props) {
         <Pew
           size={PEW}
           mood={paired ? "happy" : failed ? "oops" : "sleepy"}
-          color={paired ? theme.color.success : failed ? theme.color.danger : theme.color.textFaint}
+          color={paired ? palette.color.success : failed ? palette.color.danger : palette.color.textFaint}
           accessibilityLabel="Your computer"
           style={styles.pew}
         />
@@ -92,7 +98,7 @@ export function Handshake({ phase }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", marginTop: theme.space(4) },
   end: { alignItems: "center", width: PEW },
   // The globe fills ~60% of its box, so its box already leaves air under it;
@@ -102,8 +108,8 @@ const styles = StyleSheet.create({
   lineSolid: {
     height: 2,
     borderRadius: 1,
-    backgroundColor: theme.color.success,
-    shadowColor: theme.color.success,
+    backgroundColor: p.color.success,
+    shadowColor: p.color.success,
     shadowOpacity: 0.9,
     shadowRadius: theme.stage.glow,
     shadowOffset: { width: 0, height: 0 },
@@ -114,10 +120,10 @@ const styles = StyleSheet.create({
     width: PACKET,
     height: PACKET,
     borderRadius: PACKET / 2,
-    backgroundColor: theme.color.accent,
-    shadowColor: theme.color.accent,
+    backgroundColor: p.color.accent,
+    shadowColor: p.color.accent,
     shadowOpacity: 1,
     shadowRadius: theme.stage.glow,
     shadowOffset: { width: 0, height: 0 },
   },
-});
+}));

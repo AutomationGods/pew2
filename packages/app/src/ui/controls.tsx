@@ -18,6 +18,8 @@ import { GlyphLitContext } from "./stage/DotGlyph";
 import { DotGrid } from "./stage/DotGrid";
 import { haptics } from "./haptics";
 import { SPRING } from "../motion";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /**
  * Wrap a press handler so it pulses first.
@@ -67,6 +69,8 @@ export function CircleButton({
   style,
   feel,
 }: CircleButtonProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const press = withHaptic(onPress, feel);
   const agent = useAgentColor();
   const reduceMotion = useReducedMotion();
@@ -99,7 +103,7 @@ export function CircleButton({
             width: size,
             height: size,
             borderRadius: size / 2,
-            backgroundColor: tint ?? theme.stage.strip,
+            backgroundColor: tint ?? palette.stage.strip,
           },
           active && { borderStyle: "solid", borderColor: agent },
           disabled && styles.disabled,
@@ -123,6 +127,8 @@ interface PillProps {
 
 /** Horizontal pill: the provider selector and the quick-action chips. */
 export function Pill({ onPress, label, children, disabled = false, feel }: PillProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const content = <View style={styles.pillRow}>{children}</View>;
 
   if (!onPress) {
@@ -157,10 +163,12 @@ export function Pill({ onPress, label, children, disabled = false, feel }: PillP
 
 /** Small muted caption used inside pills and rows. */
 export function Caption({ children }: { children: ReactNode }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return <Text style={styles.caption}>{children}</Text>;
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   circle: { alignItems: "center", justifyContent: "center" },
   // One dashed ring all the way round: iOS only dashes a border when all four
   // sides share it, which a full circle does.
@@ -168,7 +176,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderWidth: StyleSheet.hairlineWidth > 0.5 ? StyleSheet.hairlineWidth : 1,
     borderStyle: "dashed",
-    borderColor: theme.stage.dash,
+    borderColor: p.stage.dash,
   },
   // A pill in a crowded row must be able to give up width, and every layer down
   // to the label needs to say so — one rigid ancestor and the text below it can
@@ -188,9 +196,9 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     minWidth: 0,
   },
-  pressed: { backgroundColor: theme.color.surfacePressed },
+  pressed: { backgroundColor: p.color.surfacePressed },
   // On glass, press brightens the surface rather than replacing its colour.
-  pressedOverlay: { backgroundColor: theme.glass.fillPressed },
+  pressedOverlay: { backgroundColor: p.glass.fillPressed },
   disabled: { opacity: 0.4 },
-  caption: { color: theme.color.textDim, fontSize: theme.font.small },
-});
+  caption: { color: p.color.textDim, fontSize: theme.font.small },
+}));

@@ -32,7 +32,6 @@ import { haptics } from "./haptics";
 import { useReducedMotion } from "./useReducedMotion";
 import { useAppActive } from "./useAppActive";
 import { Led } from "./stage/Led";
-import { dashedOutline } from "./stage/DashedRule";
 import { Pew } from "../pew/Pew";
 import { pewPalette } from "../pew/palette";
 import type { PewMood } from "../pew/engine";
@@ -42,6 +41,8 @@ import { levelSound, SOUND_NAMES } from "../soundsPolicy";
 import { hexRgb, skiaFx } from "./LaunchFx";
 import { paintDialBack, paintDialFront, pewKick, stopFraction, type DialGeometry, type DialMoment } from "../thinkFx";
 import type { FxPalette } from "../launchFx";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 const SIZE = 260;
 const RADIUS = 104;
@@ -107,6 +108,8 @@ export interface ThinkingDialProps {
 }
 
 export function ThinkingDial({ names, index, color, paused, onStep }: ThinkingDialProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduce = useReducedMotion();
   const active = useAppActive();
   const count = names.length;
@@ -117,8 +120,8 @@ export function ThinkingDial({ names, index, color, paused, onStep }: ThinkingDi
   );
   const pal = useMemo<FxPalette>(() => {
     const p = pewPalette(color);
-    return { bg: hexRgb(theme.color.bg), base: p.base, light: p.light, off: hexRgb(theme.stage.dash) };
-  }, [color]);
+    return { bg: hexRgb(palette.color.bg), base: p.base, light: p.light, off: hexRgb(palette.stage.dash) };
+  }, [color, palette.color.bg, palette.stage.dash]);
   const v: Values = {
     clock: useSharedValue(0),
     level: useSharedValue(fraction),
@@ -240,6 +243,8 @@ function StepButton({ icon, label, disabled, at, onPress }: {
   at: { left: number; top: number };
   onPress: () => void;
 }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
     <Pressable
       accessibilityRole="button"
@@ -249,12 +254,12 @@ function StepButton({ icon, label, disabled, at, onPress }: {
       onPress={onPress}
       style={({ pressed }) => [styles.stepButton, at, disabled && styles.disabled, pressed && styles.pressed]}
     >
-      <Ionicons name={icon} size={18} color={theme.color.text} />
+      <Ionicons name={icon} size={18} color={palette.color.text} />
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   wrap: { alignItems: "center", gap: theme.space(1) },
   dial: { width: SIZE, height: SIZE },
   pew: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center" },
@@ -262,7 +267,7 @@ const styles = StyleSheet.create({
   readout: { height: 28, alignSelf: "stretch", alignItems: "center", justifyContent: "center" },
   readoutLine: { position: "absolute" },
   stepButton: {
-    ...dashedOutline,
+    ...p.outline,
     position: "absolute",
     width: 44,
     height: 44,
@@ -272,4 +277,4 @@ const styles = StyleSheet.create({
   },
   disabled: { opacity: 0.35 },
   pressed: { opacity: 0.7 },
-});
+}));

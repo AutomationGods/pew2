@@ -17,7 +17,7 @@ import { loadImage } from "./images.js";
 import { resolveWorkspace } from "./workspace.js";
 import { suggestionRoots, discoverRepos, listDirectory } from "./workspaces.js";
 import { wire } from "@pew2/protocol";
-import { pushFinishedTurn } from "./push.js";
+import { pushAgentNotice, pushFinishedTurn } from "./push.js";
 import { storeGoalFiles } from "./goalFiles";
 import { readKnownProjects } from "./known-projects.js";
 
@@ -253,7 +253,13 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
           reply(errorMessage("push_unidentified", "Say hello before registering for push."));
           break;
         }
-        if (!daemon.pushTargets.register(deviceId, message.token, message.platform)) {
+        // An app that does not say `kinds` predates per-kind channels and
+        // sounds, and would drop a banner on a channel it never created.
+        if (
+          !daemon.pushTargets.register(deviceId, message.token, message.platform, {
+            legacy: message.kinds !== true,
+          })
+        ) {
           // Said out loud rather than ignored: a silently rejected token looks
           // exactly like a working one until someone waits for a notification
           // that never comes.
@@ -387,6 +393,17 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
           // already navigated away from.
           sessionId: message.sessionId,
           ...(await daemon.workspaceStatuses.get(root)),
+        });
+        break;
+      }
+
+      case "workspace.create": {
+        // Confined like `workspaces` (see `createWorkspaceDirectory`), and the
+        // new folder is registered as a known project so `session.start` honours it.
+        reply({
+          t: "workspace.created",
+          requestId: message.requestId,
+          result: await daemon.createWorkspace(message.name, message.parent),
         });
         break;
       }
@@ -576,7 +593,7 @@ function runTurn(ctx: HandlerContext, sessionId: string, turn: Promise<unknown>)
   // A shared desktop turn is owned by the desk: its own working flag ends it
   // (see `Daemon.record`), not this request settling.
   const sharedDesktop = daemon.isSharedDesktop(sessionId);
-  const idle = () => {
+  const idle = (failure?: string) => {
     if (sharedDesktop) return;
     // Tell every client the turn is over, so they can stop showing a working
     // indicator. Broadcast, not reply: other devices watching this session
@@ -587,6 +604,16 @@ function runTurn(ctx: HandlerContext, sessionId: string, turn: Promise<unknown>)
     // unconditionally: whether an app is really watching is only knowable on
     // the device, which applies the same rule to its local banner. Not
     // awaited, so the push service can never hold a session open or fail it.
+    // A failed turn is announced as an error, with its own sound.
+    if (failure !== undefined) {
+      void pushAgentNotice(daemon.pushTargets, {
+        sessionId,
+        kind: "error",
+        text: failure,
+        ...daemon.sessionNotice(sessionId),
+      });
+      return;
+    }
     void pushFinishedTurn(daemon.pushTargets, {
       sessionId,
       ...daemon.sessionNotice(sessionId),
@@ -599,8 +626,9 @@ function runTurn(ctx: HandlerContext, sessionId: string, turn: Promise<unknown>)
       if (outcome !== "queued") idle();
     },
     (error) => {
-      reply(errorMessage("prompt_failed", error));
-      idle();
+      const failure = errorMessage("prompt_failed", error);
+      reply(failure);
+      idle(failure.message);
     },
   );
 }

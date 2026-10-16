@@ -47,6 +47,8 @@ import { sounds } from "./sounds";
 import { BURST_MIN_S, type FxScene } from "../launchFx";
 import { LaunchPad, COVER_LAG_S, usePlainLaunch } from "./GoalLaunchPad";
 import { CHIP_LAYOUT, CONTEXT_MAX, ContextChips, GOAL_MAX, INSTRUCTIONS_MAX, INSTRUCTIONS_PLACEHOLDER, NAME_MAX, StageInput } from "./goalForm";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 // The form pieces moved to `goalForm.tsx`; re-exported so goal settings keeps importing them from here.
 export { CHIP_LAYOUT, CONTEXT_MAX, ContextChips, Field, GOAL_MAX, INSTRUCTIONS_MAX, INSTRUCTIONS_PLACEHOLDER, NAME_MAX, StageInput } from "./goalForm";
 
@@ -65,6 +67,8 @@ interface NewGoalSheetProps {
 }
 
 function NewGoalSheetView(props: NewGoalSheetProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const [quiet, setQuiet] = useState(false);
   useEffect(() => {
     if (props.visible) setQuiet(false);
@@ -117,6 +121,8 @@ const STEP_TITLE: Record<Step, string> = {
  * the keyboard; the last step is the launch pad.
  */
 function NewGoalScreen({ visible, onClose, onCreate, results, onCreated, browse, onBrowse, prefill, online, onQuietExit }: NewGoalSheetProps & { onQuietExit: () => void }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const insets = useSafeAreaInsets();
   const reduce = useReducedMotion();
   const [step, setStep] = useState<Step>("name");
@@ -522,9 +528,9 @@ const SESSION_MOUNT_MS = 260;
 /** Close + Back on the left, Next on the right. */
 const BAR_SIDE = 40 + theme.space(2) + 40;
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   fill: { flex: 1 },
-  screen: { ...StyleSheet.absoluteFillObject, backgroundColor: theme.color.bg },
+  screen: { ...StyleSheet.absoluteFillObject, backgroundColor: p.color.bg },
   bar: { flexDirection: "row", alignItems: "center", gap: theme.space(3), paddingHorizontal: theme.gutter, paddingVertical: theme.space(2) },
   // Both sides one width, so the progress dots stay centred whichever
   // buttons are showing.
@@ -532,23 +538,23 @@ const styles = StyleSheet.create({
   barSideEnd: { justifyContent: "flex-end" },
   next: { minWidth: BAR_SIDE - theme.space(2), paddingHorizontal: theme.space(4) },
   progress: { flex: 1, flexDirection: "row", justifyContent: "center", gap: theme.space(1.5) },
-  progressDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: theme.stage.dash },
+  progressDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: p.stage.dash },
   progressDotOn: { backgroundColor: KEN_COLOR },
   progressDotNow: { width: 18 },
   // Centred column: Ken, then the step's title, then its one field.
   body: { flexGrow: 1, alignItems: "center", paddingHorizontal: theme.gutter, paddingTop: theme.space(6), paddingBottom: theme.space(8) },
   ken: { alignItems: "center", marginBottom: theme.space(2) },
   step: { alignSelf: "stretch", alignItems: "center", gap: theme.space(3) },
-  stepTitle: { color: theme.color.text, fontFamily: theme.display.regular, fontSize: 24, lineHeight: 30, textAlign: "center" },
+  stepTitle: { color: p.color.text, fontFamily: theme.display.regular, fontSize: 24, lineHeight: 30, textAlign: "center" },
   center: { alignSelf: "stretch", textAlign: "center", fontSize: 18 },
   wide: { alignSelf: "stretch", gap: theme.space(3) },
   goal: { alignSelf: "stretch", minHeight: 140, textAlignVertical: "top" },
   multi: { alignSelf: "stretch", minHeight: 120, textAlignVertical: "top" },
-  error: { color: theme.color.danger, fontSize: theme.font.small },
+  error: { color: p.color.danger, fontSize: theme.font.small },
   errorCentred: { textAlign: "center", alignSelf: "stretch", lineHeight: 20 },
   launchHead: { alignItems: "center", gap: theme.space(2), paddingHorizontal: theme.gutter, paddingTop: theme.space(6) },
   launching: { position: "absolute", left: 0, right: 0, bottom: theme.space(24), alignItems: "center" },
   pressed: { opacity: 0.7 },
-});
+}));
 
 export const NewGoalSheet = memo(NewGoalSheetView);

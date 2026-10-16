@@ -10,6 +10,8 @@ import { theme } from "../theme";
 import type { PlanEntry } from "../toolCalls";
 import { haptics } from "./haptics";
 import { Led } from "./stage/Led";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 const GLYPH: Record<PlanEntry["status"], keyof typeof Ionicons.glyphMap> = {
   pending: "ellipse-outline",
@@ -18,6 +20,8 @@ const GLYPH: Record<PlanEntry["status"], keyof typeof Ionicons.glyphMap> = {
 };
 
 function PlanCardView({ plan }: { plan: PlanEntry[] }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const [open, setOpen] = useState(true);
   const done = plan.filter((entry) => entry.status === "completed").length;
   return (
@@ -35,7 +39,7 @@ function PlanCardView({ plan }: { plan: PlanEntry[] }) {
         <Led tone="dim">PLAN</Led>
         <Text style={styles.count}>{`${done}/${plan.length}`}</Text>
         <View style={styles.spacer} />
-        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={12} color={theme.color.textFaint} />
+        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={12} color={palette.color.textFaint} />
       </Pressable>
       {open && (
         <View style={styles.list}>
@@ -46,10 +50,10 @@ function PlanCardView({ plan }: { plan: PlanEntry[] }) {
                 size={14}
                 color={
                   entry.status === "completed"
-                    ? theme.color.success
+                    ? palette.color.success
                     : entry.status === "in_progress"
-                      ? theme.color.accent
-                      : theme.color.textFaint
+                      ? palette.color.accent
+                      : palette.color.textFaint
                 }
                 style={styles.glyph}
               />
@@ -72,13 +76,13 @@ function PlanCardView({ plan }: { plan: PlanEntry[] }) {
 
 export const PlanCard = memo(PlanCardView, (before, after) => before.plan === after.plan);
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   card: {
     width: "100%",
     borderRadius: theme.radius.md,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.border,
-    backgroundColor: theme.color.surface,
+    borderColor: p.color.border,
+    backgroundColor: p.color.surface,
   },
   header: {
     flexDirection: "row",
@@ -87,13 +91,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space(2.5),
     paddingVertical: theme.space(1.75),
   },
-  pressed: { backgroundColor: theme.color.surfacePressed },
-  count: { color: theme.color.textDim, fontSize: theme.font.small },
+  pressed: { backgroundColor: p.color.surfacePressed },
+  count: { color: p.color.textDim, fontSize: theme.font.small },
   spacer: { flex: 1 },
   list: { gap: theme.space(1.25), paddingHorizontal: theme.space(2.5), paddingBottom: theme.space(2.5) },
   row: { flexDirection: "row", alignItems: "flex-start", gap: theme.space(1.5) },
   glyph: { marginTop: 2 },
-  entry: { flex: 1, color: theme.color.textDim, fontSize: theme.font.small, lineHeight: 19 },
-  completed: { textDecorationLine: "line-through", color: theme.color.textFaint },
-  active: { color: theme.color.text },
-});
+  entry: { flex: 1, color: p.color.textDim, fontSize: theme.font.small, lineHeight: 19 },
+  completed: { textDecorationLine: "line-through", color: p.color.textFaint },
+  active: { color: p.color.text },
+}));

@@ -5,11 +5,12 @@ import { memo, type ReactNode } from "react";
 import { StyleSheet, View, type AccessibilityRole, type AccessibilityState } from "react-native";
 import { theme } from "../theme";
 import { withAlpha } from "../motion";
-import { dashedOutline } from "./stage/DashedRule";
 import { Led, type LedTone } from "./stage/Led";
 import { PressScale } from "./stage/PressScale";
 import { useAgentColor } from "./stage/agentColor";
 import type { haptics } from "./haptics";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /** Matches the composer's send/mic pill so a row of chips and buttons aligns. */
 export const STAGE_CHIP_HEIGHT = 32;
@@ -33,8 +34,10 @@ export interface StageChipProps {
 }
 
 function StageChipView({ label, lit = false, compact = false, tone, leading, trailing, onPress, feel = "tap", maxLabelWidth, ...a11y }: StageChipProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const agent = useAgentColor();
-  const ink = tone === "attention" ? theme.color.attention : tone === "danger" ? theme.color.danger : agent;
+  const ink = tone === "attention" ? palette.color.attention : tone === "danger" ? palette.color.danger : agent;
   const ledTone = tone ?? (lit ? "agent" : "dim");
   const body = (
     <>
@@ -49,10 +52,10 @@ function StageChipView({ label, lit = false, compact = false, tone, leading, tra
 }
 export const StageChip = memo(StageChipView);
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   compact: { paddingHorizontal: theme.space(2), gap: theme.space(1) },
   chip: {
-    ...dashedOutline,
+    ...p.outline,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.space(1.5),
@@ -61,4 +64,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space(3),
     flexShrink: 1,
   },
-});
+}));

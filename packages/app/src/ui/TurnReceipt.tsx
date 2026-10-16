@@ -16,11 +16,15 @@ import { receiptText, type TurnReceipt as Receipt } from "../activity";
 import { useReducedMotion } from "./useReducedMotion";
 import { STATUS_ROW_MAX_FONT_SCALE } from "./statusRow";
 import { useStatusRowHeight } from "./useStatusRowHeight";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /** Slower than a control's transition: this arrives, it does not respond. */
 const FADE_DURATION = 260;
 
 function TurnReceiptView({ receipt }: { receipt: Receipt }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduceMotion = useReducedMotion();
   const height = useStatusRowHeight();
   const fade = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
@@ -60,7 +64,7 @@ function TurnReceiptView({ receipt }: { receipt: Receipt }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   // Same left rail and rhythm as the activity line it replaces.
   row: {
     flexDirection: "row",
@@ -72,14 +76,14 @@ const styles = StyleSheet.create({
   mark: {
     fontSize: theme.font.small,
     lineHeight: theme.line.body,
-    color: theme.color.accent,
+    color: p.color.accent,
   },
   text: {
     flexShrink: 1,
     fontSize: theme.font.small,
     lineHeight: theme.line.body,
-    color: theme.color.textFaint,
+    color: p.color.textFaint,
   },
-});
+}));
 
 export const TurnReceipt = memo(TurnReceiptView);

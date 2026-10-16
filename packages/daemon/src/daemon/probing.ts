@@ -8,6 +8,8 @@ import { dirname as __dirname, resolve as __resolve } from "node:path";
 import { resolveWorkspace } from "../workspace.js";
 import { readProbeCache, writeProbeCache } from "../probe-cache.js";
 import { readConfigPrefs } from "../config-prefs.js";
+import { readKnownProjects } from "../known-projects.js";
+import { withRememberedProjects } from "../projects.js";
 import { readCommandDirs } from "../commands/from-disk.js";
 import { DaemonSpares } from "./spares.js";
 import {
@@ -311,6 +313,14 @@ export abstract class DaemonProbes extends DaemonSpares {
       // at construction for the probe cache's sake, and prefs are written
       // through the ambient one.
       configOptions: withStoredPrefs(probed.configOptions, await readConfigPrefs(providerId)),
+      // A project made from the phone has no session yet, so the agent's own
+      // history cannot fold it — the durable record of chosen projects can.
+      projects: withRememberedProjects(
+        probed.projects ?? [],
+        [...(await (this.chosen ??= readKnownProjects(this.env).then((paths) => new Set(paths))))].filter(
+          (path) => !this.isGoalFolder(path),
+        ),
+      ),
     };
   }
 

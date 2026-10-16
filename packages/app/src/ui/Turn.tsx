@@ -15,6 +15,7 @@ import { memo } from "react";
 import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { theme } from "../theme";
+import { usePalette } from "./appearance";
 import { MarkdownText } from "./MarkdownText";
 import { ChatImages } from "./ChatImage";
 import { CommandToken } from "./CommandToken";
@@ -34,6 +35,7 @@ import {
 import type { Turn as TurnModel } from "../useDaemon";
 import type { CallNote } from "../chunks";
 import { callHeading } from "../callNote";
+import { themedStyles, type Palette } from "../palette";
 
 /**
  * The retry button's square.
@@ -74,6 +76,8 @@ interface TurnProps {
  * a reply a block at a time instead of as one grouped utterance.
  */
 function TurnView(props: TurnProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const text = props.turn.text.trimEnd();
   if (isEmptyTurn(props.turn)) return null;
   // Cards own their own press (expand), so no copy-menu wrapper. Keyed on the
@@ -102,6 +106,8 @@ function TurnView(props: TurnProps) {
 }
 
 function TurnBody({ turn, onOpenThought, retryPrompt, onRetry, liveIdentity }: TurnProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const images = turn.images ?? [];
   // A turn with pictures and no words is normal: an image generation tool's
   // result arrives as content alone. Only a turn with neither renders nothing.
@@ -121,6 +127,7 @@ function TurnBody({ turn, onOpenThought, retryPrompt, onRetry, liveIdentity }: T
         <View
           style={[
             styles.userBubble,
+            { backgroundColor: palette.color.surfaceRaised },
             // Pictures need the same definite rail block markdown does: the
             // bubble otherwise hugs its text, and a percentage-width image
             // inside it resolves against an intrinsic width — invisible when
@@ -147,7 +154,7 @@ function TurnBody({ turn, onOpenThought, retryPrompt, onRetry, liveIdentity }: T
             column of warnings. */}
         {turn.queued && (
           <View style={styles.queuedRow}>
-            <Ionicons name="time-outline" size={12} color={theme.color.textDim} />
+            <Ionicons name="time-outline" size={12} color={palette.color.textDim} />
             <Text style={styles.queuedLabel}>Sends when you're back online</Text>
           </View>
         )}
@@ -157,7 +164,7 @@ function TurnBody({ turn, onOpenThought, retryPrompt, onRetry, liveIdentity }: T
 
   if (turn.role === "ken") {
     return (
-      <View style={styles.kenBubble}>
+      <View style={[styles.kenBubble, { backgroundColor: palette.color.surface }]}>
         <Text style={styles.kenLabel}>
           Ken{turn.ken?.round !== undefined ? ` · round ${turn.ken.round}` : ""}
         </Text>
@@ -212,7 +219,7 @@ function TurnBody({ turn, onOpenThought, retryPrompt, onRetry, liveIdentity }: T
             {/* Keeps its border: this one sits under an error rather than
                 under a reply, and has to read as
                 the way out of it rather than as part of the message. */}
-            <Ionicons name="refresh" size={16} color={theme.color.text} />
+            <Ionicons name="refresh" size={16} color={palette.color.text} />
           </Pressable>
         )}
       </View>
@@ -292,10 +299,12 @@ export const Turn = memo(
  * not a bubble from either side.
  */
 function CallTranscript({ call }: { call: CallNote }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
     <View style={styles.callCard} accessibilityRole="summary">
       <View style={styles.callHeader}>
-        <Ionicons name="call-outline" size={13} color={theme.color.textDim} />
+        <Ionicons name="call-outline" size={13} color={palette.color.textDim} />
         <Text style={styles.callHeading}>{callHeading(call)}</Text>
       </View>
       {call.lines.map((line, i) => (
@@ -310,7 +319,7 @@ function CallTranscript({ call }: { call: CallNote }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   // Pew's globe fills the middle of its box; the rest is room to bounce,
   // so the box overhangs the old icon's footprint instead of growing the row.
   pew: { margin: -4 },
@@ -319,30 +328,30 @@ const styles = StyleSheet.create({
     padding: theme.space(3),
     borderRadius: theme.radius.md,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.border,
-    backgroundColor: theme.color.surface,
+    borderColor: p.color.border,
+    backgroundColor: p.color.surface,
   },
   callHeader: { flexDirection: "row", alignItems: "center", gap: theme.space(1.5), marginBottom: theme.space(0.5) },
-  callHeading: { color: theme.color.textDim, fontSize: theme.font.small, fontWeight: "600" },
-  callLine: { color: theme.color.text, fontSize: theme.font.small, lineHeight: 19 },
-  callWho: { color: theme.color.textFaint, fontWeight: "600" },
-  callWhoUser: { color: theme.color.accent, fontWeight: "600" },
+  callHeading: { color: p.color.textDim, fontSize: theme.font.small, fontWeight: "600" },
+  callLine: { color: p.color.text, fontSize: theme.font.small, lineHeight: 19 },
+  callWho: { color: p.color.textFaint, fontWeight: "600" },
+  callWhoUser: { color: p.color.accent, fontWeight: "600" },
   noteRow: { flexDirection: "row", alignItems: "center", gap: theme.space(3), paddingVertical: theme.space(1) },
-  noteRule: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: theme.color.border },
-  noteText: { color: theme.color.textDim, fontSize: theme.font.small, flexShrink: 1, textAlign: "center" },
+  noteRule: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: p.color.border },
+  noteText: { color: p.color.textDim, fontSize: theme.font.small, flexShrink: 1, textAlign: "center" },
   kenBubble: {
     flex: 1,
     gap: theme.space(1),
-    backgroundColor: theme.color.surface,
+    backgroundColor: p.color.surface,
     borderRadius: theme.radius.md,
     paddingHorizontal: theme.space(3),
     paddingVertical: theme.space(2),
   },
-  kenLabel: { color: theme.color.textDim, fontSize: theme.font.tiny, fontWeight: "600" },
+  kenLabel: { color: p.color.textDim, fontSize: theme.font.tiny, fontWeight: "600" },
   userRow: { width: "100%", minWidth: 0, alignItems: "flex-end" },
   userBubble: {
     ...adaptiveUserBubbleStyle,
-    backgroundColor: theme.color.surfaceRaised,
+    backgroundColor: p.color.surfaceRaised,
     borderRadius: theme.radius.lg,
     paddingHorizontal: theme.space(3.5),
     paddingVertical: theme.space(2.75),
@@ -354,7 +363,7 @@ const styles = StyleSheet.create({
     paddingTop: theme.space(1),
     paddingRight: theme.space(1),
   },
-  queuedLabel: { color: theme.color.textDim, fontSize: theme.font.small },
+  queuedLabel: { color: p.color.textDim, fontSize: theme.font.small },
   // Stacked rather than inline: instructions are markdown and may run to
   // several lines, which would not wrap cleanly beside the token.
   commandPrompt: { gap: theme.space(1) },
@@ -382,8 +391,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: RETRY_SIZE / 2,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.border,
-    backgroundColor: theme.color.surfaceRaised,
+    borderColor: p.color.border,
+    backgroundColor: p.color.surfaceRaised,
   },
-  retryPressed: { backgroundColor: theme.color.surfacePressed },
-});
+  retryPressed: { backgroundColor: p.color.surfacePressed },
+}));

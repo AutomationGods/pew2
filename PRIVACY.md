@@ -1,14 +1,15 @@
 # Privacy Policy
 
-Last updated: 20 September 2026
+Last updated: 15 October 2026
 
 pew2 is an app for controlling coding agents that run on your own computer. This
-policy covers the pew2 iOS app and the pew2 command line tool.
+policy covers the pew2 iOS and Android apps and the pew2 command line tool.
 
 The short version: pew2 has no accounts, advertising, or analytics. Conversation
 traffic between the phone and your computer is encrypted end to end. Optional
-push notifications take a separate path through Expo and Apple, which can read
-their contents. The coding agents you choose have their own data practices.
+push notifications take a separate path through Expo and Apple or Google, which
+can read their contents. Optional live voice talks to OpenAI directly. The
+coding agents you choose have their own data practices.
 
 ## What the developer collects
 
@@ -29,8 +30,9 @@ them, and holds session state and unsent messages in memory. It does not save a
 persistent conversation archive on the phone.
 
 The app stores pairing details, a device identifier, the last selected agent,
-and cached agent information in the iOS Keychain. Keychain entries can survive
-uninstalling the app. Use **Forget** in the app to remove its saved pairing and
+and cached agent information in the iOS Keychain or, on Android, in storage
+protected by the Android Keystore. iOS Keychain entries can survive uninstalling
+the app. Use **Forget** in the app to remove its saved pairing and
 cached agent list; this does not remove agent history on your computer or all
 Keychain preferences. To invalidate an old pairing, rotate the pairing token on
 your computer using `pew2 pair --rotate`.
@@ -64,7 +66,8 @@ relay.
 - **Microphone and speech recognition.** To dictate a message while holding the
   microphone button. On iOS, the app requires on-device recognition rather than
   sending audio to Apple for transcription. The resulting text is sent to your
-  chosen agent when you send the message.
+  chosen agent when you send the message. The microphone is also used for live
+  voice calls, described below.
 - **Notifications.** To alert you about agent activity. See below for the
   separate push-delivery path.
 
@@ -73,32 +76,50 @@ You can refuse these permissions and continue using the app's other features.
 ## Notifications
 
 When remote notifications are enabled and registered, your computer sends
-finished-turn notifications to Expo's push service, which passes them to Apple
-Push Notification service (APNs). This happens even while the app is open;
+notifications to Expo's push service, which passes them to Apple Push
+Notification service (APNs) or, on Android, Google Firebase Cloud Messaging
+(FCM). A notification is sent when an agent finishes a turn, when it is waiting
+on you (a permission request or a question), and when a turn fails. This happens even while the app is open;
 the phone decides whether to show a banner. Local alerts can also be generated
 from events received over the encrypted session connection.
 
-Remote notification payloads are not end-to-end encrypted. Expo and Apple can
-read the project or agent name, a short excerpt from the agent's final message,
-a session identifier used to open the conversation, and the device's push
+Remote notification payloads are not end-to-end encrypted. Expo and Apple or
+Google can read the project or agent name, a short excerpt from the agent's
+final message or from the error that ended the turn, which kind of notification
+it is, a session identifier used to open the conversation, and the device's push
 delivery address. The excerpt can contain private information from that
 conversation. The full conversation is not sent as a push payload.
 
 Expo states that notification contents are held in memory and queues only as
 needed for delivery, not in databases, and may be visible to staff during
-active debugging. Apple's delivery handling is subject to its own policies.
+active debugging. Apple's and Google's delivery handling is subject to their own
+policies.
 
-Turning notifications off in iOS stops banners, but does not immediately remove
+Turning notifications off on the phone stops banners, but does not immediately remove
 a push address already registered with your computer. To stop the daemon from
 sending further push payloads for that phone, disable notifications and restart
 the daemon (`pew2 service restart`). The app will not register a new push address while
 notification permission is denied.
 
+## Live voice
+
+Live voice is optional and needs an OpenAI sign-in or API key set up on your
+computer. During a call, your computer obtains a short-lived credential from
+OpenAI and the app streams your microphone audio directly to OpenAI's Realtime
+service and plays back its replies. OpenAI processes that audio and the
+conversation context sent to it under its own terms and
+[privacy policy](https://openai.com/policies/privacy-policy/). When an agent
+needs you, your computer can ring the phone: on iOS through Apple's VoIP push,
+on Android through Expo and FCM. A ring carries the agent name, project folder
+and a short summary, not the conversation.
+
 ## Third parties
 
 pew2 has no analytics, advertising, or crash reporting SDKs. Delivery services
 include [Expo](https://expo.dev/privacy), [Apple](https://www.apple.com/legal/privacy/),
-and [Cloudflare](https://www.cloudflare.com/privacypolicy/), as described above.
+[Google](https://policies.google.com/privacy) (Android push),
+[Cloudflare](https://www.cloudflare.com/privacypolicy/) and, for live voice,
+[OpenAI](https://openai.com/policies/privacy-policy/), as described above.
 Opening the privacy policy or support links contacts GitHub in your browser;
 [GitHub's privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement)
 applies to that visit. Do not post private conversations, credentials, or other

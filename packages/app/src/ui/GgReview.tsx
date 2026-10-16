@@ -13,7 +13,7 @@ import { haptics } from "./haptics";
 import { StageButton } from "./stage/StageButton";
 import { Sheet } from "./Sheet";
 import { Led, type LedTone } from "./stage/Led";
-import { DashedRule, dashedOutline } from "./stage/DashedRule";
+import { DashedRule } from "./stage/DashedRule";
 import { Pixel } from "./stage/Pixel";
 import { PressScale } from "./stage/PressScale";
 import { withAlpha } from "../motion";
@@ -29,6 +29,8 @@ import {
   type ChecklistItem,
   type PendingPlan,
 } from "../ggReview";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 
 // ── Plan review ─────────────────────────────────────────────
@@ -54,6 +56,8 @@ function PlanReviewSheetView({
   busy: boolean;
   onDecide: (generation: number, action: "accept" | "feedback" | "reject", feedback?: string) => void;
 }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const held = useRef(plan);
   if (plan) held.current = plan;
   const shown = held.current;
@@ -101,7 +105,7 @@ function PlanReviewSheetView({
             </View>
           </>
         ) : (
-          <View style={[styles.planCard, dashedOutline]}>
+          <View style={[styles.planCard, palette.outline]}>
             <MarkdownText text={shown?.content ?? ""} />
           </View>
         )}
@@ -111,7 +115,7 @@ function PlanReviewSheetView({
             value={feedback}
             onChangeText={setFeedback}
             placeholder="What should change?"
-            placeholderTextColor={theme.color.textFaint}
+            placeholderTextColor={palette.color.textFaint}
             multiline
             autoFocus
           />
@@ -157,6 +161,8 @@ function GgControlStripView({
   onToggleAutopilot: () => void;
   onOpenChecklist: () => void;
 }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   if (!planMode && !showAutopilot && !showChecklist) return null;
   const on = autopilot?.enabled === true;
   return (
@@ -208,22 +214,26 @@ const BAND_TONE: Record<Band, LedTone> = { Failing: "danger", Due: "attention", 
 const BANDS: readonly Band[] = ["Failing", "Due", "Passing"];
 
 function StateGlyph({ band }: { band: Band }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   if (band === "Passing")
     return (
-      <View style={[styles.glyph, { backgroundColor: withAlpha(theme.color.success, 0.15) }]}>
-        <Ionicons name="checkmark" size={14} color={theme.color.success} />
+      <View style={[styles.glyph, { backgroundColor: withAlpha(palette.color.success, 0.15) }]}>
+        <Ionicons name="checkmark" size={14} color={palette.color.success} />
       </View>
     );
   if (band === "Failing")
     return (
       <View style={styles.glyph}>
-        <Ionicons name="close" size={16} color={theme.color.danger} />
+        <Ionicons name="close" size={16} color={palette.color.danger} />
       </View>
     );
   return <View style={[styles.glyph, styles.glyphDue]} />;
 }
 
 function ChecklistRow({ item, band, busy, onRun }: { item: ChecklistItem; band: Band; busy: boolean; onRun: (prompt: string) => void }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const [open, setOpen] = useState(false);
   const prompt = checklistRunPrompt(item);
   return (
@@ -293,6 +303,8 @@ function ChecklistSheetView({
   onClose: () => void;
   onRun: (prompt: string) => void;
 }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   // Same in-band order as the desktop (status, then title), regrouped by state.
   const sorted = items ? groupChecklist(items).flatMap((g) => g.items) : [];
   const bands = BANDS.map((band) => ({ band, items: sorted.filter((i) => BAND_OF[i.status] === band) })).filter((b) => b.items.length > 0);
@@ -322,19 +334,19 @@ function ChecklistSheetView({
 }
 export const ChecklistSheet = memo(ChecklistSheetView);
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   // Pew's globe fills the middle of its box; the rest is room to bounce,
   // so the box overhangs the old icon's footprint instead of growing the row.
   pew: { margin: -4 },
   scroll: { maxHeight: 560 },
   body: { gap: theme.space(3), paddingBottom: theme.space(2) },
   planCard: { padding: theme.space(4), borderRadius: theme.radius.md },
-  sub: { color: theme.color.textDim, fontSize: theme.font.small },
+  sub: { color: p.color.textDim, fontSize: theme.font.small },
   step: { flexDirection: "row", alignItems: "flex-start", gap: theme.space(3), paddingVertical: theme.space(3) },
   stepNum: { width: theme.space(6), paddingTop: 2 },
-  stepText: { flex: 1, color: theme.color.text, fontSize: theme.font.body },
+  stepText: { flex: 1, color: p.color.text, fontSize: theme.font.body },
   ledChip: {
-    ...dashedOutline,
+    ...p.outline,
     flexDirection: "row",
     alignItems: "center",
     gap: theme.space(2),
@@ -343,15 +355,15 @@ const styles = StyleSheet.create({
     paddingVertical: theme.space(1.5),
   },
   glyph: { width: 20, height: 20, borderRadius: 5, alignItems: "center", justifyContent: "center" },
-  glyphDue: { borderWidth: 1.5, borderStyle: "dashed", borderColor: theme.color.attention, width: 16, height: 16, margin: 2, borderRadius: 3 },
+  glyphDue: { borderWidth: 1.5, borderStyle: "dashed", borderColor: p.color.attention, width: 16, height: 16, margin: 2, borderRadius: 3 },
   row: { flexDirection: "row", gap: theme.space(2) },
   input: {
     minHeight: 80,
     borderRadius: theme.radius.md,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.border,
-    backgroundColor: theme.color.surface,
-    color: theme.color.text,
+    borderColor: p.color.border,
+    backgroundColor: p.color.surface,
+    color: p.color.text,
     fontSize: theme.font.body,
     padding: theme.space(3),
   },
@@ -365,21 +377,21 @@ const styles = StyleSheet.create({
     gap: theme.space(1.5),
     borderRadius: theme.radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.border,
-    backgroundColor: theme.color.surface,
+    borderColor: p.color.border,
+    backgroundColor: p.color.surface,
     paddingHorizontal: theme.space(2.5),
     paddingVertical: theme.space(1),
   },
-  chipOn: { borderColor: theme.color.accent, backgroundColor: theme.color.accentSoft },
-  chipText: { color: theme.color.textDim, fontSize: theme.font.small },
-  chipTextOn: { color: theme.color.accent, fontWeight: "600" },
+  chipOn: { borderColor: p.color.accent, backgroundColor: p.color.accentSoft },
+  chipText: { color: p.color.textDim, fontSize: theme.font.small },
+  chipTextOn: { color: p.color.accent, fontWeight: "600" },
   group: { gap: theme.space(1.5) },
-  groupTitle: { color: theme.color.textDim, fontSize: theme.font.small, fontWeight: "600", paddingHorizontal: theme.space(1) },
+  groupTitle: { color: p.color.textDim, fontSize: theme.font.small, fontWeight: "600", paddingHorizontal: theme.space(1) },
   itemTop: { flexDirection: "row", alignItems: "center", gap: theme.space(3), minHeight: theme.size.touch },
   itemMain: { flex: 1, flexDirection: "row", alignItems: "center", gap: theme.space(3), paddingVertical: theme.space(2.5) },
-  itemTitle: { color: theme.color.text, fontSize: theme.font.body },
+  itemTitle: { color: p.color.text, fontSize: theme.font.body },
   detail: { gap: theme.space(1.5), paddingLeft: 20 + theme.space(3), paddingBottom: theme.space(3) },
-  dimText: { color: theme.color.textDim, fontSize: theme.font.small },
-  hint: { color: theme.color.textFaint, fontSize: theme.font.tiny },
-  runButton: { ...dashedOutline, borderRadius: theme.radius.pill, paddingHorizontal: theme.space(3), paddingVertical: theme.space(1) },
-});
+  dimText: { color: p.color.textDim, fontSize: theme.font.small },
+  hint: { color: p.color.textFaint, fontSize: theme.font.tiny },
+  runButton: { ...p.outline, borderRadius: theme.radius.pill, paddingHorizontal: theme.space(3), paddingVertical: theme.space(1) },
+}));

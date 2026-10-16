@@ -9,6 +9,7 @@ import { memo, useMemo, useState } from "react";
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import { Canvas, Picture, Skia } from "@shopify/react-native-skia";
 import { theme } from "../../theme";
+import { usePalette } from "../appearance";
 
 interface DotGridProps {
   /** Spacing between dots. `fine` is the strip/ticker texture. */
@@ -19,7 +20,8 @@ interface DotGridProps {
 function DotGridView({ fine = false, style }: DotGridProps) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const step = fine ? theme.stage.fine : theme.stage.grid;
-  const color = fine ? theme.stage.fineColor : theme.stage.gridColor;
+  const palette = usePalette();
+  const color = fine ? palette.stage.fineColor : palette.stage.gridColor;
   const picture = useMemo(() => {
     if (size.w === 0 || size.h === 0) return null;
     const recorder = Skia.PictureRecorder();

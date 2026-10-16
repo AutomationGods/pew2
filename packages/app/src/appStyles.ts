@@ -1,16 +1,17 @@
 /** Styles for the main screen's shell: pane, nav, greeting, dock. */
 import { StyleSheet } from "react-native";
 import { theme } from "./theme";
+import { themedStyles, type Palette } from "./palette";
 
-export const styles = StyleSheet.create({
+export const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   // The drawer paints its own panel. Matching the conversation canvas here
   // removes the stray drawer-coloured band beneath the closed pane/home area.
-  root: { flex: 1, backgroundColor: theme.color.bg },
+  root: { flex: 1, backgroundColor: p.color.bg },
   // Rounded on all corners: once it slides it is a card over the drawer, and
   // the curve is what makes the two planes legible.
   pane: {
     flex: 1,
-    backgroundColor: theme.color.bg,
+    backgroundColor: p.color.bg,
     borderRadius: theme.radius.pane,
     overflow: "hidden",
     // Must sit above the drawer, which is absolutely positioned and would
@@ -60,7 +61,7 @@ export const styles = StyleSheet.create({
     textAlign: "center",
     flex: 1,
     minWidth: 0,
-    color: theme.color.text,
+    color: p.color.text,
     fontSize: theme.font.body,
     fontWeight: "600",
   },
@@ -73,7 +74,7 @@ export const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     borderWidth: 2,
-    borderColor: theme.color.bg,
+    borderColor: p.color.bg,
   },
 
 
@@ -87,7 +88,7 @@ export const styles = StyleSheet.create({
     gap: theme.space(5),
   },
   greetingText: {
-    color: theme.color.text,
+    color: p.color.text,
     fontFamily: theme.display.regular,
     fontSize: theme.font.greeting,
     lineHeight: theme.line.greeting,
@@ -122,7 +123,7 @@ export const styles = StyleSheet.create({
     // Opaque disc behind the glass. Every other glass control sits over the
     // dock's blur; this one floats on the bare transcript, so without a fill
     // the words it covers read straight through the arrow.
-    backgroundColor: theme.color.surfaceRaised,
+    backgroundColor: p.color.surfaceRaised,
     borderRadius: theme.size.chip / 2,
   },
 
@@ -135,4 +136,4 @@ export const styles = StyleSheet.create({
     width: theme.space(5),
     zIndex: 4,
   },
-});
+}));

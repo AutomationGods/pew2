@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { ACCENT_NAMES } from "../appearancePreference";
+import { DARK_PALETTE, LIGHT_PALETTE, resolvePalette } from "../palette";
 import { approvalActionColors, fallbackGlassTokens } from "../materialTokens";
 
 const canvas = "#111111";
@@ -46,33 +46,42 @@ test("approval button labels meet WCAG AA contrast", () => {
 });
 
 test("the connected-apps count is legible on its badge", () => {
-  // Read out of theme.ts as text rather than imported: that module pulls in
-  // react-native, which does not load under this runner. Parsing the source
-  // keeps the check honest — hardcoded copies would go on passing against
-  // values the app no longer uses, which is worse than having no test.
-  const source = readFileSync(join(import.meta.dir, "..", "theme.ts"), "utf8");
-  const token = (name: string) => {
-    const match = source.match(new RegExp(`\\b${name}:\\s*"(#[0-9a-fA-F]{6})"`));
-    if (!match) throw new Error(`theme.ts no longer defines a hex '${name}'`);
-    return match[1]!;
-  };
-
-  const textDim = token("textDim");
-  const surfaceRaised = token("surfaceRaised");
-  const drawer = token("drawer");
-
   // Small dim text is the easy thing to get wrong: it reads fine on a desk
   // monitor and vanishes on a phone outdoors. At 11px it is not large text, so
-  // full AA applies rather than the 3:1 allowed for headings.
-  //
-  // Checked against the drawer as well as the badge, because the badge fill is
-  // only ~1.1:1 against the drawer — a deliberately quiet container rather than
-  // a semantic surface. The number therefore has to stand on its own wherever it
-  // happens to be read, and asserting the fill were prominent would encode an
-  // intent the design does not have.
-  expect(contrast(textDim, surfaceRaised)).toBeGreaterThanOrEqual(4.5);
-  expect(contrast(textDim, drawer)).toBeGreaterThanOrEqual(4.5);
+  // full AA applies. Checked against the drawer too: the badge fill is a quiet
+  // container, so the number has to stand on its own wherever it is read.
+  for (const palette of [DARK_PALETTE, LIGHT_PALETTE]) {
+    expect(contrast(palette.color.textDim, palette.color.surfaceRaised)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(palette.color.textDim, palette.color.drawer)).toBeGreaterThanOrEqual(4.5);
+  }
 });
+
+test("the default dark palette is Ken's Stage palette, unchanged", () => {
+  const ken = resolvePalette("dark", "periwinkle");
+  expect(ken.color).toEqual(DARK_PALETTE.color);
+  expect(ken.color.bg).toBe("#0a0a0c");
+  expect(ken.color.accent).toBe("#b0b6ff");
+  expect(ken.color.accentSoft).toBe("#262a4d");
+  expect(ken.color.onAccent).toBe("#0c0e26");
+});
+
+for (const scheme of ["dark", "light"] as const) {
+  for (const accent of ACCENT_NAMES) {
+    test(`${scheme} / ${accent} meets the Stage contrast floors`, () => {
+      const c = resolvePalette(scheme, accent).color;
+      // Every surface text is read on, not the pressed flash.
+      for (const surface of [c.bg, c.drawer, c.surface, c.surfaceRaised]) {
+        for (const ink of [c.text, c.textDim, c.textFaint, c.accent, c.danger, c.success, c.attention, c.thought]) {
+          expect(contrast(ink, surface)).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+      expect(contrast(c.text, c.surfacePressed)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(c.accent, c.accentSoft)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(c.text, c.accentSoft)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(c.onAccent, c.accent)).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+}
 
 test("the reject boundary and fallback glass rims remain distinguishable", () => {
   // #3c3c40 is a conservative bright sample of the adaptive dark glass panel.
@@ -81,4 +90,22 @@ test("the reject boundary and fallback glass rims remain distinguishable", () =>
     const compositedRim = whiteOver(canvas, alpha(tier.rim));
     expect(contrast(compositedRim, canvas)).toBeGreaterThanOrEqual(3);
   }
+});
+
+test("light approval labels and fallback glass rims hold the same floors", () => {
+  const { approval, glass } = LIGHT_PALETTE;
+  expect(contrast(approval.allowText, approval.allowFill)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(approval.rejectText, approval.rejectFill)).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(approval.rejectRim, approval.rejectFill)).toBeGreaterThanOrEqual(3);
+  const light = LIGHT_PALETTE.color.bg;
+  for (const tier of [glass.control, glass.raised]) {
+    const a = alpha(tier.rim);
+    const rim = `#${rgb(light).map((c) => Math.round(c * (1 - a)).toString(16).padStart(2, "0")).join("")}`;
+    expect(contrast(rim, light)).toBeGreaterThanOrEqual(3);
+  }
+});
+
+test("dark glass and approval tokens are still materialTokens' literals", () => {
+  expect(DARK_PALETTE.glass).toEqual(fallbackGlassTokens);
+  expect(DARK_PALETTE.approval).toEqual(approvalActionColors);
 });

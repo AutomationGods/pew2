@@ -18,6 +18,8 @@ import type { DiffSummary } from "../lineDiff";
 import type { ToolKind } from "../activity";
 import { haptics } from "./haptics";
 import { Led } from "./stage/Led";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 const monospace = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
 
@@ -34,12 +36,16 @@ const KIND_ICON: Record<ToolKind, keyof typeof Ionicons.glyphMap> = {
 };
 
 function StatusGlyph({ status }: { status: ToolCard["status"] }) {
-  if (status === "completed") return <Ionicons name="checkmark" size={14} color={theme.color.success} />;
-  if (status === "failed") return <Ionicons name="alert-circle" size={14} color={theme.color.danger} />;
-  return <ActivityIndicator size="small" color={theme.color.textDim} style={styles.spinner} />;
+  const palette = usePalette();
+  const styles = makeStyles(palette);
+  if (status === "completed") return <Ionicons name="checkmark" size={14} color={palette.color.success} />;
+  if (status === "failed") return <Ionicons name="alert-circle" size={14} color={palette.color.danger} />;
+  return <ActivityIndicator size="small" color={palette.color.textDim} style={styles.spinner} />;
 }
 
 function DiffView({ diff }: { diff: DiffSummary }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
     <View style={styles.block}>
       <Text style={styles.blockLabel} numberOfLines={1}>
@@ -68,6 +74,8 @@ function DiffView({ diff }: { diff: DiffSummary }) {
 }
 
 function ToolCallCardView({ tool }: { tool: ToolCard }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const [open, setOpen] = useState(false);
   const counts = diffCounts(tool);
   const hasDetail = !!(tool.input || tool.output || tool.diffs?.length);
@@ -84,7 +92,7 @@ function ToolCallCardView({ tool }: { tool: ToolCard }) {
         accessibilityLabel={`${tool.title}${tool.target ? `, ${tool.target}` : ""}, ${tool.status.replace("_", " ")}`}
         style={({ pressed }) => [styles.header, pressed && hasDetail && styles.pressed]}
       >
-        <Ionicons name={KIND_ICON[tool.kind]} size={14} color={theme.color.textDim} />
+        <Ionicons name={KIND_ICON[tool.kind]} size={14} color={palette.color.textDim} />
         <Text style={styles.title} numberOfLines={1}>
           {tool.title}
           {tool.target && !tool.title.includes(tool.target.split("/").pop() ?? tool.target) ? <Text style={styles.target}>{`  ${tool.target}`}</Text> : null}
@@ -97,7 +105,7 @@ function ToolCallCardView({ tool }: { tool: ToolCard }) {
         )}
         <StatusGlyph status={tool.status} />
         {hasDetail && (
-          <Ionicons name={open ? "chevron-up" : "chevron-down"} size={12} color={theme.color.textFaint} />
+          <Ionicons name={open ? "chevron-up" : "chevron-down"} size={12} color={palette.color.textFaint} />
         )}
       </Pressable>
       {open && (
@@ -125,13 +133,13 @@ function ToolCallCardView({ tool }: { tool: ToolCard }) {
 
 export const ToolCallCard = memo(ToolCallCardView, (before, after) => before.tool === after.tool);
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   card: {
     width: "100%",
     borderRadius: theme.radius.md,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.border,
-    backgroundColor: theme.color.surface,
+    borderColor: p.color.border,
+    backgroundColor: p.color.surface,
     overflow: "hidden",
   },
   header: {
@@ -141,9 +149,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space(2.5),
     paddingVertical: theme.space(1.75),
   },
-  pressed: { backgroundColor: theme.color.surfacePressed },
-  title: { flex: 1, color: theme.color.text, fontSize: theme.font.small },
-  target: { color: theme.color.textDim },
+  pressed: { backgroundColor: p.color.surfacePressed },
+  title: { flex: 1, color: p.color.text, fontSize: theme.font.small },
+  target: { color: p.color.textDim },
   counts: { flexDirection: "row", gap: theme.space(1) },
   spinner: { transform: [{ scale: 0.7 }], width: 14, height: 14 },
   body: {
@@ -151,19 +159,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space(2.5),
     paddingBottom: theme.space(2.5),
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.color.border,
+    borderTopColor: p.color.border,
     paddingTop: theme.space(2),
   },
   block: { gap: theme.space(1) },
-  blockLabel: { color: theme.color.textDim, fontSize: theme.font.tiny, fontWeight: "600" },
+  blockLabel: { color: p.color.textDim, fontSize: theme.font.tiny, fontWeight: "600" },
   code: {
-    backgroundColor: theme.color.bg,
+    backgroundColor: p.color.bg,
     borderRadius: theme.radius.sm,
     padding: theme.space(2),
   },
   mono: { fontFamily: monospace, fontSize: theme.font.tiny, lineHeight: 16 },
-  ctx: { color: theme.color.textDim },
-  add: { color: theme.color.success, backgroundColor: "rgba(127,232,154,0.08)" },
-  del: { color: theme.color.danger, backgroundColor: "rgba(255,107,96,0.08)" },
-  gap: { color: theme.color.textFaint },
-});
+  ctx: { color: p.color.textDim },
+  add: { color: p.color.success, backgroundColor: "rgba(127,232,154,0.08)" },
+  del: { color: p.color.danger, backgroundColor: "rgba(255,107,96,0.08)" },
+  gap: { color: p.color.textFaint },
+}));

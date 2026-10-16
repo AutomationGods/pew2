@@ -13,7 +13,6 @@ import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { StageScroll } from "./stage/StageScroll";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { withAlpha } from "../motion";
-import { dashedOutline } from "./stage/DashedRule";
 import { useAgentColor } from "./stage/agentColor";
 import { theme } from "../theme";
 import { haptics } from "./haptics";
@@ -34,6 +33,8 @@ import {
   type AskRequest,
   type AskResult,
 } from "../askUser";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 interface AskUserSheetProps {
   /** The open question, or undefined once answered. */
@@ -42,6 +43,8 @@ interface AskUserSheetProps {
 }
 
 function AskUserSheetView({ ask, onAnswer }: AskUserSheetProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const held = useRef(ask);
   if (ask) held.current = ask;
   const shown = held.current;
@@ -101,6 +104,8 @@ function QuestionBlock({
   draft: AskDraft;
   onChange: (draft: AskDraft) => void;
 }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const options = questionOptions(question);
   const picks = draft.picks[question.id] ?? [];
   const hint = questionHint(question);
@@ -170,7 +175,7 @@ function QuestionBlock({
           value={other}
           onChangeText={(text) => onChange(typeOther(draft, question, text))}
           placeholder="Your own answer…"
-          placeholderTextColor={theme.color.placeholder}
+          placeholderTextColor={palette.color.placeholder}
           accessibilityLabel={`${question.question}, your own answer`}
           multiline
         />
@@ -182,6 +187,8 @@ function QuestionBlock({
 }
 
 function Radio({ on, square, color }: { on: boolean; square: boolean; color: string }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
     <View
       style={[
@@ -197,16 +204,16 @@ function Radio({ on, square, color }: { on: boolean; square: boolean; color: str
 
 const BADGE_HEIGHT = 18;
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   scroll: { maxHeight: 520 },
   body: { gap: theme.space(5), paddingBottom: theme.space(2) },
   question: { gap: theme.space(2) },
-  heading: { color: theme.color.text, fontSize: theme.font.body, fontWeight: "600", paddingHorizontal: theme.space(1) },
-  detail: { color: theme.color.textDim, fontSize: theme.font.small, paddingHorizontal: theme.space(1) },
-  hint: { color: theme.color.textFaint, fontSize: theme.font.tiny, paddingHorizontal: theme.space(1) },
+  heading: { color: p.color.text, fontSize: theme.font.body, fontWeight: "600", paddingHorizontal: theme.space(1) },
+  detail: { color: p.color.textDim, fontSize: theme.font.small, paddingHorizontal: theme.space(1) },
+  hint: { color: p.color.textFaint, fontSize: theme.font.tiny, paddingHorizontal: theme.space(1) },
   opts: { gap: theme.space(2) },
   option: {
-    ...dashedOutline,
+    ...p.outline,
     borderRadius: theme.radius.md,
     flexDirection: "row",
     alignItems: "center",
@@ -215,13 +222,13 @@ const styles = StyleSheet.create({
     paddingVertical: theme.space(2.5),
     paddingHorizontal: theme.space(4),
   },
-  radio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: theme.color.textDim, alignItems: "center", justifyContent: "center" },
+  radio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, borderColor: p.color.textDim, alignItems: "center", justifyContent: "center" },
   radioSquare: { borderRadius: 4 },
   radioDot: { width: 8, height: 8, borderRadius: 4 },
-  optionPressed: { backgroundColor: theme.color.surfacePressed },
+  optionPressed: { backgroundColor: p.color.surfacePressed },
   optionMain: { flex: 1, gap: theme.space(0.5) },
-  optionLabel: { color: theme.color.text, fontSize: theme.font.body, lineHeight: theme.line.body },
-  optionHint: { color: theme.color.textDim, fontSize: theme.font.small, lineHeight: 18 },
+  optionLabel: { color: p.color.text, fontSize: theme.font.body, lineHeight: theme.line.body },
+  optionHint: { color: p.color.textDim, fontSize: theme.font.small, lineHeight: 18 },
   // Sat on the option's top border, centred on the line, like a legend: an
   // opaque fill so the dashes stop either side of it.
   recommendedRoom: { marginTop: BADGE_HEIGHT / 2 + theme.space(1) },
@@ -233,14 +240,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: theme.radius.pill,
     borderWidth: 1,
-    borderColor: theme.color.accent,
-    backgroundColor: theme.color.accentSoft,
+    borderColor: p.color.accent,
+    backgroundColor: p.color.accentSoft,
     paddingHorizontal: theme.space(2),
   },
-  badgeText: { color: theme.color.accent, fontSize: theme.font.tiny, lineHeight: 14, fontWeight: "600" },
-  input: { flex: 1, color: theme.color.text, fontSize: theme.font.body, padding: 0 },
+  badgeText: { color: p.color.accent, fontSize: theme.font.tiny, lineHeight: 14, fontWeight: "600" },
+  input: { flex: 1, color: p.color.text, fontSize: theme.font.body, padding: 0 },
   submit: { marginTop: theme.space(2) },
   pressed: { opacity: 0.7 },
-});
+}));
 
 export const AskUserSheet = memo(AskUserSheetView);

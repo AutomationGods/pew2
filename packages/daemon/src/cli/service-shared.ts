@@ -54,14 +54,22 @@ export interface CommandResult {
 export type RunCommand = (command: string, args: string[]) => Promise<CommandResult>;
 
 /**
+ * Where Bun roots a compiled binary's own modules: `/$bunfs/` on macOS and
+ * Linux, `B:/~BUN/` on Windows, where Bun also reports it with backslashes. The
+ * tilde is matched percent-encoded as well, since this is read out of a URL.
+ */
+const COMPILED_ROOT = /[\\/]\$bunfs[\\/]|[\\/](?:~|%7[eE])BUN[\\/]/;
+
+/**
  * Is this a compiled binary rather than a source checkout?
  *
- * Bun serves a compiled binary's own modules out of a virtual filesystem rooted
- * at `/$bunfs/`, so `import.meta.url` says so directly. Everything downstream of
- * this question was wrong before it was asked.
+ * Bun serves a compiled binary's own modules out of a virtual filesystem, so
+ * `import.meta.url` says so directly. Everything downstream of this question was
+ * wrong before it was asked. Checking only the POSIX root made every Windows
+ * release answer "source checkout".
  */
-export function isCompiled(): boolean {
-  return import.meta.url.includes("/$bunfs/");
+export function isCompiled(url: string = import.meta.url): boolean {
+  return COMPILED_ROOT.test(url);
 }
 
 /**

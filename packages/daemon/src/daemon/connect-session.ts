@@ -113,6 +113,7 @@ export abstract class DaemonConnectSession extends DaemonPromptQueue {
         this.record(session, { kind: "permission_request", requestId, params });
         // The agent is blocked on the user: ring the phone (live voice).
         this.ringForInput(session.log.sessionId);
+        this.pushInputNeeded(session.log.sessionId);
       },
       gg: {
         // Same order as a permission: held, clock stamped, then told.
@@ -124,6 +125,7 @@ export abstract class DaemonConnectSession extends DaemonPromptQueue {
           this.record(session, { kind: "ask_user", requestId, questions });
           // A question blocks the agent just like a permission: ring the phone.
           this.ringForInput(session.log.sessionId);
+          this.pushInputNeeded(session.log.sessionId);
         },
         // The agent withdrew it (JSON-RPC cancel, or a new ask superseded it).
         onAskClosed: (requestId: string) => this.closeAsk(session, requestId),

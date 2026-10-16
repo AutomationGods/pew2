@@ -16,6 +16,8 @@ import { StageButton } from "./stage/StageButton";
 import { useAgentColor } from "./stage/agentColor";
 import { Dissolve } from "./motion/Dissolve";
 import type { RestorePresentation } from "../restoreState";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 const GRACE_MS = 250;
 
@@ -27,6 +29,8 @@ export interface ConversationRestoreProps {
 }
 
 export function ConversationRestore({ title, state, error, onRetry }: ConversationRestoreProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const agent = useAgentColor();
   const waiting = state === "loading" || state === "reconnecting";
   // A launched goal is already being watched for (the launch just opened onto
@@ -106,13 +110,13 @@ export function ConversationRestore({ title, state, error, onRetry }: Conversati
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   root: { paddingHorizontal: theme.gutter, paddingVertical: theme.sectionGap, gap: theme.space(3) },
   head: { flexDirection: "row", alignItems: "center", gap: theme.space(2) },
   // The globe fills ~60% of its box; trim the box so the row stays tight.
   pew: { margin: -theme.space(2) },
-  message: { color: theme.color.textDim, fontSize: theme.font.small, lineHeight: 20 },
+  message: { color: p.color.textDim, fontSize: theme.font.small, lineHeight: 20 },
   loading: { flex: 1, minHeight: 360, alignItems: "center", justifyContent: "center" },
   loadingInner: { alignItems: "center", gap: theme.space(1) },
   retry: { alignSelf: "center" },
-});
+}));

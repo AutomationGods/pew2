@@ -24,6 +24,8 @@ import { Dissolve } from "./motion/Dissolve";
 import { useReducedMotion } from "./useReducedMotion";
 import { STATUS_ROW_MAX_FONT_SCALE } from "./statusRow";
 import { useStatusRowHeight } from "./useStatusRowHeight";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /** Continuous, and slower than the composer's badge: this runs for minutes. */
 const SWEEP_DURATION = 2200;
@@ -35,6 +37,8 @@ const SWAP_DURATION = 160;
 const SWAP_FROM = 0.35;
 
 function ActivityLineView({ activity, color }: { activity: Activity; color?: string }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const tool = currentTool(activity);
   const queued = queuedTools(activity);
   const reduceMotion = useReducedMotion();
@@ -83,7 +87,7 @@ function ActivityLineView({ activity, color }: { activity: Activity; color?: str
       <Dissolve kind="swap" dissolveKey={tool?.id ?? "working"} style={styles.label}>
         <ShimmerText
           text={title}
-          color={theme.color.textDim}
+          color={palette.color.textDim}
           size={theme.font.small}
           lineHeight={theme.line.body}
           weight="500"
@@ -105,7 +109,7 @@ function ActivityLineView({ activity, color }: { activity: Activity; color?: str
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   // Pew's globe fills the middle of its box; the rest is room to bounce,
   // so the box overhangs the old icon's footprint instead of growing the row.
   pew: { margin: -4 },
@@ -124,8 +128,8 @@ const styles = StyleSheet.create({
   queued: {
     fontSize: theme.font.tiny,
     fontWeight: "600",
-    color: theme.color.textFaint,
+    color: p.color.textFaint,
   },
-});
+}));
 
 export const ActivityLine = memo(ActivityLineView);

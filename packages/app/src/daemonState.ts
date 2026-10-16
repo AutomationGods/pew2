@@ -21,6 +21,7 @@ import type {
   Session,
   Workspace,
   WorkspaceBrowse,
+  WorkspaceCreate,
 } from "./daemonTypes";
 
 /**
@@ -165,6 +166,13 @@ export interface State {
    * a freshly installed one has nothing to offer.
    */
   browse?: WorkspaceBrowse;
+  /**
+   * Whether the daemon accepts `workspace.create`. Absent or false means an
+   * older daemon, so the picker does not offer a button that would be refused.
+   */
+  canCreateWorkspace?: boolean;
+  /** The picker's latest "new project" request, if any. */
+  createProject?: WorkspaceCreate;
   /**
    * How full the agent's context window is, for the session on screen.
    *

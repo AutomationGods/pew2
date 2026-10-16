@@ -12,16 +12,21 @@ import Animated, { cancelAnimation, Easing, useAnimatedStyle, useSharedValue, wi
 import { theme } from "../theme";
 import type { Pill, PillTone } from "../statusPill";
 import { useReducedMotion } from "./useReducedMotion";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
-const TONE: Record<PillTone, string> = {
-  live: theme.color.success,
-  accent: theme.color.accent,
-  attention: theme.color.attention,
-  danger: theme.color.danger,
-  quiet: theme.color.textFaint,
-};
+const toneFor = themedStyles((palette: Palette): Record<PillTone, string> => ({
+  live: palette.color.success,
+  accent: palette.color.accent,
+  attention: palette.color.attention,
+  danger: palette.color.danger,
+  quiet: palette.color.textFaint,
+}));
 
 function StatusPillView({ pill }: { pill: Pill }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
+  const TONE = toneFor(palette);
   const reduceMotion = useReducedMotion();
   const breath = useSharedValue(1);
   const breathing = pill.pulse === true && !reduceMotion;
@@ -46,7 +51,7 @@ function StatusPillView({ pill }: { pill: Pill }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   pill: {
     flexDirection: "row",
     alignItems: "center",
@@ -55,16 +60,16 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: theme.radius.pill,
     // Raised one step off the drawer and canvas: shape by surface, not outline.
-    backgroundColor: theme.color.surfaceRaised,
+    backgroundColor: p.color.surfaceRaised,
   },
   dot: { width: 6, height: 6, borderRadius: 3 },
   label: {
-    color: theme.color.textDim,
+    color: p.color.textDim,
     fontSize: theme.font.tiny,
     fontWeight: "500",
     // Explicit for a padded control (1.27 × 11pt).
     lineHeight: 14,
   },
-});
+}));
 
 export const StatusPill = memo(StatusPillView);

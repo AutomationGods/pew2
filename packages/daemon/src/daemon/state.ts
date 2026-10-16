@@ -312,4 +312,6 @@ export abstract class DaemonState {
   abstract sessionOrigin(sessionId: string): { providerId?: string; folder?: string };
   protected abstract closeAsk(session: ActiveSession, requestId: string): void;
   abstract ringForInput(sessionId: string): void;
+  /** Banner every phone: the agent is blocked on a permission or question. */
+  abstract pushInputNeeded(sessionId: string): void;
 }

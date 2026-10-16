@@ -119,6 +119,13 @@ test("every message the app actually sends is accepted", () => {
     { t: "image.fetch", requestId: "u", uri: "u", sessionId: "s1" },
     { t: "workspaces", requestId: "r1" },
     { t: "workspaces", requestId: "r1", path: "/Users/someone" },
+    { t: "workspace.create", requestId: "r2", name: "mobile-app" },
+    {
+      t: "workspace.create",
+      requestId: "r3",
+      name: "mobile-app",
+      parent: "/Users/someone/code",
+    },
     { t: "workspace.status", sessionId: "s1", providerId: "claude-code" },
   ];
 
@@ -129,6 +136,46 @@ test("every message the app actually sends is accepted", () => {
       ok: true,
     });
   }
+});
+
+test("workspace creation results are correlated and bounded", () => {
+  const project = { path: "/Users/someone/gg-projects/mobile-app", name: "mobile-app", sessions: 0 };
+
+  expect(
+    ServerMessage.parse({
+      t: "workspace.created",
+      requestId: "r1",
+      result: { ok: true, project },
+    }),
+  ).toMatchObject({ requestId: "r1", result: { ok: true, project } });
+  expect(
+    ServerMessage.parse({
+      t: "workspace.created",
+      requestId: "r2",
+      result: { ok: false, error: "already_exists" },
+    }),
+  ).toMatchObject({ requestId: "r2", result: { ok: false, error: "already_exists" } });
+
+  for (const malformed of [
+    { t: "workspace.created", requestId: "r1", result: { ok: true } },
+    { t: "workspace.created", requestId: "r1", result: { ok: false, error: "EACCES" } },
+    { t: "workspace.created", requestId: "", result: { ok: true, project } },
+  ]) {
+    expect(ServerMessage.safeParse(malformed).success).toBe(false);
+  }
+});
+
+test("provider announcements may advertise workspace creation without requiring it", () => {
+  const announcement = {
+    t: "providers",
+    machine: { id: "m1", name: "Desktop" },
+    providers: [],
+    activeSessions: [],
+  };
+  expect(ServerMessage.safeParse(announcement).success).toBe(true);
+  expect(
+    ServerMessage.parse({ ...announcement, canCreateWorkspace: true }),
+  ).toMatchObject({ canCreateWorkspace: true });
 });
 
 test("provider.config is one name for two shapes, one per direction", () => {
@@ -187,6 +234,8 @@ test("a message missing what the daemon will use is refused", () => {
     { t: "session.permission", sessionId: "s1", requestId: "r1" },
     { t: "image.fetch", requestId: "r1" },
     { t: "session.config", sessionId: "s1", configId: "model" },
+    { t: "workspace.create", requestId: "r1", name: "" },
+    { t: "workspace.create", requestId: "", name: "project" },
   ]) {
     expect({ t: bad.t, ok: ClientMessage.safeParse(bad).success }).toEqual({
       t: bad.t,

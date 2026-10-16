@@ -12,7 +12,6 @@ import { StageButton } from "./stage/StageButton";
 import { Sheet } from "./Sheet";
 import { FolderPicker } from "./FolderPicker";
 import { CHIP_LAYOUT, CONTEXT_MAX, ContextChips, Field, INSTRUCTIONS_MAX, INSTRUCTIONS_PLACEHOLDER, StageInput } from "./NewGoalSheet";
-import { dashedOutline } from "./stage/DashedRule";
 import { KEN_COLOR } from "../pew/palette";
 import { withAlpha } from "../motion";
 import type { GoalResult, GoalState, GoalSummary } from "../ggState";
@@ -20,6 +19,8 @@ import type { ConfigOption, WorkspaceBrowse } from "../useDaemon";
 import Reanimated from "react-native-reanimated";
 import { useReducedMotion } from "./useReducedMotion";
 import { AgentColorProvider } from "./stage/agentColor";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 type Action = (
   goalId: string,
@@ -43,6 +44,8 @@ interface GoalSettingsSheetProps {
 }
 
 function GoalSettingsSheetView({ visible, goal, state, onAction, results, modelOption, onClose, browse, onBrowse, online }: GoalSettingsSheetProps) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduce = useReducedMotion();
   const [context, setContext] = useState<string[]>([]);
   const [instructions, setInstructions] = useState("");
@@ -142,7 +145,7 @@ function GoalSettingsSheetView({ visible, goal, state, onAction, results, modelO
                   accessibilityRole="radio"
                   accessibilityState={{ selected, disabled: working }}
                   disabled={working}
-                  style={[styles.option, selected ? styles.optionOn : dashedOutline, working && styles.off]}
+                  style={[styles.option, selected ? styles.optionOn : palette.outline, working && styles.off]}
                   onPress={() => {
                     haptics.select();
                     setModel(option.value);
@@ -170,19 +173,19 @@ function goalInstructions(goal: GoalSummary): string {
   return goal.instructions ?? "";
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   scroll: { maxHeight: 560 },
   body: { gap: theme.space(5), paddingBottom: theme.space(2) },
-  locked: { color: theme.color.attention, fontSize: theme.font.small },
+  locked: { color: p.color.attention, fontSize: theme.font.small },
   multi: { minHeight: 88, textAlignVertical: "top" },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: theme.space(2) },
   option: { paddingHorizontal: theme.space(3), paddingVertical: theme.space(2), borderRadius: theme.radius.pill, borderWidth: 1, borderColor: "transparent" },
   optionOn: { borderColor: KEN_COLOR, backgroundColor: withAlpha(KEN_COLOR, 0.1) },
-  optionText: { color: theme.color.textDim, fontSize: theme.font.small },
-  optionTextOn: { color: theme.color.text },
+  optionText: { color: p.color.textDim, fontSize: theme.font.small },
+  optionTextOn: { color: p.color.text },
   off: { opacity: 0.5 },
-  error: { color: theme.color.danger, fontSize: theme.font.small },
+  error: { color: p.color.danger, fontSize: theme.font.small },
   pressed: { opacity: 0.7 },
-});
+}));
 
 export const GoalSettingsSheet = memo(GoalSettingsSheetView);

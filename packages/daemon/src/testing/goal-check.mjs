@@ -1,3 +1,4 @@
+/* global performance, URLSearchParams */
 /**
  * Goal check: walks the phone's GG Goals flow end to end over the relay (or
  * LAN) against a running daemon, the way the app does it: providers lists
@@ -40,7 +41,7 @@ ws.addEventListener("message", (e) => {
   const m = e2e.isEnvelope(frame) ? channel.open(frame) : frame;
   if (m === undefined) return;
   seen.push(m);
-  for (const w of waiters) if (w.pred(m)) (waiters.delete(w), w.resolve(m));
+  for (const w of waiters) if (w.pred(m)) { waiters.delete(w); w.resolve(m); }
 });
 const waitFor = (pred, ms = 60_000) =>
   new Promise((resolve, reject) => {

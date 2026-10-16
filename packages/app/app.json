@@ -11,12 +11,63 @@
     },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "//supportsTablet": "False for 1.0 because nothing here is built for a tablet: the layout is portrait-only phone chrome, no code branches on an iPad idiom, and no iPad screenshots exist \u2014 App Store Connect requires a 13-inch set the moment this is true, and review then tests the stretched phone UI on hardware it was never laid out for. Turning it on is a layout pass plus its own screenshot set, not a flag.",
       "supportsTablet": false,
       "//": "Reverse-DNS of the GitHub org that hosts this, not a domain: `pew2.dev` is not registered, and an identifier built from a domain someone else can buy is a claim that can be contested after the app is on a store \u2014 at which point it cannot be changed without shipping a new app. Fork this and you must change it: an identifier is unique per store, and a fork keeping this one cannot be submitted alongside the original.",
       "bundleIdentifier": "io.github.kenkaiii.pew2",
+      "privacyManifests": {
+        "NSPrivacyTracking": false,
+        "NSPrivacyTrackingDomains": [],
+        "NSPrivacyCollectedDataTypes": [
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeDeviceID",
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          },
+          {
+            "NSPrivacyCollectedDataType": "NSPrivacyCollectedDataTypeOtherUserContent",
+            "NSPrivacyCollectedDataTypeLinked": false,
+            "NSPrivacyCollectedDataTypeTracking": false,
+            "NSPrivacyCollectedDataTypePurposes": [
+              "NSPrivacyCollectedDataTypePurposeAppFunctionality"
+            ]
+          }
+        ],
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "0A2A.1",
+              "3B52.1",
+              "C617.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "85F4.1",
+              "E174.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "35F9.1"
+            ]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
+          }
+        ]
+      },
       "//infoPlist": "Ships verbatim into Info.plist, so no comment keys inside it — Apple reads what is written there. `ITSAppUsesNonExemptEncryption: false` answers the export-compliance question at build time instead of halting every upload to ask it. The answer is honest: this app's own cryptography is the pairing seal in @pew2/protocol (XChaCha20-Poly1305 and HKDF-SHA256 from @noble) over TLS, both exempt under the standard 'uses only encryption exempt from EAR' category. Adding a non-exempt algorithm of our own means revisiting this line, not merely the answer in the console.",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -59,7 +110,7 @@
       [
         "expo-splash-screen",
         {
-          "//": "Without this the generated splash is pure white while the app's own background is #111111 with userInterfaceStyle dark, so every cold launch flashed white before painting. No `dark` variant: the app is dark-only, and declaring one conflicts with the app-wide userInterfaceStyle. The colour is theme.color.bg, kept in step by hand because app.json cannot import it.",
+          "//": "Without this the generated splash is pure white while the app's own background is #111111 with userInterfaceStyle dark, so every cold launch flashed white before painting. No `dark` variant: the app opens dark (Ken's Stage default) and the light appearance is an in-app choice applied after launch. The colour is theme.color.bg, kept in step by hand because app.json cannot import it.",
           "backgroundColor": "#111111",
           "image": "./assets/splash-icon.png",
           "imageWidth": 160

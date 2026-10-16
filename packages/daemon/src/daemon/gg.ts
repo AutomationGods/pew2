@@ -6,7 +6,7 @@ import { isAvailable, unavailableReason } from "../providers/registry.js";
 import { connectProvider, type AcpSessionHandle } from "../acp/connect.js";
 import { resolve as __resolve } from "node:path";
 import { resolveWorkspace } from "../workspace.js";
-import { pushFinishedTurn } from "../push.js";
+import { pushAgentNotice } from "../push.js";
 import { wire } from "@pew2/protocol";
 import { readGoalsCache, writeGoalsCache } from "../goals-cache.js";
 import { fitGoalName } from "../goal-name.js";
@@ -69,10 +69,11 @@ export abstract class DaemonGg extends DaemonProjects {
     if ((raw.phase === "human" || raw.phase === "capped") && (params as { history?: unknown }).history !== true) {
       const sessionId = session.log.sessionId;
       const reason = typeof raw.reason === "string" && raw.reason ? `: ${raw.reason}` : "";
-      void pushFinishedTurn(this.pushTargets, {
+      void pushAgentNotice(this.pushTargets, {
         sessionId,
+        kind: "input",
         ...this.sessionNotice(sessionId),
-        lastText: `Ken needs you${reason}`,
+        text: `Ken needs you${reason}`,
       });
     }
   }

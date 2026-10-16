@@ -14,6 +14,7 @@ import { withAlpha } from "../motion";
 import { Pixel } from "./stage/Pixel";
 import { StageChip } from "./StageChip";
 import { theme } from "../theme";
+import { usePalette } from "./appearance";
 import { haptics } from "./haptics";
 import { sounds } from "./sounds";
 import { CommandToken } from "./CommandToken";
@@ -22,6 +23,7 @@ import { AttachmentChips } from "./AttachmentChips";
 import type { PendingAttachment } from "../attachments";
 import type { Dictation } from "./useDictation";
 import { pressStops } from "../composerState";
+import { themedStyles, type Palette } from "../palette";
 
 const EMPTY_ATTACHMENTS: readonly PendingAttachment[] = [];
 const EMPTY_SELECTORS: readonly ComposerSelector[] = [];
@@ -60,6 +62,8 @@ interface ComposerProps {
 }
 
 function Selector({ value, label, onPress, toggle }: ComposerSelector) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const target = useRef<View>(null);
   if (toggle) {
     return (
@@ -84,7 +88,7 @@ function Selector({ value, label, onPress, toggle }: ComposerSelector) {
         feel="none"
         accessibilityLabel={label}
         accessibilityHint="Opens available options"
-        trailing={<DotGlyph name="chevron-down" size={10} color={theme.composer.ink} />}
+        trailing={<DotGlyph name="chevron-down" size={10} color={palette.composer.ink} />}
         onPress={() => target.current?.measureInWindow((x, y) => { haptics.tap(); onPress({ x, y }); })}
       />
     </View>
@@ -97,6 +101,8 @@ function ComposerView({
   attachments = EMPTY_ATTACHMENTS, onAttach, onRemoveAttachment,
   dictation, selectors = EMPTY_SELECTORS, changes,
 }: ComposerProps, ref: React.Ref<ComposerHandle>) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const input = useRef<TextInput>(null);
   const agent = useAgentColor();
   // Lit while the keyboard is up, from the keyboard's own progress on the UI
@@ -127,7 +133,7 @@ function ComposerView({
       {attachments.length > 0 && <AttachmentChips attachments={attachments} onRemove={onRemoveAttachment} />}
       {/* A Stage panel: the dot texture on the strip colour, ruled in the
           agent's colour while you write (dim otherwise), with an LED prompt. */}
-      <View style={styles.card}>
+      <View style={[styles.card, { backgroundColor: palette.stage.strip, borderColor: palette.composer.border }]}>
         <View style={[StyleSheet.absoluteFill, styles.cardClip]} pointerEvents="none">
           <DotGrid fine />
         </View>
@@ -150,7 +156,7 @@ function ComposerView({
             >
               <View style={styles.tag}>
                 <CommandToken text={split.command} size={theme.font.small} lineHeight={18} />
-                <Ionicons name="close" size={13} color={theme.composer.ink} />
+                <Ionicons name="close" size={13} color={palette.composer.ink} />
               </View>
             </Pressable>
           )}
@@ -166,14 +172,14 @@ function ComposerView({
             </Reanimated.View>
           </View>
           <TextInput
-            ref={input} style={[styles.input, { minHeight: minTextHeight, maxHeight: maxTextHeight }]}
+            ref={input} style={[styles.input, { color: palette.color.text, minHeight: minTextHeight, maxHeight: maxTextHeight }]}
             value={split ? split.rest.replace(/^ /, "") : value}
             onChangeText={(text) => onChangeText(split ? `${split.command} ${text}` : text)}
             onContentSizeChange={({ nativeEvent }) => {
               const capped = nativeEvent.contentSize.height >= maxTextHeight;
               if (capped !== atCeiling) setAtCeiling(capped);
             }}
-            placeholder={placeholder} placeholderTextColor={theme.composer.placeholder}
+            placeholder={placeholder} placeholderTextColor={palette.composer.placeholder}
             multiline editable={editable} accessibilityLabel="Message"
             submitBehavior="newline" scrollEnabled={atCeiling}
           />
@@ -185,7 +191,7 @@ function ComposerView({
             accessibilityState={{ disabled: !onAttach || !editable }} disabled={!onAttach || !editable}
             onPress={() => { haptics.tap(); onAttach?.(); }}
           >
-            <DotGlyph name="plus" size={18} color={theme.composer.ink} />
+            <DotGlyph name="plus" size={18} color={palette.composer.ink} />
           </Pressable>
           <View style={styles.selectors} pointerEvents="box-none">
             {selectors.map((selector) => <Selector key={selector.id} {...selector} />)}
@@ -195,7 +201,7 @@ function ComposerView({
                 <StageChip
                   label={String(changes.count)}
                   compact
-                  leading={<Ionicons name="git-compare-outline" size={12} color={theme.color.textDim} />}
+                  leading={<Ionicons name="git-compare-outline" size={12} color={palette.color.textDim} />}
                   accessibilityLabel={changes.accessibilityLabel}
                   onPress={changes.onPress}
                 />
@@ -216,9 +222,9 @@ function ComposerView({
               {/* Send is the dot-matrix arrow; stop and the mic keep their glyphs
                   (no pixel version reads as well at this size). */}
               {!stopping && !showMic ? (
-                <DotGlyph name="up" size={16} color={!sendDisabled ? theme.color.bg : theme.composer.ink} />
+                <DotGlyph name="up" size={16} color={!sendDisabled ? palette.color.bg : palette.composer.ink} />
               ) : (
-                <Ionicons name={stopping ? "square" : dictation?.listening ? "mic" : "mic-outline"} size={stopping ? 13 : 18} color={dictation?.listening ? theme.color.bg : theme.composer.ink} />
+                <Ionicons name={stopping ? "square" : dictation?.listening ? "mic" : "mic-outline"} size={stopping ? 13 : 18} color={dictation?.listening ? palette.color.bg : palette.composer.ink} />
               )}
             </View>
           </Pressable>
@@ -228,13 +234,13 @@ function ComposerView({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   stack: { gap: theme.space(2) },
   card: {
-    backgroundColor: theme.stage.strip,
+    backgroundColor: p.stage.strip,
     borderRadius: theme.composer.radius,
     borderWidth: 1,
-    borderColor: theme.composer.border,
+    borderColor: p.composer.border,
     padding: theme.space(1),
   },
   cardClip: { borderRadius: theme.composer.radius, overflow: "hidden" },
@@ -251,11 +257,11 @@ const styles = StyleSheet.create({
   },
   prompt: { position: "absolute", left: 0, top: 3 },
   iconTarget: { width: theme.size.touch, height: theme.size.touch, alignItems: "center", justifyContent: "center" },
-  sendPill: { width: 32, height: 32, borderRadius: theme.radius.pill, borderWidth: 1, borderStyle: "dashed", borderColor: theme.stage.dash, alignItems: "center", justifyContent: "center", shadowRadius: 8, shadowOffset: { width: 0, height: 0 } },
+  sendPill: { width: 32, height: 32, borderRadius: theme.radius.pill, borderWidth: 1, borderStyle: "dashed", borderColor: p.stage.dash, alignItems: "center", justifyContent: "center", shadowRadius: 8, shadowOffset: { width: 0, height: 0 } },
   pressed: { opacity: 0.65 },
   // Room on the left for the LED prompt; the text starts after it.
   textArea: { marginHorizontal: theme.space(2), marginTop: theme.space(2), paddingLeft: theme.space(4) },
-  input: { padding: 0, color: theme.color.text, fontSize: theme.font.body, lineHeight: theme.line.body, textAlignVertical: "top" },
+  input: { padding: 0, color: p.color.text, fontSize: theme.font.body, lineHeight: theme.line.body, textAlignVertical: "top" },
   bottomRow: { flexDirection: "row", alignItems: "center", gap: theme.space(1) },
   selectors: { flex: 1, flexDirection: "row", alignItems: "center", minWidth: 0 },
   // Pills sit 4pt apart (2pt padding a side): three of them (Model, Autopilot,
@@ -263,6 +269,6 @@ const styles = StyleSheet.create({
   selectorTarget: { minWidth: theme.size.touch, minHeight: theme.size.touch, flexShrink: 1, justifyContent: "center", paddingHorizontal: theme.space(0.5) },
   fixedTarget: { minHeight: theme.size.touch, flexShrink: 0, justifyContent: "center", paddingHorizontal: theme.space(0.5) },
   commandTarget: { minHeight: theme.size.touch, flexShrink: 1, justifyContent: "center" },
-  tag: { flexDirection: "row", alignItems: "center", gap: theme.space(1), paddingHorizontal: theme.space(2), paddingVertical: theme.space(1.5), borderRadius: theme.radius.pill, backgroundColor: theme.composer.chip },
-});
+  tag: { flexDirection: "row", alignItems: "center", gap: theme.space(1), paddingHorizontal: theme.space(2), paddingVertical: theme.space(1.5), borderRadius: theme.radius.pill, backgroundColor: p.composer.chip },
+}));
 export const Composer = memo(forwardRef<ComposerHandle, ComposerProps>(ComposerView));
