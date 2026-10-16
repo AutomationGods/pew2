@@ -6,9 +6,9 @@ import type { PromptOptions } from "../acp/connect.js";
 import { attachmentLimitError, storeAttachments, type StoredAttachment } from "../attachments.js";
 import type { wire } from "@pew2/protocol";
 import { DaemonGg } from "./gg.js";
-import { SHARED_DESKTOP_PROVIDER } from "../acp/sharedDesktop.js";
 import {
   agentQueueItems,
+  isSharedDesktopSession,
   queuedForWire,
   type ActiveSession,
   type PromptOutcome,
@@ -18,7 +18,7 @@ import {
 export abstract class DaemonPromptQueue extends DaemonGg {
   /** True when this session mirrors the running GG Coder desktop conversation. */
   isSharedDesktop(sessionId: string): boolean {
-    return this.sessions.get(sessionId)?.providerId === SHARED_DESKTOP_PROVIDER;
+    return isSharedDesktopSession(this.sessions.get(sessionId));
   }
 
   /**
@@ -27,7 +27,7 @@ export abstract class DaemonPromptQueue extends DaemonGg {
    * request, owns the turn, and catch-up is the contract apps already apply.
    */
   protected publishDesktopState(session: ActiveSession): void {
-    if (!session.live || session.providerId !== SHARED_DESKTOP_PROVIDER) return;
+    if (!session.live || !isSharedDesktopSession(session)) return;
     this.send({
       t: "session.replay", sessionId: session.log.sessionId, events: [],
       catchUp: true, complete: true, working: session.working ?? false,
@@ -76,7 +76,13 @@ export abstract class DaemonPromptQueue extends DaemonGg {
     options: PromptOptions = {},
   ): Promise<PromptOutcome> {
     const session = this.require(sessionId);
-    if (this.isSharedDesktop(sessionId)) return this.promptSharedDesktop(session, text, attachments);
+    if (this.isSharedDesktop(sessionId)) {
+      // Goal and plan turns are `_gg/*` work the desktop bridge cannot carry.
+      if (options.goalTurn || options.planDecision) {
+        throw new Error("This goal is open in GG Coder desktop; do that there.");
+      }
+      return this.promptSharedDesktop(session, text, attachments);
+    }
     if (session.working) {
       if (options.goalTurn) throw new Error("GG Goals is already working on this goal.");
       if (options.planDecision) throw new Error("The agent is still working; decide the plan when it stops.");

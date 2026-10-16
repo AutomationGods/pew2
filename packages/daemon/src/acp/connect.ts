@@ -584,9 +584,26 @@ export async function connectProvider(options: ConnectOptions): Promise<AcpSessi
   // `session/new` and never answers used to hang this await for ever, with the
   // child parked on it.
   try {
+    let loadSessionId = options.loadSessionId;
+    if (options.pickSession) {
+      if (!canListSessions) throw new Error(`'${provider.manifest.name}' cannot list its conversations.`);
+      const listed = (await withTimeout(
+        connection.agent.request("session/list", {}),
+        options.handshakeTimeoutMs ?? HANDSHAKE_TIMEOUT_MS,
+        () => new Error(`'${provider.manifest.name}' never listed its conversations.`),
+      )) as { sessions?: unknown };
+      const rows = (Array.isArray(listed?.sessions) ? listed.sessions : []).flatMap((row: unknown) => {
+        const r = row as { sessionId?: unknown; cwd?: unknown } | null;
+        return typeof r?.sessionId === "string"
+          ? [{ sessionId: r.sessionId, ...(typeof r.cwd === "string" ? { cwd: r.cwd } : {}) }]
+          : [];
+      });
+      loadSessionId = options.pickSession(rows);
+      if (!loadSessionId) throw new Error(`'${provider.manifest.name}' has no matching conversation.`);
+    }
     current = await withTimeout(
       openSession(
-        options.loadSessionId,
+        loadSessionId,
         cwd,
         {
           onUpdate: options.onUpdate,

@@ -58,6 +58,7 @@ function harness(
     // A released binary unless a test says otherwise; `isCompiled()` is false
     // under `bun test`, which would otherwise disarm every case here.
     installed: () => options.installed ?? true,
+    disabled: () => false,
     onStatus: (status) => statuses.push(status),
     busyReason: options.busy ?? (() => undefined),
     exit: (code) => exits.push(code),
@@ -255,6 +256,7 @@ test("the exit still happens when releasing agents throws", async () => {
     apply: (async () => APPLIED) as never,
     eligible: () => true,
     installed: () => true,
+    disabled: () => false,
     busyReason: () => undefined,
     exit: (code) => exits.push(code),
     shutdown: () => {
@@ -281,6 +283,7 @@ test("the first check is delayed, not run on boot", async () => {
     }) as never,
     eligible: () => true,
     installed: () => true,
+    disabled: () => false,
     busyReason: () => undefined,
     exit: () => {},
     log: () => {},
@@ -310,6 +313,7 @@ test("the timer never holds the process open", async () => {
       check: (async () => SAME) as never,
       eligible: () => true,
       installed: () => true,
+      disabled: () => false,
       busyReason: () => undefined,
       exit: () => {},
       log: () => {},

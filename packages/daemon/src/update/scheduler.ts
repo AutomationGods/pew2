@@ -33,6 +33,7 @@
 import { applyUpdate, canSelfUpdate, type ApplyResult } from "./apply.js";
 import { isCompiled } from "../cli/service.js";
 import { checkForUpdate } from "./check.js";
+import { autoUpdateDisabled } from "./opt-out.js";
 
 /**
  * How long after boot the first check runs.
@@ -60,6 +61,8 @@ export interface SchedulerDeps {
    * Gates *looking*, where `eligible` gates *acting*.
    */
   installed?: () => boolean;
+  /** The machine's owner said never to self-update (`update/opt-out.ts`). */
+  disabled?: () => boolean;
   /**
    * Called whenever the answer to "is this machine behind?" changes.
    *
@@ -122,6 +125,7 @@ export function startUpdateScheduler(deps: SchedulerDeps): UpdateScheduler | und
     apply = applyUpdate,
     eligible = canSelfUpdate,
     installed = isCompiled,
+    disabled = autoUpdateDisabled,
     busyReason,
     exit = (code: number) => process.exit(code),
     shutdown,
@@ -132,6 +136,10 @@ export function startUpdateScheduler(deps: SchedulerDeps): UpdateScheduler | und
   } = deps;
 
   if (!installed()) return undefined;
+  if (disabled()) {
+    log("[update] self-update is off (PEW2_AUTO_UPDATE=0 or ~/.pew2/no-auto-update)");
+    return undefined;
+  }
 
   /** Whether this build may install what it finds, not merely report it. */
   const mayApply = eligible();
