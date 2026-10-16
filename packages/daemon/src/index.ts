@@ -19,13 +19,14 @@ import { writeSessionPrefs } from "./session-prefs.js";
 import type { wire } from "@pew2/protocol";
 import { pushAgentNotice, pushFinishedTurn } from "./push.js";
 import { saveVoiceCall, voiceCallNote } from "./voice-calls.js";
-import { desktopAskId, kenNeedsYou, readDesktopState, SHARED_DESKTOP_PROVIDER } from "./acp/sharedDesktop.js";
+import { desktopAskId, kenNeedsYou, readDesktopState } from "./acp/sharedDesktop.js";
 import { DaemonConnectSession } from "./daemon/connect-session.js";
 import {
   GG_GOALS_ID,
   GG_PROVIDER_ID,
   REPLAY_BATCH_SIZE,
   goalsProviderFrom,
+  isSharedDesktopSession,
   queuedForWire,
   rememberTurnText,
   type ActiveSession,
@@ -327,7 +328,7 @@ export class Daemon extends DaemonConnectSession {
    * `markLive` and the reconnect replay both see the complete history.
    */
   protected record(session: ActiveSession, payload: unknown) {
-    const shared = session.providerId === SHARED_DESKTOP_PROVIDER;
+    const shared = isSharedDesktopSession(session);
     // The desktop bridge exiting means GG Coder desktop went away: the shared
     // conversation is over, not merely idle.
     if (shared && payload && typeof payload === "object" && "kind" in payload && payload.kind === "exit") {

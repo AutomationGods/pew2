@@ -21,6 +21,11 @@ Dates are the day the tag was cut.
 - **The agent's plan is on screen.** When GG Coder works from a to-do list, the
   phone shows it as a checklist that ticks off as it goes.
 - **Conversations take the title the agent gives them.**
+- **Goals follow your Mac live.** Open a goal on the phone while it is open in
+  a GG Coder window and you see that window's conversation as it happens, and
+  what you send from the phone appears there too. Otherwise it opens as before.
+- **Self-update can be switched off** for a machine running its own build:
+  create `~/.pew2/no-auto-update` or set `PEW2_AUTO_UPDATE=0`.
 - **Light and dark mode, and your own accent colour.** Choose System, Light or
   Dark and an accent in the connection settings. Dark looks exactly as before.
 - **Start a new project from your phone.** Name a folder and pew2 creates it on

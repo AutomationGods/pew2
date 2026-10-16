@@ -14,6 +14,7 @@ import type { StoredAttachment } from "../attachments.js";
 import type { AgentProject } from "../projects.js";
 import { SESSION_HISTORY_LIMIT } from "../session-history.js";
 import type { wire } from "@pew2/protocol";
+import { SHARED_DESKTOP_PROVIDER } from "../acp/sharedDesktop.js";
 
 export interface ActiveSession {
   handle?: AcpSessionHandle;
@@ -120,6 +121,17 @@ export interface ActiveSession {
   streamingReplay?: boolean;
   pendingReplay?: wire.SessionEvent[];
   replayTimer?: NodeJS.Timeout;
+  /**
+   * A GG Goals session attached live to the goal's conversation open in GG
+   * Coder desktop (through the desktop bridge) instead of its own agent. It
+   * keeps its `gg-goals` identity on the wire; the desk owns its turns.
+   */
+  desktopLive?: boolean;
+}
+
+/** Mirrors a GG Coder desktop conversation: the desk owns turns and liveness. */
+export function isSharedDesktopSession(session: Pick<ActiveSession, "providerId" | "desktopLive"> | undefined): boolean {
+  return session !== undefined && (session.providerId === SHARED_DESKTOP_PROVIDER || session.desktopLive === true);
 }
 
 /** One queued message. `storing` writes its attachments; awaited when it is sent. */

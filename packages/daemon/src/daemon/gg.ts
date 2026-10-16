@@ -173,7 +173,8 @@ export abstract class DaemonGg extends DaemonProjects {
       return handle;
     };
     const live = [...this.sessions.values()]
-      .filter((s) => (s.providerId === GG_PROVIDER_ID || s.providerId === GG_GOALS_ID) && s.handle && s.agentSessionId)
+      // A live desktop attachment is the bridge, which speaks no `_gg/*`.
+      .filter((s) => (s.providerId === GG_PROVIDER_ID || s.providerId === GG_GOALS_ID) && !s.desktopLive && s.handle && s.agentSessionId)
       .sort((a, b) => b.lastUsedAt - a.lastUsedAt)[0]?.handle;
     if (live) return supports(live);
     const spare = [...this.spares.values()].find((s) => s.providerId === GG_PROVIDER_ID || s.providerId === GG_GOALS_ID);

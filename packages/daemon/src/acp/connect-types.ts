@@ -339,6 +339,13 @@ export interface ConnectOptions {
   onStderr?: (line: string) => void;
   onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
   /**
+   * Choose the conversation to `session/load` from the agent's own
+   * `session/list`, after the handshake and before anything is opened.
+   * Returning undefined (or an agent that cannot list) fails the connect and
+   * stops the process; nothing is created or loaded. Overrides `loadSessionId`.
+   */
+  pickSession?: (listed: { sessionId: string; cwd?: string }[]) => string | undefined;
+  /**
    * Resume one of the agent's own sessions instead of starting a fresh one.
    *
    * `session/load` replays the whole conversation through `onUpdate` before it

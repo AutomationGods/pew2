@@ -12,6 +12,10 @@ import { readCommandDirs } from "../commands/from-disk.js";
 import { readVoiceCalls } from "../voice-calls.js";
 import { DaemonPromptQueue } from "./prompt-queue.js";
 import { GG_GOALS_ID, type ActiveSession } from "./types.js";
+import { isAvailable } from "../providers/registry.js";
+import { SHARED_DESKTOP_PROVIDER } from "../acp/sharedDesktop.js";
+import { desktopWorkspaceFile, findOpenDesktopConversation, pickDesktopConversation } from "../acp/desktopLive.js";
+import { SessionLog } from "../session/log.js";
 
 export abstract class DaemonConnectSession extends DaemonPromptQueue {
   /**
@@ -150,6 +154,10 @@ export abstract class DaemonConnectSession extends DaemonPromptQueue {
       onExit: (code: number | null) => this.record(session, { kind: "exit", code }),
     };
 
+    if (session.providerId === GG_GOALS_ID && (await this.attachDesktopLive(session, cwd, loadSessionId, callbacks))) {
+      return;
+    }
+
     // Paint local JSONL history immediately for providers whose ACP load path
     // scans or initializes before replay. Suppress only that duplicate history;
     // the attached agent remains authoritative for config and all live updates.
@@ -279,6 +287,62 @@ export abstract class DaemonConnectSession extends DaemonPromptQueue {
     // own it leaves the directory the user is actually working in permanently
     // cold, and every conversation there pays the spawn again.
     void this.warmSpareFor(provider, cwd);
+  }
+
+  /**
+   * Attach a GG Goals session to the goal's conversation when it is open in a
+   * GG Coder desktop window, so the phone and the Mac share it live.
+   *
+   * Only when the desktop's window list names this goal (and, on a resume,
+   * this conversation) *and* the bridge answers with it: loading one that is
+   * not open would make the desktop open it. Any doubt returns false and the
+   * caller carries on with its own `ggcoder acp`, exactly as before.
+   */
+  private async attachDesktopLive(
+    session: ActiveSession,
+    cwd: string,
+    loadSessionId: string | undefined,
+    callbacks: {
+      onUpdate: (payload: unknown) => void;
+      onPermissionRequest: (request: { requestId: string; params: unknown }) => void;
+      onExit: (code: number | null) => void;
+    },
+  ): Promise<boolean> {
+    const provider = this.providers.find((p) => p.manifest.id === SHARED_DESKTOP_PROVIDER);
+    if (!provider || !this.isEnabled(SHARED_DESKTOP_PROVIDER) || !isAvailable(provider)) return false;
+    const open = await findOpenDesktopConversation(desktopWorkspaceFile(this.env), cwd, loadSessionId).catch(() => undefined);
+    if (!open) return false;
+    let attached = false;
+    // Set first: the snapshot replay during `session/load` carries the desk's
+    // working flag, which `record` reads only for a shared session.
+    session.desktopLive = true;
+    try {
+      session.handle = await connectProvider({
+        provider,
+        cwd,
+        pickSession: (listed) => pickDesktopConversation(listed, open, cwd, loadSessionId),
+        onUpdate: callbacks.onUpdate,
+        onPermissionRequest: callbacks.onPermissionRequest,
+        // A failed attach stopping the bridge is not the desk closing.
+        onExit: (code) => {
+          if (attached) callbacks.onExit(code);
+        },
+        handshakeTimeoutMs: 10_000,
+        onStderr: (line) => console.error(`[${SHARED_DESKTOP_PROVIDER}] ${line}`),
+      });
+    } catch (error) {
+      console.error(`[${GG_GOALS_ID}] live desktop attach failed, opening normally:`, error);
+      session.desktopLive = false;
+      session.handle = undefined;
+      session.working = false;
+      session.permissions?.clear();
+      // Drop a partial snapshot so the normal path's history is not doubled.
+      if (!session.live) session.log = new SessionLog(session.log.sessionId);
+      return false;
+    }
+    attached = true;
+    session.agentSessionId = session.handle.sessionId;
+    return true;
   }
 
   /**
