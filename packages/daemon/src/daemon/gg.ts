@@ -164,8 +164,20 @@ export abstract class DaemonGg extends DaemonProjects {
       }
       return handle;
     };
+    // An exited process still has a handle. A crash, a kill, or a `ggcoder`
+    // linked to a checkout whose build had just wiped `dist/` all leave one
+    // behind, and handing it out failed every goals request with "ACP
+    // connection closed" until the reaper or the spare TTL happened to clear it.
+    const alive = (handle: AcpSessionHandle) =>
+      handle.child.exitCode === null && handle.child.signalCode === null;
+    for (const [key, spare] of this.spares) {
+      if (alive(spare.handle)) continue;
+      clearTimeout(spare.timer);
+      spare.handle.close();
+      this.spares.delete(key);
+    }
     const live = [...this.sessions.values()]
-      .filter((s) => (s.providerId === GG_PROVIDER_ID || s.providerId === GG_GOALS_ID) && s.handle && s.agentSessionId)
+      .filter((s) => (s.providerId === GG_PROVIDER_ID || s.providerId === GG_GOALS_ID) && s.handle && s.agentSessionId && alive(s.handle))
       .sort((a, b) => b.lastUsedAt - a.lastUsedAt)[0]?.handle;
     if (live) return supports(live);
     const spare = [...this.spares.values()].find((s) => s.providerId === GG_PROVIDER_ID || s.providerId === GG_GOALS_ID);
