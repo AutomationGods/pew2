@@ -16,8 +16,8 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Animated, StyleSheet, Text, View, type TextStyle } from "react-native";
 import MaskedView from "@react-native-masked-view/masked-view";
 import { LinearGradient } from "expo-linear-gradient";
-import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { usePalette } from "./appearance";
+import { theme } from "../theme";
 import { useReducedMotion } from "./useReducedMotion";
 import { useAppActive } from "./useAppActive";
 
@@ -66,20 +66,17 @@ export type ShimmerTextProps = {
 
 function ShimmerTextView({
   text,
-  color,
-  size,
-  lineHeight,
+  color: colorProp,
+  size = theme.font.body,
+  lineHeight = theme.line.body,
   weight = "500",
   duration = 1800,
   gap = 0,
   numberOfLines,
   maxFontSizeMultiplier,
 }: ShimmerTextProps) {
-  const { theme } = useAppTheme();
-  const resolvedColor = color ?? theme.color.textDim;
-  const resolvedSize = size ?? theme.font.body;
-  const resolvedLineHeight = lineHeight ?? theme.line.body;
-  const styles = useThemeStyles(makeStyles);
+  const palette = usePalette();
+  const color = colorProp ?? palette.color.textDim;
   const sweep = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReducedMotion();
   const appActive = useAppActive();
@@ -108,7 +105,7 @@ function ShimmerTextView({
   // The mask only reads alpha, so this colour matters solely where a platform
   // has no mask (web): there the text is drawn directly, and naming the resting
   // colour keeps it dim instead of full white.
-  const label: TextStyle = { fontSize: resolvedSize, lineHeight: resolvedLineHeight, fontWeight: weight, color: resolvedColor };
+  const label: TextStyle = { fontSize: size, lineHeight, fontWeight: weight, color };
   const sheenWidth = width * SHEEN_SCALE;
 
   return (
@@ -128,7 +125,7 @@ function ShimmerTextView({
       {/* Sets the size everything else is measured against, and carries the
           resting colour. */}
       <View
-        style={{ backgroundColor: resolvedColor }}
+        style={{ backgroundColor: color }}
         // Rounded, and only when it actually moved. This row sits in the
         // transcript's footer, whose padding is re-measured on every frame of
         // the keyboard animation — so an unguarded `setWidth` would re-render
@@ -186,14 +183,11 @@ function ShimmerTextView({
   );
 }
 
-function makeStyles(theme: AppTheme) {
-  return StyleSheet.create({
+const styles = StyleSheet.create({
   host: { flexDirection: "row" },
   // Occupies the mask's exact space while contributing no colour of its own.
   invisible: { opacity: 0 },
   sheen: { position: "absolute", top: 0, bottom: 0, left: 0 },
-  });
-}
-;
+});
 
 export const ShimmerText = memo(ShimmerTextView);

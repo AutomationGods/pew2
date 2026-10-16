@@ -24,12 +24,13 @@ import {
   View,
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { theme } from "../theme";
 import { Glass } from "./Glass";
 import { haptics } from "./haptics";
 import { useReducedMotion } from "./useReducedMotion";
 import type { Project } from "../projects";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /**
  * Ceiling for the menu. Short lists shrink to fit; a machine with forty repos
@@ -58,8 +59,8 @@ function ProjectMenuView({
   onSelect,
   onClose,
 }: ProjectMenuProps) {
-  const { theme } = useAppTheme();
-  const styles = useThemeStyles(makeStyles);
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const progress = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReducedMotion();
 
@@ -172,8 +173,8 @@ function ProjectRow({
   selected: boolean;
   onPress: () => void;
 }) {
-  const { theme } = useAppTheme();
-  const styles = useThemeStyles(makeStyles);
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
     <Pressable
       accessibilityRole="button"
@@ -197,13 +198,12 @@ function ProjectRow({
           </Text>
         ) : null}
       </View>
-      {selected && <Ionicons name="checkmark" size={18} color={theme.color.text} />}
+      {selected && <Ionicons name="checkmark" size={18} color={palette.color.text} />}
     </Pressable>
   );
 }
 
-function makeStyles(theme: AppTheme) {
-  return StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   // Fills the drawer panel, which clips it: the menu can drop over the history
   // list but never past the panel's own rounded edge.
   host: { ...StyleSheet.absoluteFillObject, zIndex: 5 },
@@ -224,7 +224,7 @@ function makeStyles(theme: AppTheme) {
     // read straight through the project names — two sets of words in the same
     // space. The radius is repeated here because the fill is *behind* the
     // material that clips, not inside it.
-    backgroundColor: theme.color.surfaceRaised,
+    backgroundColor: p.color.surfaceRaised,
     borderRadius: theme.radius.lg,
   },
   cardGlass: { width: "100%", flexShrink: 1 },
@@ -232,7 +232,7 @@ function makeStyles(theme: AppTheme) {
   cardInner: { padding: theme.space(2) },
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: theme.color.border,
+    backgroundColor: p.color.border,
     marginVertical: theme.space(1),
     marginHorizontal: theme.space(2),
   },
@@ -248,17 +248,15 @@ function makeStyles(theme: AppTheme) {
     paddingVertical: theme.space(1.5),
     borderRadius: theme.radius.md,
   },
-  rowPressed: { backgroundColor: theme.glass.fillPressed },
+  rowPressed: { backgroundColor: p.glass.fillPressed },
   // Yields to the checkmark rather than pushing it off the row.
   rowText: { flexShrink: 1 },
   rowName: {
-    color: theme.color.text,
+    color: p.color.text,
     fontSize: theme.font.body,
     lineHeight: theme.line.body,
   },
-  rowDetail: { color: theme.color.textDim, fontSize: theme.font.tiny },
-  });
-}
-;
+  rowDetail: { color: p.color.textDim, fontSize: theme.font.tiny },
+}));
 
 export const ProjectMenu = memo(ProjectMenuView);

@@ -10,7 +10,6 @@ import { useState } from "react";
 import {
   ActivityIndicator,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -19,15 +18,24 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { theme } from "../theme";
 import { haptics } from "./haptics";
 import { parsePairing, type Pairing } from "../pairingLink";
 import { deviceId } from "../pairing";
 import { QrScanner } from "./QrScanner";
 import { CircleButton } from "./controls";
 import { Glass } from "./Glass";
+import { PrivacyLink } from "./PrivacyLink";
 import { verifyPairing } from "../verifyPairing";
+import { Handshake, type HandshakePhase } from "./Handshake";
+import { Led } from "./stage/Led";
+import { StageButton } from "./stage/StageButton";
+import { pewInk } from "../pew/palette";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
+
+/** pew2's own coral: nobody has picked an agent yet. */
+const PEW_CORAL = pewInk();
 
 interface Props {
   onPaired: (pairing: Pairing) => void;
@@ -38,15 +46,16 @@ interface Props {
 }
 
 export function PairingScreen({ onPaired, onBack, notice }: Props) {
-  const { theme } = useAppTheme();
-  const styles = useThemeStyles(makeStyles);
-
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const insets = useSafeAreaInsets();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<HandshakePhase>("waiting");
+  const [machine, setMachine] = useState<string | null>(null);
 
   // Scanning needs a camera. There is no useful one on web, so offering the
   // button there would be a dead end.
@@ -55,8 +64,10 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
   const accept = async (value: string): Promise<string | null> => {
     // The relay refuses a connection with no device id, so it is resolved
     // before the link is stored rather than at connect time.
+    setPhase("pairing");
     const result = parsePairing(value, await deviceId());
     if (!result.ok) {
+      setPhase("failed");
       // Validate before storing: a bad link would otherwise surface much later
       // as a socket that silently never connects.
       return result.error;
@@ -69,9 +80,16 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
     // from the daemon, 409 from the relay for a room with no machine in it), so
     // the only way to know is to complete a handshake.
     const verified = await verifyPairing(result.pairing);
-    if (!verified.ok) return verified.message;
+    if (!verified.ok) {
+      setPhase("failed");
+      return verified.message;
+    }
 
-    onPaired(result.pairing);
+    // Hold the green wire for a beat, so the success is seen, then continue.
+    setMachine(result.pairing.label);
+    setPhase("paired");
+    const pairing = result.pairing;
+    setTimeout(() => onPaired(pairing), 900);
     return null;
   };
 
@@ -114,7 +132,7 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
       <View style={[styles.nav, { paddingTop: insets.top + theme.headerInset }]}>
         {onBack ? (
           <CircleButton label="Back" size={theme.size.touch} onPress={onBack}>
-            <Ionicons name="chevron-back" size={24} color={theme.color.text} />
+            <Ionicons name="chevron-back" size={24} color={palette.color.text} />
           </CircleButton>
         ) : null}
       </View>
@@ -127,38 +145,48 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
         ]}
         keyboardShouldPersistTaps="handled"
       >
-      <Text style={styles.title}>Connect your device</Text>
-      <Text style={styles.body}>Run this on your computer, then scan the code.</Text>
+      <Handshake phase={phase} />
 
-      <View style={styles.command}>
-        <Text style={styles.commandText} selectable>
-          pew2 pair
-        </Text>
+      <View accessibilityLiveRegion="polite">
+      <Led
+        tone={phase === "failed" ? "danger" : phase === "paired" ? "plus" : "agent"}
+        style={styles.status}
+      >
+        {phase === "paired"
+          ? `Paired${machine ? ` · ${machine}` : ""}`
+          : phase === "failed"
+            ? "Couldn't pair"
+            : phase === "pairing"
+              ? "Shaking hands"
+              : "Waiting for your computer"}
+      </Led>
       </View>
+      {phase === "failed" && (error || scanError) ? (
+        <Text style={styles.reason} numberOfLines={1}>
+          {error ?? scanError}
+        </Text>
+      ) : null}
+      <Text style={styles.body} numberOfLines={2}>
+        Run <Text style={styles.commandText} selectable>pew2 setup</Text> on your computer, then scan its code.
+      </Text>
 
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
       {canScan ? (
         <>
-          <Glass radius={theme.radius.lg} interactive>
-            <Pressable
-              style={({ pressed }) => [styles.scan, pressed && styles.buttonPressed]}
-              onPress={() => {
-                haptics.tap();
-                setScanError(null);
-                setScanning(true);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Scan the QR code"
-            >
-              <Ionicons name="qr-code-outline" size={20} color={theme.color.text} />
-              <Text style={styles.scanText}>Scan QR code</Text>
-            </Pressable>
-          </Glass>
+          <StageButton
+            color={PEW_CORAL}
+            label="Scan the QR code"
+            icon={<Ionicons name="qr-code-outline" size={18} color={PEW_CORAL} />}
+            onPress={() => {
+              setScanError(null);
+              setScanning(true);
+            }}
+          />
 
           <View style={styles.orRow}>
             <View style={styles.rule} />
-            <Text style={styles.orText}>or paste it</Text>
+            <Text style={styles.orText}>or paste a pairing link</Text>
             <View style={styles.rule} />
           </View>
         </>
@@ -178,9 +206,10 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
             // Clear on edit: leaving a stale error under a corrected link reads
             // as though the correction was rejected too.
             if (error) setError(null);
+            if (phase === "failed") setPhase("waiting");
           }}
           placeholder="ws://192.168.0.10:8787/?token=[REDACTED]"
-          placeholderTextColor={theme.color.placeholder}
+          placeholderTextColor={palette.color.placeholder}
           autoCapitalize="none"
           autoCorrect={false}
           autoComplete="off"
@@ -199,28 +228,21 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
         </Text>
       ) : null}
 
-      <Glass
-        radius={theme.radius.lg}
-        tier="raised"
-        interactive={!busy && Boolean(draft.trim())}
-        style={[styles.connectGlass, (busy || !draft.trim()) && styles.buttonDisabled]}
-      >
-        <Pressable
-          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-          onPress={() => void submit()}
-          disabled={busy || !draft.trim()}
-          accessibilityRole="button"
-          accessibilityLabel="Connect"
-        >
-          {busy ? (
-            <ActivityIndicator color={theme.color.text} />
-          ) : (
-            <Text style={styles.buttonText}>Connect</Text>
-          )}
-        </Pressable>
-      </Glass>
+      <StageButton
+        kind="secondary"
+        style={styles.connectGap}
+        disabled={busy || !draft.trim()}
+        label={busy ? "Connecting…" : "Connect"}
+        icon={busy ? <ActivityIndicator color={palette.color.text} /> : undefined}
+        onPress={() => void submit()}
+      />
 
       <Text style={styles.footnote}>This is your password link. Keep safe.</Text>
+
+      {/* On this screen and not only in the drawer: the drawer is behind a
+          pairing, and anyone who cannot pair — a reviewer without a daemon
+          running — would otherwise never reach the policy at all. */}
+      <PrivacyLink style={styles.privacy} />
 
       <QrScanner
         visible={scanning}
@@ -240,9 +262,9 @@ export function PairingScreen({ onPaired, onBack, notice }: Props) {
   );
 }
 
-function makeStyles(theme: AppTheme) {
-  return StyleSheet.create({
-  root: { flex: 1, backgroundColor: theme.color.bg },
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
+  connectGap: { marginTop: theme.space(3) },
+  root: { flex: 1, backgroundColor: p.color.bg },
   scroll: { flex: 1 },
   content: { paddingHorizontal: theme.gutter, paddingTop: theme.space(4) },
   nav: {
@@ -254,37 +276,21 @@ function makeStyles(theme: AppTheme) {
     // as every main-screen control instead of offsetting for the bare glyph.
     paddingLeft: theme.gutter,
   },
-  title: {
-    color: theme.color.text,
-    fontFamily: theme.display.semibold,
-    fontSize: 28,
-    // The dot-matrix face is dense at heading size; a little tracking keeps the
-    // glyph grid legible rather than reading as one block.
-    letterSpacing: 0.5,
-    marginBottom: theme.space(3),
-  },
+  status: { marginTop: theme.space(4), marginBottom: theme.space(2) },
+  reason: { color: p.color.danger, fontSize: 14, lineHeight: 20, marginBottom: theme.space(2) },
   body: {
-    color: theme.color.textDim,
+    color: p.color.textDim,
     fontSize: 15,
     lineHeight: 22,
     marginBottom: theme.space(6),
   },
-  command: {
-    backgroundColor: theme.color.surface,
-    borderColor: theme.color.border,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
-    paddingVertical: theme.space(4),
-    paddingHorizontal: theme.space(4),
-    marginBottom: theme.space(8),
-  },
   commandText: {
-    color: theme.color.accent,
-    fontSize: 16,
+    color: p.color.accent,
+    fontSize: 14,
     fontFamily: "Menlo",
   },
   notice: {
-    color: theme.color.accent,
+    color: p.color.accent,
     fontSize: 14,
     lineHeight: 20,
     marginBottom: theme.space(5),
@@ -297,31 +303,31 @@ function makeStyles(theme: AppTheme) {
     paddingVertical: theme.space(4),
     minHeight: 52,
   },
-  scanText: { color: theme.color.text, fontSize: 16, fontWeight: "600" },
+  scanText: { color: p.color.text, fontSize: 16, fontWeight: "600" },
   orRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.space(3),
     marginVertical: theme.space(5),
   },
-  rule: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: theme.color.border },
-  orText: { color: theme.color.textFaint, fontSize: 13 },
+  rule: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: p.color.border },
+  orText: { color: p.color.textFaint, fontSize: 13 },
   label: {
-    color: theme.color.textFaint,
+    color: p.color.textFaint,
     fontSize: 13,
     marginBottom: theme.space(2),
   },
   inputShell: { minHeight: 50 },
   input: {
     minHeight: 50,
-    color: theme.color.text,
+    color: p.color.text,
     fontSize: 15,
     paddingHorizontal: theme.space(4),
     paddingVertical: theme.space(3.5),
   },
-  inputError: { borderWidth: 1, borderColor: theme.color.danger },
+  inputError: { borderWidth: 1, borderColor: p.color.danger },
   error: {
-    color: theme.color.danger,
+    color: p.color.danger,
     fontSize: 14,
     lineHeight: 20,
     marginTop: theme.space(2),
@@ -333,15 +339,14 @@ function makeStyles(theme: AppTheme) {
     justifyContent: "center",
     minHeight: 52,
   },
-  buttonPressed: { backgroundColor: theme.glass.fillPressed },
+  buttonPressed: { backgroundColor: p.glass.fillPressed },
   buttonDisabled: { opacity: 0.48 },
-  buttonText: { color: theme.color.text, fontSize: 16, fontWeight: "700" },
+  buttonText: { color: p.color.text, fontSize: 16, fontWeight: "700" },
   footnote: {
-    color: theme.color.textFaint,
+    color: p.color.textFaint,
     fontSize: 13,
     lineHeight: 19,
     marginTop: theme.space(8),
   },
-  });
-}
-;
+  privacy: { marginTop: theme.space(4), alignSelf: "flex-start" },
+}));

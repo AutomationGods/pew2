@@ -7,15 +7,16 @@
  */
 import { useEffect, useRef } from "react";
 import { Animated, StyleSheet, View, type ViewStyle } from "react-native";
-import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { theme } from "../theme";
 import { useReducedMotion } from "./useReducedMotion";
 import { useAppActive } from "./useAppActive";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /** One pulsing block. Compose these into the shape of the coming content. */
 export function Skeleton({ style }: { style?: ViewStyle | ViewStyle[] }) {
-  const styles = useThemeStyles(makeStyles);
-
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduceMotion = useReducedMotion();
   const appActive = useAppActive();
   const opacity = useRef(new Animated.Value(0.4)).current;
@@ -41,13 +42,12 @@ export function Skeleton({ style }: { style?: ViewStyle | ViewStyle[] }) {
   return <Animated.View style={[styles.block, { opacity }, style]} />;
 }
 
-/** The drawer's history list while agents answer what they have on disk. */
-export function HistorySkeleton() {
-  const { theme } = useAppTheme();
-  const styles = useThemeStyles(makeStyles);
-
+/** The drawer's history list (chats or goals) while it is on its way. */
+export function HistorySkeleton({ label = "Loading chat history" }: { label?: string }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return (
-    <View accessibilityLabel="Loading chat history">
+    <View accessibilityLabel={label}>
       {[0, 1, 2].map((row) => (
         <View key={row} style={styles.historyRow}>
           <Skeleton style={{ width: `${68 - row * 12}%`, height: 15 }} />
@@ -58,16 +58,13 @@ export function HistorySkeleton() {
   );
 }
 
-function makeStyles(theme: AppTheme) {
-  return StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   block: {
-    backgroundColor: theme.color.surfacePressed,
+    backgroundColor: p.color.surfacePressed,
     borderRadius: theme.radius.sm,
   },
   historyRow: {
     paddingVertical: theme.space(3),
     paddingHorizontal: theme.space(1),
   },
-  });
-}
-;
+}));

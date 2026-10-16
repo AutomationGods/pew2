@@ -12,9 +12,9 @@
  * always at offset zero and both use the same font metrics.
  */
 import { memo } from "react";
-import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { theme } from "../theme";
 import { ShimmerText } from "./ShimmerText";
+import { usePalette } from "./appearance";
 
 /** One pass of the sheen. Unhurried, so it reads as a sheen and not a flicker. */
 const SWEEP_DURATION = 1800;
@@ -24,23 +24,23 @@ const SWEEP_GAP = 900;
 
 function CommandTokenView({
   text,
-  size,
-  lineHeight,
+  size = theme.font.body,
+  lineHeight = theme.line.body,
 }: {
   text: string;
   /** Defaults to body text; the composer badge sets its own, smaller scale. */
   size?: number;
   lineHeight?: number;
 }) {
-  const { theme } = useAppTheme();
-  const resolvedSize = size ?? theme.font.body;
-  const resolvedLineHeight = lineHeight ?? theme.line.body;
+  const palette = usePalette();
   return (
     <ShimmerText
       text={text}
-      color={theme.color.accent}
-      size={resolvedSize}
-      lineHeight={resolvedLineHeight}
+      // The accent is what the token is when the sheen is elsewhere, and its
+      // whole appearance under reduced motion.
+      color={palette.color.accent}
+      size={size}
+      lineHeight={lineHeight}
       weight="700"
       duration={SWEEP_DURATION}
       gap={SWEEP_GAP}

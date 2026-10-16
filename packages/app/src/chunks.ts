@@ -22,31 +22,89 @@ import {
   imagesFromToolCall,
   type ChatImage,
 } from "./images";
+import { readGgEvent } from "./ggReview";
+import { asRecord, asString } from "@pew2/protocol";
+import { readPlan, readSessionTitle, readToolPatch, type PlanEntry, type ToolPatch } from "./toolCalls";
 
-export type ChunkRole = "user" | "agent" | "thought" | "system";
+/** "note": a neutral marker (plan decisions) — never an error, never a retry target. */
+export type ChunkRole = "user" | "agent" | "thought" | "system" | "ken" | "note" | "tool" | "plan";
+
+/** What an Autopilot (Ken) row says about itself, for its tint and round label. */
+export interface KenMeta {
+  phase: string;
+  round?: number;
+}
+
+/** A voice call filed in this conversation (`{kind:"voice_call"}`), shown as its transcript. */
+export interface CallNote {
+  callId: string;
+  startedAt: number;
+  endedAt: number;
+  lines: { who: "user" | "assistant"; text: string }[];
+}
+
+/** A logged `voice_call` event, or undefined. */
+export function readCallNote(payload: unknown): CallNote | undefined {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  const p = payload as Record<string, unknown>;
+  if (p.kind !== "voice_call" || typeof p.callId !== "string" || !Array.isArray(p.lines)) return undefined;
+  const lines = p.lines.flatMap((line: unknown): CallNote["lines"] => {
+    const l = line as { who?: unknown; text?: unknown } | null;
+    if (!l || (l.who !== "user" && l.who !== "assistant") || typeof l.text !== "string" || !l.text.trim()) return [];
+    return [{ who: l.who === "user" ? "user" : "assistant", text: l.text }];
+  });
+  if (lines.length === 0) return undefined;
+  const startedAt = typeof p.startedAt === "number" ? p.startedAt : 0;
+  const endedAt = typeof p.endedAt === "number" ? p.endedAt : startedAt;
+  return { callId: p.callId, startedAt, endedAt, lines };
+}
 
 export interface Chunk {
   role: ChunkRole;
   text: string;
+  /** Only on a "note" that is a voice call transcript. */
+  call?: CallNote;
   /** Present only when the chunk actually carried pictures. */
   images?: ChatImage[];
+  /** Only on role "ken". */
+  ken?: KenMeta;
+  /** Only on role "tool": a patch for the card with this toolCallId. */
+  tool?: ToolPatch;
+  /** Only on role "plan": the whole list, replacing the previous one. */
+  plan?: PlanEntry[];
+  /** Only on a "note" carrying `session_info_update`: renames the conversation, adds no row. */
+  title?: string;
 }
 
 /** True when a chunk has nothing to render — no text and no picture. */
 export function isEmptyChunk(chunk: Chunk | undefined): boolean {
-  return !chunk || (!chunk.text && !chunk.images?.length);
+  if (!chunk) return true;
+  if (chunk.tool || chunk.plan || chunk.title) return false;
+  return !chunk.text && !chunk.images?.length;
+}
+
+/** Display-only guard. Unlike chunk acceptance, whitespace has no visible row. */
+export function isEmptyTurn(turn: { role?: string; text: string; images?: unknown[]; tool?: unknown; plan?: unknown[] }): boolean {
+  if (turn.tool) return false;
+  if (turn.plan) return turn.plan.length === 0;
+  return !turn.text.trim() && !turn.images?.length;
 }
 
 /** Concatenated text of a content field, which may be a block or an array. */
-function readText(content: any): string {
+function readText(content: unknown): string {
   if (Array.isArray(content)) {
-    return content.map((block) => (block?.type === "text" ? (block.text ?? "") : "")).join("");
+    return content
+      .map((block: unknown) => {
+        const item = asRecord(block);
+        return item?.type === "text" ? (asString(item.text) ?? "") : "";
+      })
+      .join("");
   }
-  return content?.text ?? "";
+  return asString(asRecord(content)?.text) ?? "";
 }
 
 /** A chunk carrying text plus whatever images travelled with it. */
-function withImages(role: ChunkRole, content: any): Chunk {
+function withImages(role: ChunkRole, content: unknown): Chunk {
   const images = dedupeImages(imagesFromContent(content));
   return images.length > 0
     ? { role, text: readText(content), images }
@@ -68,8 +126,9 @@ function isReplayMetadata(text: string): boolean {
   return REPLAY_METADATA_PREFIX.test(normalized) || normalized === COMPACTION_ACK;
 }
 
-export function readChunk(payload: any): Chunk | undefined {
-  const update = payload?.update;
+export function readChunk(raw: unknown): Chunk | undefined {
+  const payload = asRecord(raw);
+  const update = asRecord(payload?.update);
   if (update?.sessionUpdate === "agent_message_chunk") {
     const chunk = withImages("agent", update.content);
     return isReplayMetadata(chunk.text) ? undefined : chunk;
@@ -84,11 +143,21 @@ export function readChunk(payload: any): Chunk | undefined {
     return isReplayMetadata(chunk.text) ? undefined : chunk;
   }
   if (update?.sessionUpdate === "tool_call" || update?.sessionUpdate === "tool_call_update") {
-    // Tool calls are otherwise not rendered — but an image generation tool's
-    // result *is* the answer, and it arrives nowhere else. Text is deliberately
-    // left out, so a tool that produced no picture yields nothing.
+    // A card per toolCallId, merged in `applyChunk`. An image generation
+    // tool's result *is* the answer and arrives nowhere else, so its pictures
+    // ride along and render under the card.
     const images = dedupeImages(imagesFromToolCall(update));
-    return images.length > 0 ? { role: "agent", text: "", images } : undefined;
+    const tool = readToolPatch(update);
+    if (!tool) return images.length > 0 ? { role: "agent", text: "", images } : undefined;
+    return images.length > 0 ? { role: "tool", text: "", tool, images } : { role: "tool", text: "", tool };
+  }
+  if (update?.sessionUpdate === "plan") {
+    const plan = readPlan(update);
+    return plan ? { role: "plan", text: "", plan } : undefined;
+  }
+  if (update?.sessionUpdate === "session_info_update") {
+    const title = readSessionTitle(update);
+    return title ? { role: "note", text: "", title } : undefined;
   }
   if (payload?.kind === "user_message") {
     // Files the user attached. The daemon wrote them to *its* disk and echoes
@@ -97,10 +166,18 @@ export function readChunk(payload: any): Chunk | undefined {
     // and on this one after a reconnect — the optimistic turn's own copy is
     // local to the device and does not survive replay.
     const images = dedupeImages(imagesFromAttachments(payload.attachments));
-    return images.length > 0
-      ? { role: "user", text: payload.text ?? "", images }
-      : { role: "user", text: payload.text ?? "" };
+    const text = asString(payload.text) ?? "";
+    return images.length > 0 ? { role: "user", text, images } : { role: "user", text };
   }
+  const gg = readGgEvent(payload);
+  if (gg) {
+    if (gg.role === "ken" && gg.ken) return { role: "ken", text: gg.text, ken: gg.ken };
+    return { role: gg.role === "note" ? "note" : "system", text: gg.text };
+  }
+  // A voice call about this conversation: a note for the human, never agent
+  // output, so it neither counts as work nor merges into a bubble.
+  const call = readCallNote(payload);
+  if (call) return { role: "note", text: "Voice call", call };
   if (payload?.kind === "exit") {
     // Closing a session kills the child, so a clean or signalled exit is the
     // normal end of a conversation. Reporting it in red said "something broke"

@@ -186,6 +186,9 @@ relay?.start();
 
 const { errors } = await daemon.refreshProviders();
 for (const error of errors) console.error(error.message);
+// Probes (and warm spares) for the agents this machine already uses, started
+// now rather than on the phone's first ask. Never awaited: boot stays fast.
+void daemon.prewarm().catch(() => {});
 
 /** Send one sealed message to one client. */
 function send(ws: ServerWebSocket<unknown>, message: unknown) {

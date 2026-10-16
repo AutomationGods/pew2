@@ -11,20 +11,20 @@
  */
 import { memo, useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text } from "react-native";
-import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { theme } from "../theme";
 import { receiptText, type TurnReceipt as Receipt } from "../activity";
 import { useReducedMotion } from "./useReducedMotion";
 import { STATUS_ROW_MAX_FONT_SCALE } from "./statusRow";
 import { useStatusRowHeight } from "./useStatusRowHeight";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /** Slower than a control's transition: this arrives, it does not respond. */
 const FADE_DURATION = 260;
 
 function TurnReceiptView({ receipt }: { receipt: Receipt }) {
-  const { theme } = useAppTheme();
-  const styles = useThemeStyles(makeStyles);
-
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const reduceMotion = useReducedMotion();
   const height = useStatusRowHeight();
   const fade = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
@@ -64,8 +64,7 @@ function TurnReceiptView({ receipt }: { receipt: Receipt }) {
   );
 }
 
-function makeStyles(theme: AppTheme) {
-  return StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   // Same left rail and rhythm as the activity line it replaces.
   row: {
     flexDirection: "row",
@@ -77,16 +76,14 @@ function makeStyles(theme: AppTheme) {
   mark: {
     fontSize: theme.font.small,
     lineHeight: theme.line.body,
-    color: theme.color.accent,
+    color: p.color.accent,
   },
   text: {
     flexShrink: 1,
     fontSize: theme.font.small,
     lineHeight: theme.line.body,
-    color: theme.color.textFaint,
+    color: p.color.textFaint,
   },
-  });
-}
-;
+}));
 
 export const TurnReceipt = memo(TurnReceiptView);

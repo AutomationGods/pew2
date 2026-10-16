@@ -132,13 +132,13 @@ export function projectSourceKey(
  * segment could collide there, which is why it is the fallback and not the
  * rule.
  */
-export function sessionInProject(session: Session, project: Project): boolean {
+export function sessionInProject(session: Pick<Session, "cwd" | "folder">, project: Project): boolean {
   if (session.cwd) return session.cwd === project.path;
   return session.folder !== undefined && session.folder === project.name;
 }
 
 /** The history list, narrowed to one project. `undefined` means all of them. */
-export function sessionsInProject(sessions: Session[], project: Project | undefined): Session[] {
+export function sessionsInProject<T extends Pick<Session, "cwd" | "folder">>(sessions: T[], project: Project | undefined): T[] {
   if (!project) return sessions;
   return sessions.filter((session) => sessionInProject(session, project));
 }
@@ -146,4 +146,23 @@ export function sessionsInProject(sessions: Session[], project: Project | undefi
 /** The selector's own label. Named for the state it is in, never left blank. */
 export function projectLabel(project: Project | undefined): string {
   return project?.name ?? "All projects";
+}
+
+/** One chip in the drawer's project strip. `path` undefined is "All". */
+export interface ProjectTabItem {
+  path?: string;
+  label: string;
+  a11y: string;
+}
+
+/**
+ * The project strip's data, "All" first. Built once per project list so the
+ * windowed strip gets stable items, and only the chips on screen mount: an
+ * agent with hundreds of projects (GG Coder) mounted every one on switch.
+ */
+export function projectTabItems(projects: readonly Project[]): ProjectTabItem[] {
+  return [
+    { label: "All", a11y: "All projects" },
+    ...projects.map((project) => ({ path: project.path, label: project.name, a11y: `Project ${project.name}` })),
+  ];
 }

@@ -1,17 +1,25 @@
 /**
  * Shared control primitives.
  *
- * Shared shapes keep press feedback, radii, touch targets and disabled
- * treatment consistent instead of restyling them per screen.
+ * Every interactive surface in the app is one of these three shapes, so press
+ * feedback, radii, touch targets and disabled treatment stay identical
+ * everywhere rather than being re-styled per screen.
  *
  * That includes touch feedback: because every button routes through here, a tap
  * feels the same app-wide without a single call site opting in.
  */
-import { useMemo, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
-import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { theme } from "../theme";
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from "react-native-reanimated";
+import { Glass } from "./Glass";
+import { useAgentColor } from "./stage/agentColor";
+import { GlyphLitContext } from "./stage/DotGlyph";
+import { DotGrid } from "./stage/DotGrid";
 import { haptics } from "./haptics";
+import { SPRING } from "../motion";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /**
  * Wrap a press handler so it pulses first.
@@ -27,8 +35,8 @@ function withHaptic(onPress: () => void, feel: () => void = haptics.tap) {
 }
 
 /** Expands a sub-44pt control to the platform minimum touch target. */
-export function touchSlop(size: number, touchMin = 44) {
-  const slop = Math.max(0, (touchMin - size) / 2);
+export function touchSlop(size: number) {
+  const slop = Math.max(0, (theme.size.touch - size) / 2);
   return { top: slop, bottom: slop, left: slop, right: slop };
 }
 
@@ -44,65 +52,67 @@ interface CircleButtonProps {
   feel?: () => void;
 }
 
-/** Round icon button: menu, send, composer actions. */
+/**
+ * Round icon button: menu, send, composer actions.
+ *
+ * Stage-styled: a near-black dotted well inside a dashed ring. Under the
+ * finger the ring turns solid in the agent colour, a DotGlyph child lights up
+ * (via `GlyphLitContext`), and the button springs down a touch.
+ */
 export function CircleButton({
   onPress,
   label,
   children,
-  size,
+  size = theme.size.control,
   disabled = false,
   tint,
   style,
   feel,
 }: CircleButtonProps) {
-  const { theme } = useAppTheme();
-  const themed = useMemo(() => makeStyles(theme), [theme]);
-  const resolvedSize = size ?? theme.size.control;
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const press = withHaptic(onPress, feel);
+  const agent = useAgentColor();
+  const reduceMotion = useReducedMotion();
+  const [pressed, setPressed] = useState(false);
+  const scale = useSharedValue(1);
+  const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const active = pressed && !disabled;
 
-  // A solid tint opts out of glass: used where a control must read as filled.
-  if (tint) {
-    return (
+  const setDown = (down: boolean) => {
+    setPressed(down);
+    if (reduceMotion) return;
+    scale.value = withSpring(down ? 0.94 : 1, SPRING.press);
+  };
+
+  return (
+    <Animated.View style={[{ width: size, height: size }, scaleStyle, style]}>
       <Pressable
         onPress={press}
+        onPressIn={() => setDown(true)}
+        onPressOut={() => setDown(false)}
         disabled={disabled}
         accessibilityRole="button"
         accessibilityLabel={label}
         accessibilityState={{ disabled }}
-        hitSlop={touchSlop(resolvedSize, theme.size.touch)}
-        style={({ pressed }) => [
-          themed.circle,
-          themed.solid,
-          { width: resolvedSize, height: resolvedSize, borderRadius: resolvedSize / 2, backgroundColor: tint },
-          pressed && !disabled && themed.pressed,
-          disabled && themed.disabled,
-          style,
+        hitSlop={touchSlop(size)}
+        style={[
+          styles.circle,
+          styles.stageCircle,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            backgroundColor: tint ?? palette.stage.strip,
+          },
+          active && { borderStyle: "solid", borderColor: agent },
+          disabled && styles.disabled,
         ]}
       >
-        {children}
+        {tint ? null : <DotGrid fine />}
+        <GlyphLitContext.Provider value={active ? agent : null}>{children}</GlyphLitContext.Provider>
       </Pressable>
-    );
-  }
-
-  return (
-    <Pressable
-      onPress={press}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled }}
-      hitSlop={touchSlop(resolvedSize, theme.size.touch)}
-      style={({ pressed }) => [
-        themed.circle,
-        themed.control,
-        { width: resolvedSize, height: resolvedSize, borderRadius: resolvedSize / 2 },
-        pressed && !disabled && themed.pressed,
-        disabled && themed.disabled,
-        style,
-      ]}
-    >
-      {children}
-    </Pressable>
+    </Animated.View>
   );
 }
 
@@ -117,49 +127,57 @@ interface PillProps {
 
 /** Horizontal pill: the provider selector and the quick-action chips. */
 export function Pill({ onPress, label, children, disabled = false, feel }: PillProps) {
-  const { theme } = useAppTheme();
-  const styles = useMemo(() => makeStyles(theme), [theme]);
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const content = <View style={styles.pillRow}>{children}</View>;
 
   if (!onPress) {
-    return <View style={[styles.pillGlass, styles.control, styles.pill]} accessibilityLabel={label}>{content}</View>;
+    return (
+      <Glass radius={theme.radius.pill} style={styles.pillGlass}>
+        <View style={styles.pill} accessibilityLabel={label}>
+          {content}
+        </View>
+      </Glass>
+    );
   }
 
   return (
-    <Pressable
-      onPress={withHaptic(onPress, feel)}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled }}
-      style={({ pressed }) => [
-        styles.pillGlass,
-        styles.control,
-        styles.pill,
-        pressed && !disabled && styles.pressed,
-        disabled && styles.disabled,
-      ]}
-    >
-      {content}
-    </Pressable>
+    <Glass radius={theme.radius.pill} interactive style={styles.pillGlass}>
+      <Pressable
+        onPress={withHaptic(onPress, feel)}
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ disabled }}
+        style={({ pressed }) => [
+          styles.pill,
+          pressed && !disabled && styles.pressedOverlay,
+          disabled && styles.disabled,
+        ]}
+      >
+        {content}
+      </Pressable>
+    </Glass>
   );
 }
 
 /** Small muted caption used inside pills and rows. */
 export function Caption({ children }: { children: ReactNode }) {
-  const styles = useThemeStyles(makeStyles);
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   return <Text style={styles.caption}>{children}</Text>;
 }
 
-function makeStyles(theme: AppTheme) {
-  return StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   circle: { alignItems: "center", justifyContent: "center" },
-  control: {
-    backgroundColor: theme.color.controlFill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: theme.color.separator,
+  // One dashed ring all the way round: iOS only dashes a border when all four
+  // sides share it, which a full circle does.
+  stageCircle: {
+    overflow: "hidden",
+    borderWidth: StyleSheet.hairlineWidth > 0.5 ? StyleSheet.hairlineWidth : 1,
+    borderStyle: "dashed",
+    borderColor: p.stage.dash,
   },
-  solid: {},
   // A pill in a crowded row must be able to give up width, and every layer down
   // to the label needs to say so — one rigid ancestor and the text below it can
   // never truncate, so the pill overflows the row instead.
@@ -178,11 +196,9 @@ function makeStyles(theme: AppTheme) {
     flexShrink: 1,
     minWidth: 0,
   },
-  pressed: {
-    backgroundColor: theme.color.surfacePressed,
-    opacity: 0.72,
-  },
+  pressed: { backgroundColor: p.color.surfacePressed },
+  // On glass, press brightens the surface rather than replacing its colour.
+  pressedOverlay: { backgroundColor: p.glass.fillPressed },
   disabled: { opacity: 0.4 },
-  caption: { color: theme.color.textDim, fontSize: theme.font.small, fontWeight: "600" },
-  });
-}
+  caption: { color: p.color.textDim, fontSize: theme.font.small },
+}));

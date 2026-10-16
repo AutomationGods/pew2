@@ -48,6 +48,8 @@ module.exports = () => {
   return {
     ...expo,
     plugins: [
+      // Bundled so the daemon's push can name a per-kind sound (complete /
+      // input / error); Android channels' sounds are fixed at creation.
       ...(expo.plugins ?? []).map((plugin) =>
         plugin === "expo-notifications"
           ? ["expo-notifications", { sounds: notificationSounds }]
@@ -57,6 +59,12 @@ module.exports = () => {
       // native manifest opts in. Session payloads remain encrypted by pew2.
       ["expo-build-properties", { android: { usesCleartextTraffic: true } }],
     ],
+    // Android push (and so Android ringing) needs Firebase. The file is
+    // per-account like eas-project.json, so it is picked up when present and
+    // never committed (root .gitignore).
+    ...(fs.existsSync(path.join(__dirname, "google-services.json"))
+      ? { android: { ...expo.android, googleServicesFile: "./google-services.json" } }
+      : {}),
     ...(owner ? { owner } : {}),
     ...(projectId
       ? { extra: { ...expo.extra, eas: { ...expo.extra?.eas, projectId } } }

@@ -9,7 +9,7 @@
  * Pure and react-free so the rule is directly testable: the failure it prevents
  * is invisible in a typecheck and looks perfectly normal on screen.
  */
-import type { ConfigOption } from "./useDaemon";
+import type { ConfigOption, Session } from "./useDaemon";
 
 /**
  * What a new conversation with each agent will open with.
@@ -65,4 +65,65 @@ export function visibleConfigs({
   if (session.length > 0) return session;
   if (inConversation) return [];
   return provider ?? [];
+}
+
+/** A selector change shown before the daemon confirmed it, and what it replaced. */
+export interface PendingConfig {
+  sessionId: string;
+  previous: ConfigOption[];
+}
+
+/** The slice of app state an optimistic selector change touches. */
+export interface ConfigHolder {
+  sessionId?: string;
+  configOptions: ConfigOption[];
+  sessions: Session[];
+  pendingConfig?: PendingConfig;
+}
+
+/**
+ * Apply a pill tap in a live conversation at once: the open list and the
+ * session's own row. The first pending change's `previous` is kept, so two
+ * quick taps undo to what the daemon last confirmed.
+ */
+export function applyConfigChoice<S extends ConfigHolder>(
+  state: S,
+  sessionId: string,
+  configId: string,
+  value: string | boolean,
+): S {
+  const row = state.sessions.find((session) => session.id === sessionId);
+  const current = state.sessionId === sessionId ? state.configOptions : (row?.configOptions ?? []);
+  const previous =
+    state.pendingConfig?.sessionId === sessionId ? state.pendingConfig.previous : current;
+  return {
+    ...state,
+    configOptions:
+      state.sessionId === sessionId ? withChoice(state.configOptions, configId, value) : state.configOptions,
+    sessions: state.sessions.map((session) =>
+      session.id === sessionId
+        ? { ...session, configOptions: withChoice(session.configOptions, configId, value) }
+        : session,
+    ),
+    pendingConfig: { sessionId, previous },
+  };
+}
+
+/** The daemon's `session.config` for that session is the truth: stop guessing. */
+export function settleConfigChoice<S extends ConfigHolder>(state: S, sessionId: string): S {
+  return state.pendingConfig?.sessionId === sessionId ? { ...state, pendingConfig: undefined } : state;
+}
+
+/** The daemon refused the change: put back what it last confirmed. */
+export function revertConfigChoice<S extends ConfigHolder>(state: S): S {
+  const pending = state.pendingConfig;
+  if (!pending) return state;
+  return {
+    ...state,
+    configOptions: state.sessionId === pending.sessionId ? pending.previous : state.configOptions,
+    sessions: state.sessions.map((session) =>
+      session.id === pending.sessionId ? { ...session, configOptions: pending.previous } : session,
+    ),
+    pendingConfig: undefined,
+  };
 }

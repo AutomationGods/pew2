@@ -1,46 +1,35 @@
-import { createElement, memo, useMemo } from "react";
+import { createElement, memo, useContext, useMemo, useState } from "react";
+import { StreamingMarkdown } from "./StreamingMarkdown";
+import { useSmoothText } from "./useSmoothText";
 import * as Clipboard from "expo-clipboard";
 import * as WebBrowser from "expo-web-browser";
-import { Alert, Linking, Platform, StyleSheet, Text, View } from "react-native";
+import { Alert, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import Markdown, {
   type MarkdownStyles,
   type RenderFunction,
   type RenderRules,
 } from "react-native-markdown-renderer";
-import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { theme } from "../theme";
+import { DARK_PALETTE, type Palette } from "../palette";
+import { usePalette } from "./appearance";
 import { ChatImage } from "./ChatImage";
 import { isDisplayableImage } from "../images";
 import { writeToClipboard } from "./clipboard";
-import { CopyButton } from "./CopyButton";
+import { MessageTextContext, openCopyMenu } from "./copyMenu";
 import { linkTarget } from "./links";
 import { fencedCodeContainerStyle, fencedCodeTextStyle } from "./markdownCodeStyles";
 import { boundedMarkdownParagraphStyle, boundedMarkdownRootStyle } from "./messageLayoutStyles";
-import { splitMarkdownBlocks } from "./markdownBlocks";
+import { hasFence, holdOpenInlineCode, splitMarkdownBlocks } from "./markdownBlocks";
 
 export type MarkdownTone = "body" | "thought" | "system";
 
-
+const BLOCK_GAP = theme.space(2.5);
 // Read once so markdown style maps remain stable plain objects.
 const StyleSheetHairline = StyleSheet.hairlineWidth;
 const monospace = Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" });
 
 function trimTrailingNewline(text: string): string {
   return text.endsWith("\n") ? text.slice(0, -1) : text;
-}
-
-function makeStyles(theme: AppTheme) {
-  return StyleSheet.create({
-    codeBlockChromeHeader: {
-      minHeight: 36,
-      alignItems: "flex-end" as const,
-      justifyContent: "center" as const,
-      paddingHorizontal: theme.space(1.5),
-      borderBottomWidth: StyleSheetHairline,
-      borderBottomColor: theme.color.border,
-      backgroundColor: theme.color.surfaceRaised,
-    },
-  });
 }
 
 function CodeBlock({
@@ -54,26 +43,22 @@ function CodeBlock({
   contentStyle: object;
   textStyle: object;
 }) {
-  const styles = useThemeStyles(makeStyles);
+  const message = useContext(MessageTextContext);
+  // Holding a fence offers just this block, then the whole message. The
+  // innermost Pressable wins the responder, so the turn's own hold never fires.
   return (
-    <View style={containerStyle}>
-      <View style={styles.codeBlockChromeHeader}>
-        {/* The same control the whole reply carries under it. A code block gets
-            its own because a fence is the thing most often wanted on its own —
-            and because holding it selects, but cannot reach past its own
-            scroll. */}
-        <CopyButton text={content} accessibilityLabel="Copy code" />
-      </View>
+    <Pressable
+      accessible={false}
+      delayLongPress={350}
+      onLongPress={() => openCopyMenu(message ?? content, content)}
+      style={containerStyle}
+    >
       <View style={contentStyle}>
-        <Text selectable style={textStyle}>
-          {content}
-        </Text>
+        <Text style={textStyle}>{content}</Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
-
-
 
 const renderCodeBlock: RenderFunction = (node, _children, _parents, styles) => {
   const content = trimTrailingNewline(node.content);
@@ -112,19 +97,15 @@ const renderImage: RenderFunction = (node) => {
   return <ChatImage key={node.key} image={{ src, alt: alt || undefined }} />;
 };
 
-const markdownRules: Partial<RenderRules> = {
+export const markdownRules: Partial<RenderRules> = {
   // Every inline run that is *not* a paragraph — a heading, a list item, a table
   // cell — bottoms out here, and this is the outermost Text of those blocks.
-  //
-  // That is why `selectable` is said twice, here and on the paragraph below.
-  // Nested Text is virtual on both platforms: it is flattened into the one
-  // native text view its top-level Text creates, and the native selection
-  // gesture belongs to that view. So the flag only does anything on the
-  // outermost Text of a block, and there are two kinds of those.
+  // Plain text, deliberately: a hold on a message opens the copy menu (`copyMenu.ts`),
+  // and native selection would fight that gesture.
   textgroup: (node, children, _parents, styles) =>
     createElement(
       Text,
-      { ["key"]: node.key, selectable: true, style: styles.text as never },
+      { ["key"]: node.key, style: styles.text as never },
       children,
     ),
   // A paragraph must be one measured Text block. The library's default uses a
@@ -132,14 +113,12 @@ const markdownRules: Partial<RenderRules> = {
   // height while its text paints several lines, so following items overlap it.
   // One exception: a paragraph holding an image becomes a column, because
   // nesting a View in text layout collapses a percentage-width picture on iOS.
-  // Only the Text branch is selectable — a View is not text and `selectable`
-  // means nothing on it.
   paragraph: (node, children, _parents, styles) =>
     hasImageChild(node)
       ? createElement(View, { ["key"]: node.key, style: styles.paragraph as never }, children)
       : createElement(
           Text,
-          { ["key"]: node.key, selectable: true, style: styles.paragraph as never },
+          { ["key"]: node.key, style: styles.paragraph as never },
           children,
         ),
   code_block: renderCodeBlock,
@@ -157,36 +136,36 @@ const markdownRules: Partial<RenderRules> = {
 };
 
 function stylesFor(
-  theme: AppTheme,
+  c: Palette["color"],
   color: string,
   fontSize: number,
   lineHeight: number,
-  blockGap: number,
+  italic = false,
 ): Partial<MarkdownStyles> {
   return {
     // No negative margin here, unlike the single-render version this replaced.
-    // Each block now carries its own trailing `blockGap`, and the cancellation
+    // Each block now carries its own trailing `BLOCK_GAP`, and the cancellation
     // that keeps a message from ending in dead space belongs once, on the
     // wrapper around all of them — applied per block it would instead collapse
     // the gap between every pair of paragraphs.
     root: boundedMarkdownRootStyle,
-    text: { color, fontSize, lineHeight },
+    text: { color, fontSize, lineHeight, ...(italic ? { fontStyle: "italic" as const } : {}) },
     paragraph: {
       color,
       fontSize,
       lineHeight,
       ...boundedMarkdownParagraphStyle,
       marginTop: 0,
-      marginBottom: blockGap,
+      marginBottom: BLOCK_GAP,
     },
     strong: { color, fontWeight: "700" },
     em: { color, fontStyle: "italic" },
     strikethrough: { color, textDecorationLine: "line-through" },
-    link: { color: theme.color.accent, textDecorationLine: "underline" },
+    link: { color: c.accent, textDecorationLine: "underline" },
     headingContainer: {
       flexDirection: "row",
       marginTop: theme.space(1),
-      marginBottom: blockGap,
+      marginBottom: BLOCK_GAP,
     },
     heading: { color, fontWeight: "700" },
     heading1: { color, fontSize: fontSize + 7, lineHeight: lineHeight + 7 },
@@ -198,16 +177,16 @@ function stylesFor(
     heading1Container: {
       paddingBottom: theme.space(1.5),
       borderBottomWidth: StyleSheetHairline,
-      borderBottomColor: theme.color.border,
+      borderBottomColor: c.border,
     },
     heading2Container: {
       paddingBottom: theme.space(1),
       borderBottomWidth: StyleSheetHairline,
-      borderBottomColor: theme.color.border,
+      borderBottomColor: c.border,
     },
     codeInline: {
-      color: theme.color.text,
-      backgroundColor: theme.color.surfacePressed,
+      color: c.text,
+      backgroundColor: c.surfacePressed,
       borderRadius: theme.radius.sm,
       paddingHorizontal: theme.space(1),
       fontFamily: monospace,
@@ -216,10 +195,10 @@ function stylesFor(
     },
     codeBlockContainer: {
       ...fencedCodeContainerStyle,
-      marginBottom: blockGap,
-      backgroundColor: theme.color.surface,
+      marginBottom: BLOCK_GAP,
+      backgroundColor: c.surface,
       borderWidth: StyleSheetHairline,
-      borderColor: theme.color.border,
+      borderColor: c.border,
       borderRadius: theme.radius.md,
     },
     codeBlockContent: {
@@ -228,7 +207,7 @@ function stylesFor(
       minWidth: 0,
     },
     codeBlock: {
-      color: theme.color.text,
+      color: c.text,
       // The renderer's default code style is GitHub-light (#f6f8fa). The dark
       // container owns the surface; the inner Text must not repaint it white.
       ...fencedCodeTextStyle,
@@ -239,14 +218,16 @@ function stylesFor(
       lineHeight: Math.max(18, lineHeight - 2),
     },
     pre: { marginBottom: 0 },
+    // A dim panel, not a left rule: no coloured left edges anywhere (the user's call).
     blockquote: {
-      borderLeftWidth: 3,
-      borderLeftColor: theme.color.textDim,
+      backgroundColor: c.surfaceRaised,
+      borderRadius: theme.radius.sm,
       paddingLeft: theme.space(3),
-      paddingRight: 0,
-      marginBottom: blockGap,
+      paddingRight: theme.space(3),
+      paddingVertical: theme.space(2),
+      marginBottom: BLOCK_GAP,
     },
-    list: { marginBottom: blockGap },
+    list: { marginBottom: BLOCK_GAP },
     // minWidth: 0 is essential inside the marker row; without it, long list
     // paragraphs keep their intrinsic width and paint past the chat rail.
     listItem: { flex: 1, minWidth: 0 },
@@ -260,7 +241,7 @@ function stylesFor(
       lineHeight,
     },
     listOrderedItemIcon: {
-      color: theme.color.textDim,
+      color: c.textDim,
       marginLeft: 0,
       marginRight: theme.space(2),
       fontSize,
@@ -270,38 +251,38 @@ function stylesFor(
     listOrderedItemText: { color, fontSize, lineHeight },
     hr: {
       height: StyleSheetHairline,
-      backgroundColor: theme.color.border,
+      backgroundColor: c.border,
       marginTop: theme.space(2),
       marginBottom: theme.space(4.5),
     },
     table: {
       borderWidth: StyleSheetHairline,
-      borderColor: theme.color.border,
+      borderColor: c.border,
       borderRadius: theme.radius.sm,
       overflow: "hidden",
-      marginBottom: blockGap,
+      marginBottom: BLOCK_GAP,
     },
-    tableHeader: { backgroundColor: theme.color.surfaceRaised },
+    tableHeader: { backgroundColor: c.surfaceRaised },
     tableHeaderCell: {
       flex: 1,
       paddingVertical: theme.space(2),
       paddingHorizontal: theme.space(2),
       borderWidth: StyleSheetHairline,
-      borderColor: theme.color.border,
+      borderColor: c.border,
       color,
       fontWeight: "700",
     },
     tableRow: {
       flexDirection: "row",
       borderBottomWidth: StyleSheetHairline,
-      borderBottomColor: theme.color.border,
+      borderBottomColor: c.border,
     },
     tableRowCell: {
       flex: 1,
       paddingVertical: theme.space(2),
       paddingHorizontal: theme.space(2),
       borderWidth: StyleSheetHairline,
-      borderColor: theme.color.border,
+      borderColor: c.border,
       color,
     },
     image: {
@@ -309,20 +290,31 @@ function stylesFor(
       width: "100%",
       height: 220,
       resizeMode: "contain",
-      marginBottom: blockGap,
+      marginBottom: BLOCK_GAP,
       borderRadius: theme.radius.md,
     },
   };
 }
 
-function makeMarkdownStyles(theme: AppTheme): Record<MarkdownTone, Partial<MarkdownStyles>> {
-  const blockGap = theme.space(2.5);
+// Kept outside render: the markdown renderer memoises its AST renderer by the
+// identity of these objects while streamed chunks update only the source text.
+export function markdownStylesFor(palette: Palette): Record<MarkdownTone, Partial<MarkdownStyles>> {
+  const c = palette.color;
   return {
-    body: stylesFor(theme, theme.color.text, theme.font.body, theme.line.body, blockGap),
-    thought: stylesFor(theme, theme.color.textDim, theme.font.small, 20, blockGap),
-    system: stylesFor(theme, theme.color.danger, theme.font.small, 20, blockGap),
+    body: stylesFor(c, c.text, theme.font.body, theme.line.body),
+    thought: stylesFor(c, c.textDim, 14, 21, true),
+    system: stylesFor(c, c.danger, theme.font.small, 20),
   };
 }
+
+/** Default (dark) styles, for callers outside the appearance provider. */
+export const markdownStyles: Record<MarkdownTone, Partial<MarkdownStyles>> = {
+  body: stylesFor(DARK_PALETTE.color, theme.color.text, theme.font.body, theme.line.body),
+  // Reasoning reads as notes in the margin: italic, a touch larger than
+  // small type so a long one is comfortable to read in the thought sheet.
+  thought: stylesFor(DARK_PALETTE.color, theme.color.textDim, 14, 21, true),
+  system: stylesFor(DARK_PALETTE.color, theme.color.danger, theme.font.small, 20),
+};
 
 /**
  * Opening a link from a message.
@@ -343,7 +335,7 @@ function makeMarkdownStyles(theme: AppTheme): Record<MarkdownTone, Partial<Markd
  * unopenable. The alert carries the URL and offers the clipboard, so a link to
  * an app this phone does not have is still a link the user can use.
  */
-function openLink(url: string): void {
+export function openLink(url: string): void {
   void (async () => {
     const target = linkTarget(url);
     try {
@@ -351,10 +343,8 @@ function openLink(url: string): void {
         await WebBrowser.openBrowserAsync(url, {
           // The transcript's own surface, so the browser arrives as part of
           // this app rather than as a white flash out of it.
-          // simplification: module-level callback cannot read the themed palette.
-          // Dark defaults are safe; the in-app browser chrome is brief.
-          toolbarColor: "#1c2027",
-          controlsColor: "#ffaa8a",
+          toolbarColor: theme.color.surface,
+          controlsColor: theme.color.accent,
         });
         return;
       }
@@ -388,16 +378,22 @@ function openLink(url: string): void {
 const MarkdownBlock = memo(function MarkdownBlock({
   source,
   tone,
-  mdStyles,
+  live = false,
+  animate = false,
 }: {
   source: string;
   tone: MarkdownTone;
-  mdStyles: Partial<MarkdownStyles>;
+  live?: boolean;
+  animate?: boolean;
 }) {
+  const palette = usePalette();
+  // One object per palette, so the renderer's identity memo still holds while streaming.
+  const style = useMemo(() => (palette === DARK_PALETTE ? markdownStyles : markdownStylesFor(palette))[tone], [palette, tone]);
+  if (live) return <StreamingMarkdown source={source} animate={animate} rules={markdownRules as RenderRules} style={style} onLinkPress={openLink} />;
   return (
     <Markdown
       rules={markdownRules as RenderRules}
-      style={mdStyles}
+      style={style}
       onLinkPress={openLink}
       // No `allowedImageHandlers`: that list only gates the library's own image
       // rule, which is replaced above precisely because it cannot load a file
@@ -408,20 +404,41 @@ const MarkdownBlock = memo(function MarkdownBlock({
   );
 });
 
-function MarkdownTextView({ text, tone = "body" }: { text: string; tone?: MarkdownTone }) {
-  const { theme } = useAppTheme();
-  const mdStyles = useMemo(() => makeMarkdownStyles(theme), [theme]);
-  const blockGap = theme.space(2.5);
-  const blocks = useMemo(() => splitMarkdownBlocks(text), [text]);
+function GrowingMarkdownTextView({ text, tone = "body", liveIdentity }: { text: string; tone?: MarkdownTone; liveIdentity?: string }) {
+  const [touchedIdentity, setTouchedIdentity] = useState<string>();
+  const completeBlocks = useMemo(() => splitMarkdownBlocks(text), [text]);
+  // A fenced block stays authoritative: characters are never paced inside it.
+  // Inline code is paced and dissolves with the prose around it (it used to
+  // switch the whole paragraph off, which was most agent replies); a span that
+  // is only half revealed is held back until it is whole (`holdOpenInlineCode`).
+  const hasCode = hasFence(completeBlocks.at(-1) ?? "");
+  const live = tone === "body" && liveIdentity !== undefined && touchedIdentity !== liveIdentity && !hasCode;
+  const smooth = useSmoothText(text, liveIdentity ?? "history", live);
+  const revealed = useMemo(
+    () => (live && smooth.animating ? holdOpenInlineCode(smooth.text) : smooth.text),
+    [live, smooth.animating, smooth.text],
+  );
+  // Splitting is a parse, so it is memoised too — but it is only the block
+  // tokeniser, not the inline pass or the element tree, and it is the one piece
+  // of work that unavoidably sees the whole message.
+  const blocks = useMemo(() => splitMarkdownBlocks(revealed), [revealed]);
 
   return (
-    <View style={[blockLayout.root, { marginBottom: -blockGap }]}>
+    <View style={blockLayout.root} accessibilityLiveRegion="none" onTouchStart={() => { if (liveIdentity) setTouchedIdentity(liveIdentity); }}>
       {blocks.map((source, index) => (
         <MarkdownBlock
-          key={`${index}-${source.length}`}
+          // Index, deliberately. Blocks are an ordered decomposition of one
+          // string: block 2 is always the third thing in this message, and
+          // during streaming it grows in place rather than being reordered or
+          // removed. Keying by content would instead throw away and remount the
+          // block being written on every single chunk — exactly the work this
+          // whole file is arranged to avoid — and would collapse the two
+          // identical paragraphs a message is perfectly entitled to contain.
+          key={index}
           source={source}
           tone={tone}
-          mdStyles={mdStyles[tone]}
+          live={live && index === blocks.length - 1}
+          animate={live && index === blocks.length - 1 && smooth.animating}
         />
       ))}
     </View>
@@ -430,7 +447,14 @@ function MarkdownTextView({ text, tone = "body" }: { text: string; tone?: Markdo
 
 const blockLayout = StyleSheet.create({
   root: {
+    // This wrapper now stands where the single Markdown root used to, so it has
+    // to keep that root's bounding. Without it a long code line has nothing to
+    // shrink against — a View defaults to `flexShrink: 0` — and would push the
+    // message wider than its rail.
     ...boundedMarkdownRootStyle,
+    // The message ends flush: the last block contributes a trailing `BLOCK_GAP`
+    // like every other, and this takes exactly that back.
+    marginBottom: -BLOCK_GAP,
   },
 });
 
@@ -438,4 +462,13 @@ const blockLayout = StyleSheet.create({
  * Memoised at the message level as well, so a turn that is merely re-rendered
  * — a sibling streaming, the keyboard opening — does no markdown work at all.
  */
+function SettledMarkdownText({ text, tone }: { text: string; tone: MarkdownTone }) {
+  const blocks = useMemo(() => splitMarkdownBlocks(text), [text]);
+  return <View style={blockLayout.root}>{blocks.map((source, index) => <MarkdownBlock key={index} source={source} tone={tone} />)}</View>;
+}
+function MarkdownTextView(props: { text: string; tone?: MarkdownTone; liveIdentity?: string }) {
+  return props.liveIdentity && (props.tone ?? "body") === "body"
+    ? <GrowingMarkdownTextView key={props.liveIdentity} {...props} />
+    : <SettledMarkdownText text={props.text} tone={props.tone ?? "body"} />;
+}
 export const MarkdownText = memo(MarkdownTextView);

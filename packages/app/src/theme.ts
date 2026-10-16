@@ -1,84 +1,213 @@
-import { Easing, Platform } from "react-native";
-import type { AccentName } from "./appearancePreference";
-import { materialTokens, type MaterialMode } from "./materialTokens";
+import { Easing } from "react-native";
+import { DUR, EASE } from "./motion";
+import { DARK_COLORS, DARK_COMPOSER, DARK_STAGE } from "./palette";
+import { approvalActionColors, fallbackGlassTokens } from "./materialTokens";
 
-export type ResolvedAppearanceMode = MaterialMode;
+/**
+ * Design tokens.
+ *
+ * Near-black canvas with two raised greys. Agent output is read for long
+ * stretches, often one-handed and at night, so the canvas recedes and every
+ * control is a soft-grey pill floating on it.
+ *
+ * The drawer sits one step lighter than the conversation. Because the drawer is
+ * revealed by sliding the conversation aside rather than covering it, that
+ * difference is what separates the planes: the darker surface reads as on top.
+ *
+ * Palette is GG Coder's desktop (gg-app App.css :root): near-black canvas
+ * separated by lightness alone, periwinkle accent, luminous semantics.
+ * Measured WCAG ratios on bg #0a0a0c / surface #141519 / raised #1c1e23 /
+ * pressed #24262c: text 17.8/16.5/15.0/13.6, textDim 7.2/6.6/6.0/5.5,
+ * textFaint #90919c 6.3/5.8/5.3/4.8 (the floor for dim text on raised
+ * surfaces), accent 10.3/9.5/8.7/7.9, danger 7.1/6.5/6.0/5.4,
+ * success 13.1/12.1/11.1/10.0, thought (critter pink) 9.5/8.8/8.0/7.3.
+ * accent on accentSoft 7.2, text on accentSoft 12.5, onAccent on accent 9.9.
+ */
+export const theme = {
+  /**
+   * The dark Stage palette (palette.ts holds the literals so a light variant
+   * and accents can sit beside it). This static object is the default for
+   * anything not yet reading `usePalette()` from ui/appearance.tsx.
+   */
+  color: DARK_COLORS,
 
-const modeColors = {
-  light: {
-    bg: "#faf9f5", canvas: "#faf9f5", drawer: "#f3f1e8", surface: "#ffffff",
-    groupedSurface: "#f3f1e8", surfaceRaised: "#ffffff", surfacePressed: "#ece9df",
-    selectedRow: "#fff3e7", controlFill: "#f5f3eb", separator: "#dedbd1",
-    border: "#dedbd1", borderStrong: "#6d685e", text: "#24231f", textDim: "#5d594f",
-    textFaint: "#747065", glyph: "#38362f", placeholder: "#747065", success: "#2f7d52",
-    successSoft: "#e8e9df", warning: "#825a14", danger: "#a23b31", dangerSoft: "#efe5df",
-    thought: "#66517f", orb: "#c76545", scrim: "rgba(37,35,31,0.38)", code: "#f2efe7",
+  /** Libraries.dev Beam composer: opaque card, quiet inset pills. */
+  composer: {
+    radius: 20,
+    ...DARK_COMPOSER,
   },
-  dark: {
-    bg: "#181813", canvas: "#181813", drawer: "#22211b", surface: "#292821",
-    groupedSurface: "#292821", surfaceRaised: "#302f27", surfacePressed: "#3c3a31",
-    selectedRow: "#40362f", controlFill: "#35332a", separator: "#4a473b",
-    border: "#4a473b", borderStrong: "#aaa28e", text: "#f7f4e9", textDim: "#d0c9b9",
-    textFaint: "#aaa292", glyph: "#ebe5d7", placeholder: "#aaa292", success: "#79bd8c",
-    successSoft: "#2d332a", warning: "#e2b460", danger: "#f09286", dangerSoft: "#3b2c28",
-    thought: "#c3add8", orb: "#df7d5d", scrim: "rgba(0,0,0,0.66)", code: "#22211b",
-  },
-} as const;
 
-// Stored keys are stable; only their visual values are remapped.
-const accents = {
-  coral: {
-    light: { accent: "#9a3e25", accentSoft: "#eee8e5", accentSolid: "#9a3e25", accentText: "#ffffff" },
-    dark: { accent: "#ef8b6d", accentSoft: "#342824", accentSolid: "#d66d4d", accentText: "#160b07" },
+  /**
+   * Stage: pew2's LED look. Dashed rules instead of solid borders, a dot grid
+   * on the canvas, dot-matrix labels that glow in the agent's colour. The
+   * glow is the agent's colour, so these are geometry, not colours.
+   */
+  stage: {
+    /** dash (rules, 3.4:1 on bg), strip (sheet header), gridColor, fineColor. */
+    ...DARK_STAGE,
+    /** Canvas dot grid: spacing, dot radius, dot colour. */
+    grid: 14,
+    gridDot: 1,
+    /** Strip/ticker texture: a finer grid. */
+    fine: 5,
+    /** LED label type. */
+    ledSize: 11,
+    ledSpacing: 1.6,
+    /** Glow radius on lit LED text. */
+    glow: 8,
   },
-  ocean: {
-    light: { accent: "#1859a9", accentSoft: "#e6eaf0", accentSolid: "#1859a9", accentText: "#ffffff" },
-    dark: { accent: "#86b6fa", accentSoft: "#252c35", accentSolid: "#5c91dc", accentText: "#071421" },
-  },
-  violet: {
-    light: { accent: "#6242a1", accentSoft: "#ebe8f0", accentSolid: "#6242a1", accentText: "#ffffff" },
-    dark: { accent: "#baa1ed", accentSoft: "#2d2935", accentSolid: "#9876d4", accentText: "#110a1d" },
-  },
-  mint: {
-    light: { accent: "#176b55", accentSoft: "#e5ece9", accentSolid: "#176b55", accentText: "#ffffff" },
-    dark: { accent: "#69c9a8", accentSoft: "#25312d", accentSolid: "#45a987", accentText: "#071813" },
-  },
-} as const satisfies Record<AccentName, Record<ResolvedAppearanceMode, object>>;
 
-const metrics = {
+  /** 4pt base grid. */
   space: (n: number) => n * 4,
-  gutter: 20, sectionGap: 18, headerInset: 10,
-  radius: { sm: 10, md: 16, lg: 20, composer: 26, pane: 24, pill: 999 },
-  size: { control: 46, chip: 42, composerCollapsed: 64, composerButton: 42, composerInset: 11, orb: 42, touch: 44 },
-  font: { tiny: 11, small: 13, body: 15, title: 19, greeting: 30 },
-  display: {
-    regular: "sans-serif",
-    editorial: Platform.select({ ios: "Georgia", android: "serif", default: "Georgia" }),
-    semibold: Platform.select({ android: "sans-serif-medium", default: "sans-serif" }),
-    bold: Platform.select({ android: "sans-serif-medium", default: "sans-serif" }),
+
+  /**
+   * Single horizontal gutter for every top-level surface. The drawer header,
+   * its chips and list, and the conversation's top bar and composer all sit on
+   * this one rail, so controls stay aligned as the drawer slides.
+   */
+  gutter: 20,
+
+  /**
+   * Single vertical step between the drawer's stacked sections.
+   *
+   * "Connected Apps" to the agent pills, the pills to the project selector, the
+   * selector to "Latest chats" — each of those was its own number before (12,
+   * 12, 20), so the column read as three loosely related blocks rather than one
+   * list. Lives here rather than in `Sidebar.tsx` because `ProjectSelect` sits
+   * in that column too and has to keep the same rhythm from another file.
+   */
+  sectionGap: 16,
+
+  /**
+   * Vertical inset from the safe area to the first row of controls. The drawer
+   * header and the conversation's top bar must both use this, or the title and
+   * the hamburger it sits beside land on different lines as the drawer opens.
+   */
+  headerInset: 8,
+
+  /**
+   * Non-Apple fallback only. iOS 26/27 uses the native adaptive Liquid Glass
+   * material, including the user's Clear/Tinted and accessibility preferences.
+   * These values preserve the same hierarchy on web and Android: controls are
+   * lighter than content, while composer/approval surfaces use regular-material
+   * opacity for text legibility over a moving transcript.
+   */
+  glass: fallbackGlassTokens,
+
+  /** Approval actions keep explicit contrast even over adaptive glass. */
+  approval: approvalActionColors,
+
+  /**
+   * `composer` is half of `size.composerCollapsed`, which is what makes the
+   * resting composer a true stadium rather than a rounded rectangle. Keep the
+   * two in step: a radius below half the height reads as a slightly squared
+   * box, which is exactly how this control looked beside its peers before.
+   */
+  radius: { sm: 8, md: 14, lg: 18, composer: 32, pane: 34, pill: 999 },
+
+  /**
+   * Control heights.
+   *
+   * `control` is the whole top bar — the hamburger, the selector pills, and the
+   * drawer header that has to line up with them — and it is deliberately the
+   * same 44 as `touch`. It used to be 38 and lean on `hitSlop` for the
+   * difference, which satisfies the tap target but not the eye: the controls
+   * read as small for the surface they sit on, and an invisible slop cannot fix
+   * that. Sizing them at the minimum instead means the visible control is the
+   * touch target.
+   */
+  size: {
+    control: 44,
+    chip: 40,
+    /**
+     * Resting composer: one row, text inline between the two buttons.
+     * 64 = button (40) + inset (12) top and bottom, so the buttons sit
+     * centred when collapsed and in the corners once it grows.
+     */
+    composerCollapsed: 64,
+    /** Minimum text area + top inset + action row + padding and border. */
+    composerResting: 126,
+    composerButton: 40,
+    /** Inset from the pill's edge to each action button. */
+    composerInset: 12,
+    orb: 44,
+    /** Apple HIG minimum touch target. */
+    touch: 44,
   },
-  line: { body: 22, greeting: 34 },
-  motion: { fast: 120, base: 180 },
+
+  font: {
+    tiny: 11,
+    small: 13,
+    body: 15,
+    title: 17,
+    greeting: 20,
+  },
+
+  /**
+   * Display family, for main titles only.
+   *
+   * Bitcount Prop Single is a dot-matrix face: it carries the brand at heading
+   * size but is unreadable in a paragraph, so body copy, agent output and
+   * controls stay on the system font. Named here so the family string is
+   * written once and every title changes together.
+   *
+   * Only applied once `useFonts` reports loaded. Naming an unloaded family on
+   * iOS silently falls back with different metrics, which shifts layout after
+   * the font arrives.
+   */
+  display: {
+    regular: "BitcountPropSingle_400Regular",
+    semibold: "BitcountPropSingle_600SemiBold",
+    bold: "BitcountPropSingle_700Bold",
+  },
+
+  line: {
+    body: 22,
+    greeting: 28,
+  },
+
+  /** Named so transitions never use `all` and share one curve. */
+  motion: {
+    fast: 120,
+    base: 200,
+    /** GG Coder durations (`--dur-*`), from motion.ts. */
+    ...DUR,
+  },
+
+  /** GG Coder curves as bezier control points; `Easing.bezier(...theme.curve.out)`. */
+  curve: EASE,
+
+  /**
+   * One shared curve. Decelerating, so a control arrives and settles rather
+   * than stopping dead — which is what makes a resize read as smooth.
+   */
   easing: Easing.bezier(0.22, 1, 0.36, 1),
 } as const;
 
-export function createTheme(mode: ResolvedAppearanceMode, accent: AccentName) {
-  const material = materialTokens(mode);
-  return { ...metrics, mode, accentName: accent, color: { ...modeColors[mode], ...accents[accent][mode] }, glass: material.glass, approval: material.approval };
-}
-
-export type AppTheme = ReturnType<typeof createTheme>;
-export const theme = createTheme("dark", "coral");
-
+/**
+ * Lighten (ratio > 0) or darken (ratio < 0) a hex colour.
+ * Used to build the orb's gloss from a single provider colour, so adding a
+ * provider never requires hand-picking a gradient.
+ */
 export function shade(hex: string, ratio: number): string {
   const value = hex.replace("#", "");
-  const normalised = value.length === 3 ? value.split("").map((c) => c + c).join("") : value;
+  const normalised =
+    value.length === 3
+      ? value
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : value;
   const num = Number.parseInt(normalised, 16);
   if (Number.isNaN(num)) return hex;
+
   const channel = (shift: number) => {
     const base = (num >> shift) & 0xff;
     const next = ratio >= 0 ? base + (255 - base) * ratio : base * (1 + ratio);
     return Math.round(Math.min(255, Math.max(0, next)));
   };
-  return `#${[channel(16), channel(8), channel(0)].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+
+  return `#${[channel(16), channel(8), channel(0)]
+    .map((c) => c.toString(16).padStart(2, "0"))
+    .join("")}`;
 }

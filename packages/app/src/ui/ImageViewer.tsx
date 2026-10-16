@@ -10,19 +10,37 @@
  * A real `Modal`, unlike `ConfigPicker`: this *is* leaving the conversation for
  * a moment, and the keyboard should drop.
  */
-import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
-// expo-image, as in the transcript: this opens onto a picture the thumbnail
-// just displayed, so the full-size decode is a cache hit rather than a second
-// main-thread decode of bytes the app already holds.
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+// Share expo-image's original source cache with the transcript.
 import { Image } from "expo-image";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { DotGlyph } from "./stage/DotGlyph";
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
+import { theme } from "../theme";
+import { Led } from "./stage/Led";
 import { haptics } from "./haptics";
 import { saveImageToDevice, shareImage, type SaveResult } from "./imageSaver";
 import type { ChatImage as ChatImageModel } from "../images";
+import { SPRING } from "../motion";
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
+
+/** The picture's file name for the top bar, from its path; data URIs have none. */
+function fileName(image: ChatImageModel): string {
+  if (!image.src.startsWith("data:")) {
+    const last = image.src.split(/[?#]/)[0]?.split("/").filter(Boolean).pop();
+    if (last) {
+      try {
+        return decodeURIComponent(last);
+      } catch {
+        return last;
+      }
+    }
+  }
+  return image.alt || "Image";
+}
 
 /** What the last save/share attempt did, shown under the buttons. */
 type Feedback = { tone: "ok" | "bad"; text: string };
@@ -53,8 +71,8 @@ export function ImageViewer({
   visible: boolean;
   onClose: () => void;
 }) {
-  const { theme } = useAppTheme();
-  const styles = useThemeStyles(makeStyles);
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState<"save" | "share" | undefined>(undefined);
   const [feedback, setFeedback] = useState<Feedback | undefined>(undefined);
@@ -105,40 +123,31 @@ export function ImageViewer({
           onPress={onClose}
         />
 
-        <View style={[styles.closeRow, { top: insets.top + theme.headerInset }]}>
+        <View style={[styles.topBar, { paddingTop: insets.top + theme.headerInset }]}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Close image"
             hitSlop={12}
-            onPress={onClose}
+            onPress={() => {
+              haptics.tap();
+              onClose();
+            }}
             style={styles.closeButton}
           >
-            <Ionicons name="close" size={20} color={theme.color.text} />
+            <DotGlyph name="close" size={14} />
           </Pressable>
+          <Text style={styles.title} numberOfLines={1} ellipsizeMode="middle">{fileName(image)}</Text>
         </View>
 
-        {/* Not interactive: taps fall through to the dismiss layer behind it,
-            so tapping anywhere but the buttons closes the viewer. */}
-        <View style={styles.image} pointerEvents="none">
-          <Image
-            accessible
-            accessibilityRole="image"
-            accessibilityLabel={image.alt || "Image from the agent"}
-            source={{ uri: resolvedSrc }}
-            contentFit="contain"
-            // No fade. The thumbnail behind this is already the same picture, so
-            // a transition would be the image visibly reappearing over itself.
-            transition={0}
-            style={styles.imageFill}
-          />
-        </View>
+        <ViewerImage key={resolvedSrc} uri={resolvedSrc} alt={image.alt || "Image from the agent"} />
+        <Led tone="dim" style={styles.hint}>Tap to zoom</Led>
 
         <View style={[styles.actions, { paddingBottom: insets.bottom + theme.space(4) }]}>
           {!!feedback && (
             <Text
               style={[
                 styles.feedback,
-                feedback.tone === "bad" && { color: theme.color.danger },
+                feedback.tone === "bad" && { color: palette.color.danger },
               ]}
             >
               {feedback.text}
@@ -159,9 +168,9 @@ export function ImageViewer({
               ]}
             >
               {busy === "save" ? (
-                <ActivityIndicator color={theme.color.text} size="small" />
+                <ActivityIndicator color={palette.color.text} size="small" />
               ) : (
-                <Ionicons name="download-outline" size={18} color={theme.color.text} />
+                <Ionicons name="download-outline" size={18} color={palette.color.text} />
               )}
               <Text style={styles.buttonText}>Save</Text>
             </Pressable>
@@ -173,14 +182,14 @@ export function ImageViewer({
               onPress={() => void run("share")}
               style={({ pressed }) => [
                 styles.button,
-                pressed && { backgroundColor: theme.color.surfacePressed },
+                pressed && { backgroundColor: palette.color.surfacePressed },
                 !!busy && { opacity: 0.6 },
               ]}
             >
               {busy === "share" ? (
-                <ActivityIndicator color={theme.color.text} size="small" />
+                <ActivityIndicator color={palette.color.text} size="small" />
               ) : (
-                <Ionicons name="share-outline" size={18} color={theme.color.text} />
+                <Ionicons name="share-outline" size={18} color={palette.color.text} />
               )}
               <Text style={styles.buttonText}>Share</Text>
             </Pressable>
@@ -191,8 +200,99 @@ export function ImageViewer({
   );
 }
 
-function makeStyles(theme: AppTheme) {
-  return StyleSheet.create({
+/** iOS supplies native pinch/pan; a tap is a single-pointer zoom alternative. */
+function ViewerImage({ uri, alt }: { uri: string; alt: string }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
+  const scroll = useRef<ScrollView>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [zoomed, setZoomed] = useState(false);
+  const canZoom = Platform.OS === "ios";
+  const reduce = useReducedMotion();
+  // Android has no native zoom ScrollView: a tap springs the picture instead.
+  const scale = useSharedValue(1);
+  const springStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const toggleSpring = () => {
+    haptics.select();
+    const next = scale.value > 1 ? 1 : 2.5;
+    scale.value = reduce ? withTiming(next, { duration: 0 }) : withSpring(next, SPRING.settle);
+  };
+  const toggleZoom = () => {
+    haptics.select();
+    const scale = zoomed ? 1 : 3;
+    scroll.current?.scrollResponderZoomTo({
+      x: size.width * (1 - 1 / scale) / 2,
+      y: size.height * (1 - 1 / scale) / 2,
+      width: size.width / scale,
+      height: size.height / scale,
+      // UIScrollView's own zoom curve: the native spring, and it holds still
+      // under Reduce Motion.
+      animated: !reduce,
+    });
+  };
+  const picture = (
+    <Image
+      accessible={!canZoom}
+      accessibilityRole="image"
+      accessibilityLabel={alt}
+      source={{ uri }}
+      contentFit="contain"
+      // Native fit-size resampling is sharper than GPU minification on iOS.
+      // Once magnified, keep original pixels, not an enlarged fit-size bitmap.
+      allowDownscaling={!zoomed}
+      cachePolicy={uri.startsWith("data:") ? "memory" : "memory-disk"}
+      transition={0}
+      style={styles.imageFill}
+    />
+  );
+  if (!canZoom) {
+    return (
+      <Pressable
+        style={styles.image}
+        accessibilityRole="button"
+        accessibilityLabel={`${alt}. Toggle zoom`}
+        onPress={toggleSpring}
+      >
+        <Animated.View style={[styles.imageFill, springStyle]}>{picture}</Animated.View>
+      </Pressable>
+    );
+  }
+  return (
+    <View style={styles.image} onLayout={({ nativeEvent: { layout } }) => {
+      setSize({ width: layout.width, height: layout.height });
+      setZoomed(false);
+    }}>
+      {size.width > 0 && size.height > 0 && (
+        <ScrollView
+          key={`${size.width}:${size.height}`}
+          ref={scroll}
+          style={styles.image}
+          contentContainerStyle={size}
+          minimumZoomScale={1}
+          maximumZoomScale={8}
+          bouncesZoom={false}
+          showsHorizontalScrollIndicator={false}
+          showsVerticalScrollIndicator={false}
+          contentInsetAdjustmentBehavior="never"
+          onScroll={event => setZoomed(event.nativeEvent.zoomScale > 1)}
+          scrollEventThrottle={16}
+        >
+          <Pressable
+            style={styles.imageFill}
+            accessibilityRole="button"
+            accessibilityLabel={`${alt}. ${zoomed ? "Reset zoom" : "Zoom in"}`}
+            accessibilityHint="Pinch to zoom and drag to move around the image"
+            onPress={toggleZoom}
+          >
+            {picture}
+          </Pressable>
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
   backdrop: {
     flex: 1,
     // Nearly opaque rather than a tint: a picture judged against the
@@ -200,14 +300,23 @@ function makeStyles(theme: AppTheme) {
     backgroundColor: "rgba(0,0,0,0.94)",
     justifyContent: "center",
   },
-  closeRow: { position: "absolute", right: theme.gutter, zIndex: 2 },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.space(3),
+    paddingHorizontal: theme.gutter,
+    paddingBottom: theme.space(2),
+    zIndex: 2,
+  },
+  title: { flex: 1, color: p.color.text, fontSize: theme.font.body, fontWeight: "600" },
+  hint: { alignSelf: "center", marginTop: theme.space(2) },
   closeButton: {
     width: theme.size.control,
     height: theme.size.control,
     borderRadius: theme.radius.pill,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: theme.color.surfaceRaised,
+    backgroundColor: p.color.surfaceRaised,
   },
   image: { flex: 1, width: "100%" },
   imageFill: { flex: 1, width: "100%" },
@@ -218,7 +327,7 @@ function makeStyles(theme: AppTheme) {
     alignItems: "center",
   },
   feedback: {
-    color: theme.color.textDim,
+    color: p.color.textDim,
     fontSize: theme.font.small,
     textAlign: "center",
   },
@@ -230,10 +339,8 @@ function makeStyles(theme: AppTheme) {
     minHeight: theme.size.control,
     paddingHorizontal: theme.space(5),
     borderRadius: theme.radius.pill,
-    backgroundColor: theme.color.surface,
+    backgroundColor: p.color.surface,
   },
-  primaryButton: { backgroundColor: theme.color.surfaceRaised },
-  buttonText: { color: theme.color.text, fontSize: theme.font.body, fontWeight: "600" },
-  });
-}
-;
+  primaryButton: { backgroundColor: p.color.surfaceRaised },
+  buttonText: { color: p.color.text, fontSize: theme.font.body, fontWeight: "600" },
+}));

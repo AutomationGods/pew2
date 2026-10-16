@@ -10,17 +10,19 @@
  *
  * Not reachable from the app; point index.ts here and run `npx expo start --web`.
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { AppearanceProvider } from "../appearance";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
 import { theme } from "../theme";
 import { ChatThread, type ChatThreadRef } from "./ChatThread";
 import type { Turn } from "../useDaemon";
+import { useAppActive } from "./useAppActive";
+import { MarkdownStreamHarness } from "./MarkdownStream.harness";
 
 const DOCK_HEIGHT = 120;
-const THREAD_TOP = 80;
+const THREAD_TOP = 140;
 
 function turn(index: number): Turn {
   const mine = index % 2 === 0;
@@ -63,59 +65,85 @@ const FAILURE: Turn = {
   text: "Agent exited before finishing: context length exceeded.",
 };
 
+// Fixed chunks and clock cadence make before/after captures comparable.
+const BURST = ["Hello ", "世界. ", "A streaming ", "reply with ", "**Markdown**, ", "a [link](https://example.com), ", "and `inline code`.\n\n", "```ts\nconst answer = 42;\n```\n\n", "Final tail."];
+const IMAGE: Turn = {
+  id: "fixture:image", role: "agent", text: "",
+  images: [{ src: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAGUlEQVQokWP4WOVBEmIY1VA1Gkofh2vSAADrFrMQ1AdR8wAAAABJRU5ErkJggg==", mimeType: "image/png", alt: "Synthetic orange square fixture" }],
+};
+type Fixture = "baseline" | "burst" | "replay" | "image" | "loading" | "fade";
+
 export default function ChatThreadHarness() {
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => undefined);
+  }, []);
   const [count, setCount] = useState(12);
   const [failed, setFailed] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshCount, setRefreshCount] = useState(0);
   const [atBottom, setAtBottom] = useState(true);
   const list = useRef<ChatThreadRef>(null);
-  const turns = Array.from({ length: count }, (_, i) => turn(i + 1));
+  const [fixture, setFixture] = useState<Fixture>("baseline");
+  const [generation, setGeneration] = useState(0);
+  const [chunk, setChunk] = useState(0);
+  const [restoreStep, setRestoreStep] = useState(-1);
+  const active = useAppActive();
+  useEffect(() => {
+    if ((fixture !== "burst" && fixture !== "fade") || !active || chunk >= BURST.length) return;
+    const timer = setTimeout(() => setChunk((n) => n + 1), 100);
+    return () => clearTimeout(timer);
+  }, [fixture, generation, active, chunk]);
+  function select(next: Fixture) {
+    if (next === "loading") setRestoreStep((n) => (n + 1) % 4);
+    setChunk(0);
+    setGeneration((n) => n + 1);
+    setFixture(next);
+  }
+  let turns = Array.from({ length: count }, (_, i) => turn(i + 1));
   // Second from the end, so it can be compared against a prose reply's action
   // row without scrolling.
   turns.splice(-1, 0, codeOnlyTurn(count + 1));
   if (failed) turns.push(FAILURE);
+  if (fixture === "burst" || fixture === "replay") {
+    turns = [{ id: `fixture:${generation}`, role: "agent", text: fixture === "burst" ? BURST.slice(0, chunk).join("") : BURST.join("").repeat(20) }];
+  }
+  if (fixture === "image") turns = [IMAGE];
+  if (fixture === "loading" || fixture === "fade") turns = [];
 
-  const refresh = () => {
-    setRefreshing(true);
-    setTimeout(() => {
-      setRefreshCount((value) => value + 1);
-      setRefreshing(false);
-    }, 1_200);
-  };
-
-  // Wrapped, because every production component now reads its colours through
-  // `useAppTheme()` and throws outright without this provider. A harness that
-  // cannot render is worse than no harness: DESIGN.md points at these files as
-  // the way broad visual changes get verified, so one that red-screens quietly
-  // removes that check from the process.
   return (
-    <AppearanceProvider>
-      <SafeAreaProvider>
+    <SafeAreaProvider>
       <StatusBar style="light" />
       <View style={styles.screen}>
         <ChatThread
           ref={list}
           turns={turns}
+          activeStream={fixture === "burst" && chunk < BURST.length ? { sessionId: "fixture", turnKey: `fixture:${generation}`, generation } : undefined}
+          restore={fixture === "loading" ? { title: "Synthetic saved conversation", state: (["loading", "failed", "reconnecting", "empty"] as const)[Math.max(0, restoreStep)], error: "The computer could not open this conversation.", onRetry: () => setRestoreStep(0) } : undefined}
           threadTop={THREAD_TOP}
           threadBottom={DOCK_HEIGHT + theme.space(2)}
-          working={false}
+          working={fixture === "burst" && chunk < BURST.length}
           activity={{ tools: [], speaking: false }}
           indicatorTop={THREAD_TOP}
           indicatorBottom={DOCK_HEIGHT}
           onAtBottomChange={setAtBottom}
-          refreshing={refreshing}
-          onRefresh={refresh}
           onOpenThought={() => {}}
           onRetry={() => {}}
         />
 
+        <View style={styles.fixtures}>
+          {(["baseline", "burst", "replay", "image", "loading", "fade"] as const).map((name) => (
+            <Pressable key={name} accessibilityRole="button" accessibilityState={{ selected: fixture === name }} style={styles.button} onPress={() => select(name)}>
+              <Text style={styles.buttonText}>{name}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {fixture === "fade" && (
+          <View style={styles.loading}>
+            <MarkdownStreamHarness key={generation} identity={`prototype:${generation}`} text={BURST.slice(0, chunk).join("")} live={chunk < BURST.length} />
+          </View>
+        )}
         {/* Stand-in for the real dock: same job, obvious edge. Anything visible
             below its top line has escaped the reading area. */}
         <View style={[styles.dock, { height: DOCK_HEIGHT }]} pointerEvents="box-none">
-          <Text style={styles.dockLabel}>
-            {refreshing ? "refreshing" : `refreshed ${refreshCount} times`}
-          </Text>
+          <Text style={styles.dockLabel}>composer ({DOCK_HEIGHT}px) — nothing may sit under here</Text>
           <View style={styles.controls}>
             <Pressable style={styles.button} onPress={() => setCount((c) => c + 1)}>
               <Text style={styles.buttonText}>+1 turn ({count})</Text>
@@ -131,12 +159,13 @@ export default function ChatThreadHarness() {
         </View>
       </View>
     </SafeAreaProvider>
-    </AppearanceProvider>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.color.bg },
+  fixtures: { position: "absolute", top: theme.space(17), left: theme.space(2), right: theme.space(2), flexDirection: "row", flexWrap: "wrap", gap: theme.space(1), backgroundColor: theme.color.bg },
+  loading: { position: "absolute", top: THREAD_TOP + theme.space(8), left: theme.space(4), right: theme.space(4), gap: theme.space(3) },
   dock: {
     position: "absolute",
     left: 0,
@@ -157,6 +186,8 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     paddingHorizontal: theme.space(3),
     paddingVertical: theme.space(2),
+    minHeight: 44,
+    justifyContent: "center",
   },
-  buttonText: { color: theme.color.text, fontSize: theme.font.small },
+  buttonText: { color: theme.color.text, fontSize: theme.font.small, lineHeight: theme.font.small * 1.3 },
 });

@@ -9,11 +9,21 @@
 import "./src/cryptoPolyfill";
 
 import { registerRootComponent } from 'expo';
+import { LogBox } from 'react-native';
+
+// Simulator-only noise: iOS simulators can't mint a push token, and the
+// warning's banner sat over the bottom of every screen in development.
+LogBox.ignoreLogs(['expo-notifications: obtaining a push token may not work on iOS simulators']);
 import * as SplashScreen from 'expo-splash-screen';
 import { createElement, useEffect } from 'react';
 
 import { installCrashHandler } from './src/crashLog';
 import App from './App';
+import { defineCallTask } from './src/voice/androidRing';
+
+// Android rings through a background push task, which loads this bundle
+// without mounting the app; it has to be defined here, at module scope.
+defineCallTask();
 
 // Hold the native splash until the app has something real to show.
 //

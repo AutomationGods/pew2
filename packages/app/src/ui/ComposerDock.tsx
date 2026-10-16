@@ -35,8 +35,9 @@ import type { PendingAttachment } from "../attachments";
 import type { ContextUsage } from "../contextUsage";
 import type { Workspace } from "../useDaemon";
 import type { Dictation } from "./useDictation";
-import { Composer, type ComposerHandle } from "./Composer";
+import { Composer, type ComposerHandle, type ComposerSelector } from "./Composer";
 import { ContextBar } from "./ContextBar";
+import { changesAccessibilityLabel } from "../workspaceLabel";
 
 export interface ComposerDockHandle {
   /**
@@ -59,6 +60,11 @@ interface Props {
   usage?: ContextUsage;
   showCommands: boolean;
   onCommands: () => void;
+  onProjectDetails: () => void;
+  /** GG Coder's checklist chip, joined onto the context row when present. */
+  onChecklist?: () => void;
+  /** GG Coder is in plan mode: a lit chip on the context row. */
+  planMode?: boolean;
   /**
    * Send the draft, answering whether it actually went.
    *
@@ -75,6 +81,7 @@ interface Props {
   onStop?: () => void;
   editable?: boolean;
   placeholder?: string;
+  selectors?: readonly ComposerSelector[];
   attachments: PendingAttachment[];
   onAttach: () => void;
   onRemoveAttachment: (id: string) => void;
@@ -98,11 +105,15 @@ function ComposerDockView(
     usage,
     showCommands,
     onCommands,
+    onProjectDetails,
+    onChecklist,
+    planMode,
     onSend,
     busy,
     onStop,
     editable,
     placeholder,
+    selectors,
     attachments,
     onAttach,
     onRemoveAttachment,
@@ -174,12 +185,18 @@ function ComposerDockView(
           fill, uncommitted work, and the commands the agent offers (an empty
           sheet is worse than no button). Never while typing: the draft is the
           subject then, and the row would only crowd it. */}
-      {!typing && (showCommands || workspace || usage) && (
+      {/* Held from the first frame (empty until the agent's commands and the
+          project arrive, a moment after launch): rendering it only once they
+          had arrived pushed the input down after the screen was drawn. */}
+      {!typing && (
         <ContextBar
           workspace={workspace}
           usage={usage}
           showCommands={showCommands}
           onCommands={onCommands}
+          onDetails={onProjectDetails}
+          onChecklist={onChecklist}
+          planMode={planMode}
         />
       )}
       <Composer
@@ -191,6 +208,12 @@ function ComposerDockView(
         onStop={onStop}
         editable={editable}
         placeholder={placeholder}
+        selectors={selectors}
+        changes={
+          workspace?.uncommitted !== undefined
+            ? { count: workspace.uncommitted, accessibilityLabel: changesAccessibilityLabel(workspace.uncommitted), onPress: onProjectDetails }
+            : undefined
+        }
         attachments={attachments}
         onAttach={onAttach}
         onRemoveAttachment={onRemoveAttachment}

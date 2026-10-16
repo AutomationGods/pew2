@@ -20,32 +20,21 @@ function source(file: string): string {
   return readFileSync(join(import.meta.dir, file), "utf8");
 }
 
-test("every sheet clears the composer keyboard; text sheets opt into avoidance", () => {
+test("every sheet takes the keyboard down, from the one place they share", () => {
   // Sheets rest on the bottom edge. Opening one from the composer put the whole
   // card behind the keyboard: invisible, with its rows unreachable.
   //
   // Asserted on `Sheet` rather than on its callers because that is the point of
-  // the shared primitive: every sheet clears the composer's keyboard first.
+  // the shared primitive — a sheet added later inherits this instead of having
+  // to remember it.
   const sheet = source("Sheet.tsx");
-  expect(sheet).toContain("Keyboard.dismiss()");
-  expect(sheet).toContain("avoidKeyboard");
-  expect(sheet).toContain("KeyboardAvoidingView");
+  expect(sheet).toContain("if (!keepKeyboard) Keyboard.dismiss()");
 
-  // New chat deliberately owns a project-name field. It must opt into keyboard
-  // avoidance so the replacement keyboard cannot cover its primary action.
-  const newChat = source("NewChatSheet.tsx");
-  expect(newChat).toContain("<TextInput");
-  expect(newChat).toContain("avoidKeyboard");
-
-  // The remaining sheets still have no text field and inherit dismissal only.
-  for (const file of [
-    "CommandSheet.tsx",
-    "AttachmentSheet.tsx",
-    "ApprovalSheet.tsx",
-    "ThoughtSheet.tsx",
-  ]) {
-    expect(source(file)).not.toContain("<TextInput");
-  }
+  // Some sheets now hold a field (the command filter, an answer of your own),
+  // so dismissing on open is only half of it: the card must ride above the
+  // keyboard when that field raises it, or the keyboard covers the list.
+  expect(sheet).toContain("useReanimatedKeyboardAnimation");
+  expect(sheet).toContain("keyboard.height.value");
 });
 
 test("tapping the transcript takes the keyboard down", () => {
@@ -53,28 +42,15 @@ test("tapping the transcript takes the keyboard down", () => {
   // blurs on any tap a child does not claim.
   expect(source("ChatThread.tsx")).toContain('keyboardShouldPersistTaps="handled"');
 
-  // So a message body must not claim one. Turns used to be wrapped in a
-  // Pressable for the copy-hold, and a Pressable claims the touch — messages
-  // cover nearly the whole transcript, so the one gesture the rule exists for,
-  // tapping away from the composer onto the conversation, was the one it never
-  // covered, and that wrapper had to re-implement the blur itself. Selection is
-  // the platform's now, the wrapper is gone, and the rule works unaided.
-  //
-  // What may remain is a *control*: a button occupying its own row, next to the
-  // message rather than over it. Two of them — the thought row, and the retry
-  // under a failed turn — plus the copy button, which is `CopyButton` and not
-  // written here at all. The count is asserted so that a third one has to be a
-  // deliberate addition; what it must never become again is a wrapper.
+  // The copy-hold wraps each turn in a Pressable, which claims the touch, so
+  // the wrapper must take the keyboard down itself on a plain tap — otherwise
+  // tapping away from the composer onto the conversation stops blurring.
   const turn = source("Turn.tsx");
-  expect(turn.match(/<Pressable/g) ?? []).toHaveLength(2);
+  expect(turn).toContain("onPress={Keyboard.dismiss}");
+  // The wrapper plus two controls: the thought row and the retry button.
+  expect(turn.match(/<Pressable/g) ?? []).toHaveLength(3);
   expect(turn).toContain("Show thought process");
   expect(turn).toContain("Send this message again");
-
-  // The shape that is actually forbidden, in the two places a message body is
-  // rendered: no `Pressable` may open before the markdown it would swallow.
-  for (const body of [/<View style={styles.agentRow}>[\s\S]*?<\/View>/, /<View\s+style={\[\s*styles.userBubble[\s\S]*?<\/View>/]) {
-    expect(body.exec(turn)?.[0] ?? "").not.toContain("<Pressable");
-  }
 });
 
 test("an anchored picker keeps the keyboard, on purpose", () => {
@@ -85,4 +61,7 @@ test("an anchored picker keeps the keyboard, on purpose", () => {
   for (const file of ["ConfigPicker.tsx", "ProjectMenu.tsx"]) {
     expect(source(file)).not.toContain("Keyboard.dismiss");
   }
+  // The model picker is a sheet now, so it has to opt out of the sheet's
+  // dismissal explicitly.
+  expect(source("ConfigPicker.tsx")).toContain("keepKeyboard");
 });

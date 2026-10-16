@@ -11,6 +11,99 @@ installs them separately, and what an app and a daemon must agree on is
 
 Dates are the day the tag was cut.
 
+## Unreleased
+
+### Added
+
+- **See what the agent actually did.** Every tool call now shows as a small card
+  in the reply: what ran, on which file, and whether it worked. Tap one for its
+  input and output. Edits show the change itself, in red and green.
+- **The agent's plan is on screen.** When GG Coder works from a to-do list, the
+  phone shows it as a checklist that ticks off as it goes.
+- **Conversations take the title the agent gives them.**
+- **Light and dark mode, and your own accent colour.** Choose System, Light or
+  Dark and an accent in the connection settings. Dark looks exactly as before.
+- **Start a new project from your phone.** Name a folder and pew2 creates it on
+  your computer (in `~/gg-projects`, or inside a folder you browse to) and opens
+  a conversation there.
+- **Notifications say why they came.** Finished, needs your answer, and error
+  each have their own sound, and an error comes with what went wrong.
+- **`pew2 setup` keeps pew2 running in the background** on macOS, Linux and
+  Windows, and says how to undo it.
+- **Goals are easy to find.** The home screen has a Goals button showing how
+  many are running, and the side drawer lists your latest goals whichever agent
+  you have picked, with New goal one tap away.
+
+### Fixed
+
+- **Launching a goal works with any name.** A name suggested from what you
+  typed could be longer than GG Coder accepts, and the launch failed. Names now
+  fit, and your computer trims one from an older phone so it launches too.
+- **Holding Ken always does something.** With Reduce Motion or VoiceOver on,
+  tapping the launch area launches the goal, and it now says so. Letting go too
+  early says "Hold until the ring fills".
+
+### Changed
+
+- **Taps answer straight away, even away from home.** Switching model or
+  thinking level, pausing or resuming a goal, opening the goals drawer, a
+  project's conversations, the checklist and starting an empty conversation all
+  show the change at once and settle when your computer replies. Lists you have
+  seen before appear immediately on a cold start.
+- **Your computer answers faster.** The goals list comes back in about 30 ms
+  instead of half a second, GG Coder is ready the moment pew2 starts rather
+  than on the first question, a fresh GG Coder is kept ready after every new
+  conversation, and project status is no longer rechecked on every request.
+- A model change made just before sending a message always applies to that
+  message over the tunnel too.
+
+## 0.9.22 — 2026-10-14
+
+### Fixed
+
+- **Starting a new goal from the phone works.** GG Coder reports a brand-new
+  goal with no conversation yet, and pew2 read that as a broken answer, so
+  every new goal failed and the phone sat on "Launching". If your computer
+  does not answer within 20 seconds, the phone now says so and lets you try
+  again.
+
+## 0.9.21 — 2026-10-13
+
+### Changed
+
+- **A new look for the installer and every `pew2` command.** The install line,
+  `pew2 setup`, `doctor`, `pair`, `providers` and `registry sync` share one
+  style that matches the phone app: a dot-matrix mark opens each screen, its
+  title is set in spaced capitals, and each line is marked done, worth a look,
+  or stopped. `pew2 --help` groups its commands into Setup, Run and Agents.
+- **Choosing a folder for a goal no longer sets off a run of macOS "Allow"
+  prompts.** Suggestions now come only from folders you have already added, in
+  GG Coder or in pew2, instead of a search through your whole home folder.
+  Browsing to any other folder still works, and macOS asks only when you open it.
+
+## 0.9.20 — 2026-10-13
+
+### Added
+
+- **GG Goals works from the phone.** You can see your goals, start a new one
+  with a name, the goal itself, folders and files, and standing instructions,
+  and change those instructions later from the goal's settings. Goals run on
+  the computer exactly as they do from the desktop app.
+- **Files from your phone can go into a goal.** Pick them with the phone's own
+  file picker. pew2 saves a copy in its own folder on the computer
+  (`~/.pew2/goal-files`), not in your project, so they never end up in Git.
+  An older pew2 can't receive them yet; the phone then tells you the goal was
+  made without its files, rather than leaving that out silently.
+
+### Fixed
+
+- **Goal folders no longer show up as ordinary projects** in GG Coder's list,
+  or as the place a new GG Coder chat opens.
+- **The phone no longer shows the relay's address.** Its status line and the
+  connection settings name the computer instead.
+- **Autopilot's messages come back when you reopen a conversation**, in the
+  same place they were written.
+
 ## 0.9.14 — 2026-08-08
 
 ### Fixed

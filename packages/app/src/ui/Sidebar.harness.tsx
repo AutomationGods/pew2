@@ -10,9 +10,10 @@
  * inside the tree has to be optional-called rather than assumed.
  */
 import { useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { AppearanceProvider } from "../appearance";
+import { Platform, StyleSheet, Text, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { ConnectionSheet } from "./ConnectionSheet";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { theme } from "../theme";
 import { Sidebar, DRAWER_WIDTH } from "./Sidebar";
@@ -78,7 +79,6 @@ function Drawer({
       activeSessionId="s1"
       onSelectProvider={() => {}}
       onOpenSession={() => {}}
-      onOpenActivity={() => {}}
       // Only rendered with a project chosen, so the right-hand mount is the one
       // that exercises the "+ New chat" chip.
       onNewConversation={() => {}}
@@ -88,22 +88,28 @@ function Drawer({
       machineLabel="studio.local:8787"
       machineRemote={false}
       connectionStatus="online"
-      onUnpair={() => {}}
+      onOpenConnection={() => {}}
     />
   );
 }
 
+function NativeDrawer() {
+  const [open, setOpen] = useState(false);
+  const [provider, setProvider] = useState("claude-code");
+  const [unpaired, setUnpaired] = useState(false);
+  return <SafeAreaProvider><GestureHandlerRootView style={{ flex: 1, backgroundColor: theme.color.bg }}>
+    <StatusBar style="light" />
+    {unpaired ? <Text style={{ color: theme.color.text, marginTop: 100 }}>Fixture unpaired</Text> : <Sidebar open providers={PROVIDERS} sessions={SESSIONS} activeProviderId={provider} onSelectProvider={setProvider} onOpenSession={() => {}} onNewConversation={() => {}} projects={PROJECTS} onSelectProject={() => {}} machineLabel="studio.local:8787" machineRemote connectionStatus="online" update={{ latest: "0.9.19", automatic: false }} onOpenConnection={() => setOpen(true)} />}
+    <ConnectionSheet visible={open} machineLabel="studio.local:8787" machineRemote status="online" update={{ latest: "0.9.19", automatic: false }} onClose={() => setOpen(false)} onUnpair={() => { setOpen(false); setUnpaired(true); }} />
+  </GestureHandlerRootView></SafeAreaProvider>;
+}
+
 export default function SidebarHarness() {
-  // Wrapped, because every production component now reads its colours through
-  // `useAppTheme()` and throws outright without this provider. A harness that
-  // cannot render is worse than no harness: DESIGN.md points at these files as
-  // the way broad visual changes get verified, so one that red-screens quietly
-  // removes that check from the process.
+  if (Platform.OS !== "web") return <NativeDrawer />;
   return (
-    <AppearanceProvider>
-      <SafeAreaProvider>
+    <SafeAreaProvider>
       <StatusBar style="light" />
-      <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
+      <View style={styles.screen}>
         <Mount label="ALL PROJECTS (default)">
           <Drawer />
         </Mount>
@@ -119,10 +125,9 @@ export default function SidebarHarness() {
         <Mount label="UPDATE — AUTOMATIC">
           <Drawer update={{ latest: "0.9.19", automatic: true }} />
         </Mount>
-      </SafeAreaView>
+      </View>
       <Text style={styles.hint}>Tap the project row in either drawer to open the menu.</Text>
     </SafeAreaProvider>
-    </AppearanceProvider>
   );
 }
 

@@ -1,42 +1,21 @@
-export type MaterialMode = "light" | "dark";
-
-const glassByMode = {
-  light: {
-    control: { fill: "rgba(252,251,247,0.94)", rim: "rgba(61,57,50,0.16)" },
-    raised: { fill: "rgba(247,245,238,0.97)", rim: "rgba(61,57,50,0.18)" },
-    fillActive: "rgba(61,57,50,0.08)",
-    fillPressed: "rgba(61,57,50,0.11)",
-    intensity: 30,
+export const fallbackGlassTokens = {
+  control: {
+    fill: "rgba(20,21,25,0.72)",
+    rim: "rgba(255,255,255,0.36)",
   },
-  dark: {
-    control: { fill: "rgba(39,38,31,0.95)", rim: "rgba(243,240,230,0.13)" },
-    raised: { fill: "rgba(48,47,39,0.97)", rim: "rgba(243,240,230,0.15)" },
-    fillActive: "rgba(243,240,230,0.10)",
-    fillPressed: "rgba(243,240,230,0.08)",
-    intensity: 38,
+  raised: {
+    fill: "rgba(28,30,35,0.82)",
+    rim: "rgba(255,255,255,0.42)",
   },
+  fillActive: "rgba(255,255,255,0.16)",
+  fillPressed: "rgba(255,255,255,0.15)",
+  intensity: 55,
 } as const;
 
-const approvalByMode = {
-  light: {
-    allowFill: "#176b42",
-    allowText: "#ffffff",
-    rejectFill: "#ffffff",
-    rejectRim: "#687080",
-    rejectText: "#17191d",
-  },
-  dark: {
-    allowFill: "#55c98a",
-    allowText: "#071b11",
-    rejectFill: "#202329",
-    rejectRim: "#8d96a5",
-    rejectText: "#f4f5f7",
-  },
+export const approvalActionColors = {
+  allowFill: "#b0b6ff",
+  allowText: "#0c0e26",
+  rejectFill: "#1c1e23",
+  rejectRim: "#9a9ba5",
+  rejectText: "#f2f3f7",
 } as const;
-
-export function materialTokens(mode: MaterialMode) {
-  return { glass: glassByMode[mode], approval: approvalByMode[mode] };
-}
-
-export const fallbackGlassTokens = glassByMode.dark;
-export const approvalActionColors = approvalByMode.dark;

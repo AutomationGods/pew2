@@ -14,6 +14,7 @@ import { isEmptyChunk, readChunk, type Chunk } from "./chunks";
 import { joinChunks } from "./chunkJoin";
 import { readUsage, type ContextUsage } from "./contextUsage";
 import { dedupeImages } from "./images";
+import { mergeToolCard, type ToolPatch } from "./toolCalls";
 import { pendingPermission, readPermissionRequest } from "./permissions";
 import type { PermissionRequest, Session, Turn } from "./useDaemon";
 
@@ -68,6 +69,16 @@ export function capTurns(turns: Turn[]): Turn[] {
  * @param key Turn id, unique across sessions. `seq` restarts at 0 for each one.
  */
 export function applyChunk(turns: Turn[], key: string, chunk: Chunk): void {
+  // A rename adds no row: the title is applied to the session by `titledBy`.
+  if (chunk.title !== undefined) return;
+  if (chunk.tool) {
+    applyTool(turns, key, chunk, chunk.tool);
+    return;
+  }
+  if (chunk.plan) {
+    applyPlan(turns, key, chunk);
+    return;
+  }
   const last = turns[turns.length - 1];
   // The echo of a prompt this client already rendered: adopt the server id in
   // place rather than showing the message twice. Text is the only handle on
@@ -82,7 +93,7 @@ export function applyChunk(turns: Turn[], key: string, chunk: Chunk): void {
     // evidence, and a bubble must never keep the label after the agent has it.
     const { queued: _queued, ...adopted } = turns[optimistic]!;
     turns[optimistic] = { ...adopted, id: key };
-  } else if (last && last.role === chunk.role && chunk.role !== "user") {
+  } else if (last && last.role === chunk.role && chunk.role !== "user" && chunk.role !== "ken" && chunk.role !== "note") {
     // Coalesce consecutive chunks of the same role into one bubble.
     turns[turns.length - 1] = mergeChunk(last, chunk);
   } else {
@@ -90,8 +101,53 @@ export function applyChunk(turns: Turn[], key: string, chunk: Chunk): void {
   }
 }
 
-/** A session's title once its first user message has arrived. */
-function titledBy(session: Session, chunk: Chunk): string {
+/**
+ * Merge a tool update into the card with its toolCallId, in place, so the card
+ * keeps its position in the stream; a first sighting appends a new card.
+ * Scanned from the end: the call being updated is almost always the newest.
+ */
+function applyTool(turns: Turn[], key: string, chunk: Chunk, patch: ToolPatch): void {
+  for (let index = turns.length - 1; index >= 0; index--) {
+    const turn = turns[index]!;
+    if (turn.tool?.id !== patch.id) continue;
+    const images = chunk.images ? dedupeImages([...(turn.images ?? []), ...chunk.images]) : turn.images;
+    turns[index] = { ...turn, tool: mergeToolCard(turn.tool, patch), ...(images ? { images } : {}) };
+    return;
+  }
+  turns.push({
+    id: key,
+    role: "tool",
+    text: "",
+    tool: mergeToolCard(undefined, patch),
+    ...(chunk.images ? { images: chunk.images } : {}),
+  });
+}
+
+/**
+ * The plan is one list per conversation and every update replaces it. Within
+ * the current exchange (no user prompt since) it is rewritten in place, so a
+ * ticking checklist does not hop down the thread; after a new prompt the old
+ * one is removed and the list re-appears where the work now is.
+ */
+function applyPlan(turns: Turn[], key: string, chunk: Chunk): void {
+  for (let index = turns.length - 1; index >= 0; index--) {
+    const turn = turns[index]!;
+    if (turn.role === "plan") {
+      const hasPromptAfter = turns.slice(index + 1).some((later) => later.role === "user");
+      if (!hasPromptAfter) {
+        turns[index] = { ...turn, plan: chunk.plan };
+        return;
+      }
+      turns.splice(index, 1);
+      break;
+    }
+  }
+  turns.push({ id: key, role: "plan", text: "", plan: chunk.plan });
+}
+
+/** A session's title: the agent's own (`session_info_update`), else its first user message. */
+export function titledBy(session: Session, chunk: Chunk): string {
+  if (chunk.title) return chunk.title;
   return session.title === "New conversation" && chunk.role === "user"
     ? chunk.text.trim().slice(0, 60)
     : session.title;
@@ -126,13 +182,15 @@ export function turnFromChunk(id: string, chunk: Chunk): Turn {
     role: chunk.role,
     text: chunk.text,
     ...(chunk.images ? { images: chunk.images } : {}),
+    ...(chunk.ken ? { ken: chunk.ken } : {}),
+    ...(chunk.call ? { call: chunk.call } : {}),
   };
 }
 
 export interface ReplayEvent {
   sessionId?: string;
   seq?: number;
-  payload?: any;
+  payload?: unknown;
 }
 
 interface FoldState {
@@ -277,7 +335,8 @@ export function foldBackgroundEvent<S extends { sessions: Session[] }>(
     title: titledBy(session, chunk),
     // A system chunk is a failure notice, not work in progress — the same rule
     // the visible path applies, so the drawer dot and the spinner agree.
-    busy: chunk.role !== "system",
+    // Ken's verdicts say nothing about whether the agent is working.
+    busy: chunk.role === "ken" || chunk.role === "note" ? session.busy : chunk.role !== "system",
   };
   return { ...prev, sessions };
 }
@@ -353,6 +412,9 @@ export function foldSessionEvents<S extends FoldState>(
     const replayedUsage = readUsage(payload);
     if (replayedUsage) {
       usage = replayedUsage;
+      // Also on the conversation's row, so reopening it later shows it.
+      const row = message.sessionId ? byId.get(message.sessionId) : undefined;
+      if (row) byId.set(row.id, { ...row, usage: replayedUsage });
       continue;
     }
     const chunk = readChunk(payload);

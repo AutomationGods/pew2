@@ -1,5 +1,5 @@
 export const APPEARANCE_MODES = ["system", "light", "dark"] as const;
-export const ACCENT_NAMES = ["coral", "ocean", "violet", "mint"] as const;
+export const ACCENT_NAMES = ["periwinkle", "coral", "ocean", "violet", "mint"] as const;
 
 export type AppearanceMode = (typeof APPEARANCE_MODES)[number];
 export type AccentName = (typeof ACCENT_NAMES)[number];
@@ -10,8 +10,9 @@ export interface AppearancePreference {
 }
 
 export const DEFAULT_APPEARANCE: AppearancePreference = {
-  mode: "system",
-  accent: "coral",
+  // Dark + periwinkle is Ken's Stage look; upgrading must not change it.
+  mode: "dark",
+  accent: "periwinkle",
 };
 
 const MAX_PAYLOAD = 1_024;

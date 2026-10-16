@@ -1,42 +1,55 @@
+/** Neutral provider controls retain the same native Glass press response. */
 import { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
+import { theme } from "../theme";
+import { usePalette } from "./appearance";
+import { agentChipColors } from "../agentChipColors";
+import { Glass } from "./Glass";
+import { Pew } from "../pew/Pew";
 import { haptics } from "./haptics";
 import type { Provider } from "../useDaemon";
 
-interface AgentChipProps { provider: Provider; selected: boolean; onPress: (providerId: string) => void; }
-
+interface AgentChipProps {
+  provider: Provider;
+  selected: boolean;
+  onPress: (providerId: string) => void;
+}
 function AgentChipView({ provider, selected, onPress }: AgentChipProps) {
-  const { theme } = useAppTheme();
-  const styles = useThemeStyles(makeStyles);
   const enabled = provider.available;
-  return (
+  const palette = usePalette();
+  const colors = agentChipColors(provider.color, selected, enabled, palette.color);
+  return <Glass radius={theme.radius.pill} interactive={enabled} style={styles.chip}>
     <Pressable
       disabled={!enabled}
       accessibilityRole="button"
       accessibilityLabel={enabled ? provider.name : `${provider.name}, unavailable. ${provider.unavailableReason ?? ""}`}
       accessibilityState={{ selected, disabled: !enabled }}
       onPress={() => { haptics.select(); onPress(provider.id); }}
-      style={({ pressed }) => [styles.chip, selected && styles.selected, pressed && enabled && styles.pressed, !enabled && styles.disabled]}
+      style={[styles.body, { backgroundColor: colors.background }]}
     >
-      <View style={[styles.marker, { backgroundColor: provider.color ?? theme.color.textFaint }]} />
-      <Text style={[styles.label, selected && styles.selectedLabel]} numberOfLines={1}>{provider.name}</Text>
+      {/* Each agent's own Pew, in its brand colour. Picking an agent wakes it;
+          the others doze and breathe, and an unavailable one lies still. */}
+      <View style={!enabled && styles.unavailable}>
+        <Pew size={28} style={styles.pew} color={provider.color} mood={selected ? "idle" : "sleepy"} paused={!enabled} />
+      </View>
+      <Text style={[styles.label, { color: colors.text }]} numberOfLines={1}>{provider.name}</Text>
     </Pressable>
-  );
+  </Glass>;
 }
-
-function makeStyles(theme: AppTheme) {
-  return StyleSheet.create({
-    chip: { minHeight: theme.size.touch, maxWidth: 180, flexDirection: "row", alignItems: "center", gap: theme.space(2), paddingHorizontal: theme.space(3), borderRadius: theme.radius.pill, backgroundColor: theme.color.controlFill, borderWidth: StyleSheet.hairlineWidth, borderColor: theme.color.border },
-    selected: { backgroundColor: theme.color.selectedRow, borderColor: theme.color.borderStrong },
-    pressed: { backgroundColor: theme.color.surfacePressed }, disabled: { opacity: 0.45 },
-    marker: { width: 8, height: 8, borderRadius: 4 },
-    label: { color: theme.color.textDim, fontSize: theme.font.small, fontWeight: "600", flexShrink: 1 },
-    selectedLabel: { color: theme.color.text },
-  });
-}
-
+const styles = StyleSheet.create({
+  chip: { borderRadius: theme.radius.pill, overflow: "hidden" },
+  body: { flexDirection: "row", alignItems: "center", justifyContent: "center", minHeight: theme.size.touch, paddingHorizontal: theme.space(4), paddingVertical: theme.space(1), gap: theme.space(2) },
+  unavailable: { opacity: 0.4 },
+  // The globe fills the middle of its box; the rest is room to bounce.
+  pew: { margin: -theme.space(1) },
+  label: { fontSize: theme.font.small, fontWeight: "700", lineHeight: theme.font.small + 4, maxWidth: 160 },
+});
 export const AgentChip = memo(AgentChipView, (before, after) =>
-  before.selected === after.selected && before.provider.id === after.provider.id && before.provider.name === after.provider.name && before.provider.color === after.provider.color && before.provider.available === after.provider.available && before.onPress === after.onPress,
+  before.selected === after.selected &&
+  before.provider.id === after.provider.id &&
+  before.provider.name === after.provider.name &&
+  before.provider.color === after.provider.color &&
+  before.provider.available === after.provider.available &&
+  before.provider.unavailableReason === after.provider.unavailableReason &&
+  before.onPress === after.onPress,
 );

@@ -13,31 +13,19 @@
  * `ui/TurnReceipt.tsx` takes its place with what actually happened.
  */
 import { memo, useEffect, useRef } from "react";
-import { Animated, StyleSheet, Text, View } from "react-native";
-import Ionicons from "@expo/vector-icons/Ionicons";
-import { useAppTheme, useThemeStyles } from "../appearance";
-import type { AppTheme } from "../theme";
-import { currentTool, queuedTools, type Activity, type ToolKind } from "../activity";
+import { Animated, StyleSheet, Text } from "react-native";
+import { theme } from "../theme";
+import { currentTool, queuedTools, type Activity } from "../activity";
 import { ShimmerText } from "./ShimmerText";
+import { Pew } from "../pew/Pew";
+import { activityMood } from "../pew/palette";
+import { activityOrbState } from "../activityOrb";
+import { Dissolve } from "./motion/Dissolve";
 import { useReducedMotion } from "./useReducedMotion";
 import { STATUS_ROW_MAX_FONT_SCALE } from "./statusRow";
 import { useStatusRowHeight } from "./useStatusRowHeight";
-
-/**
- * One glyph per ACP tool kind, so a glance at the icon says what class of work
- * is happening even before the title is read.
- */
-const ICONS: Record<ToolKind, keyof typeof Ionicons.glyphMap> = {
-  read: "document-text-outline",
-  edit: "create-outline",
-  delete: "trash-outline",
-  move: "arrow-forward-outline",
-  search: "search-outline",
-  execute: "terminal-outline",
-  think: "bulb-outline",
-  fetch: "cloud-download-outline",
-  other: "ellipsis-horizontal",
-};
+import { usePalette } from "./appearance";
+import { themedStyles, type Palette } from "../palette";
 
 /** Continuous, and slower than the composer's badge: this runs for minutes. */
 const SWEEP_DURATION = 2200;
@@ -48,10 +36,9 @@ const SWAP_DURATION = 160;
 /** Where a swap fades from. Never to zero: the row must not appear to blink out. */
 const SWAP_FROM = 0.35;
 
-function ActivityLineView({ activity }: { activity: Activity }) {
-  const { theme } = useAppTheme();
-  const styles = useThemeStyles(makeStyles);
-
+function ActivityLineView({ activity, color }: { activity: Activity; color?: string }) {
+  const palette = usePalette();
+  const styles = makeStyles(palette);
   const tool = currentTool(activity);
   const queued = queuedTools(activity);
   const reduceMotion = useReducedMotion();
@@ -63,19 +50,25 @@ function ActivityLineView({ activity }: { activity: Activity }) {
   // the sheen mid-sweep and read as a stutter.
   const shown = useRef<string | undefined>(tool?.id);
   useEffect(() => {
+    if (reduceMotion) {
+      fade.stopAnimation();
+      fade.setValue(1);
+      shown.current = tool?.id;
+      return;
+    }
     if (tool?.id === shown.current) return;
     shown.current = tool?.id;
-    if (reduceMotion) return;
     fade.setValue(SWAP_FROM);
     Animated.timing(fade, {
       toValue: 1,
       duration: SWAP_DURATION,
       useNativeDriver: true,
     }).start();
+    return () => fade.stopAnimation();
   }, [fade, reduceMotion, tool?.id]);
 
   const title = tool?.title?.trim() || "Working";
-  const kind = tool?.kind ?? "other";
+  const orbState = activityOrbState(activity);
 
   return (
     <Animated.View
@@ -86,11 +79,15 @@ function ActivityLineView({ activity }: { activity: Activity }) {
       accessibilityLiveRegion="polite"
       accessibilityLabel={queued > 0 ? `${title}, and ${queued} more` : title}
     >
-      <Ionicons name={ICONS[kind]} size={13} color={theme.color.textFaint} style={styles.icon} />
-      <View style={styles.label}>
+      {/* Pew at work, in the agent's colour: talking while it writes,
+          busy on a tool, otherwise thinking. */}
+      <Pew size={28} mood={activityMood(orbState)} color={color} style={styles.pew} />
+      {/* The label dissolves in place on a tool change; the row stays mounted so
+          ShimmerText's sweep never restarts. */}
+      <Dissolve kind="swap" dissolveKey={tool?.id ?? "working"} style={styles.label}>
         <ShimmerText
           text={title}
-          color={theme.color.textDim}
+          color={palette.color.textDim}
           size={theme.font.small}
           lineHeight={theme.line.body}
           weight="500"
@@ -100,7 +97,7 @@ function ActivityLineView({ activity }: { activity: Activity }) {
           // together, so large text grows the line instead of clipping in it.
           maxFontSizeMultiplier={STATUS_ROW_MAX_FONT_SCALE}
         />
-      </View>
+      </Dissolve>
       {/* Agents run tools in parallel. Naming one and counting the rest keeps
           the line a single readable row instead of a scrolling log. */}
       {queued > 0 && (
@@ -112,8 +109,10 @@ function ActivityLineView({ activity }: { activity: Activity }) {
   );
 }
 
-function makeStyles(theme: AppTheme) {
-  return StyleSheet.create({
+const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
+  // Pew's globe fills the middle of its box; the rest is room to bounce,
+  // so the box overhangs the old icon's footprint instead of growing the row.
+  pew: { margin: -4 },
   // Mirrors `ChatThread`'s dot row so replacing one with the other never moves
   // the transcript, horizontally or vertically.
   row: {
@@ -123,18 +122,14 @@ function makeStyles(theme: AppTheme) {
     marginTop: theme.space(5),
     paddingHorizontal: theme.gutter,
   },
-  // Optical centring: the outline glyphs sit a hair high against lowercase text.
-  icon: { marginTop: 1 },
   // Shrinks so a long tool title truncates instead of pushing the count off the
   // edge of the screen.
   label: { flexShrink: 1 },
   queued: {
     fontSize: theme.font.tiny,
     fontWeight: "600",
-    color: theme.color.textFaint,
+    color: p.color.textFaint,
   },
-  });
-}
-;
+}));
 
 export const ActivityLine = memo(ActivityLineView);

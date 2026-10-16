@@ -331,3 +331,31 @@ test("cursors off a raw hello are taken only when they are usable seq numbers", 
   expect(readCursors("nonsense")).toEqual({});
   expect(readCursors(null)).toEqual({});
 });
+
+test("goal rows carry instructions, and workspace browsing can ask for files", async () => {
+  const { GoalSummary, WorkspaceEntry, WorkspacesRequest } = await import("./wire.js");
+  const row = { id: "g", name: "n", goal: "x", context: [], path: "/g", createdAt: "t", lastActiveMs: 1, status: "idle" };
+  expect(GoalSummary.parse({ ...row, instructions: "be brief" }).instructions).toBe("be brief");
+  expect(GoalSummary.parse(row).instructions).toBeUndefined();
+  expect(WorkspacesRequest.parse({ t: "workspaces", requestId: "r", path: "/a", files: true }).files).toBe(true);
+  expect(WorkspaceEntry.parse({ path: "/a/b", name: "b", repo: false, kind: "file" }).kind).toBe("file");
+  expect(WorkspaceEntry.parse({ path: "/a/b", name: "b", repo: false }).kind).toBeUndefined();
+  expect(WorkspaceEntry.safeParse({ path: "/a/b", name: "b", repo: false, kind: "link" }).success).toBe(false);
+});
+
+test("live voice messages parse in both directions", () => {
+  expect(ClientMessage.parse({ t: "voice.token", requestId: "r1", voice: "marin" }).t).toBe("voice.token");
+  expect(ClientMessage.parse({ t: "app.voip", token: "ab".repeat(32), environment: "sandbox", bundleId: "com.x" }).t).toBe("app.voip");
+  expect(ClientMessage.safeParse({ t: "app.voip", token: "not-hex", environment: "sandbox", bundleId: "com.x" }).success).toBe(false);
+  expect(ClientMessage.parse({ t: "voice.call", sessionId: "s1" }).t).toBe("voice.call");
+  expect(ServerMessage.parse({
+    t: "voice.token.result", requestId: "r1",
+    result: { ok: true, clientSecret: "ek_1", expiresAt: 1, model: "gpt-realtime-2.1", source: "chatgpt" },
+  }).t).toBe("voice.token.result");
+  expect(ServerMessage.parse({
+    t: "voice.token.result", requestId: "r1", result: { ok: false, error: "not_signed_in", message: "Sign in" },
+  }).t).toBe("voice.token.result");
+  expect(ServerMessage.parse({
+    t: "voice.incoming", callId: "6f1c2a4e-8b1d-4c3e-9f2a-1b2c3d4e5f60", reason: "input", sessionId: "s1", at: 1,
+  }).t).toBe("voice.incoming");
+});

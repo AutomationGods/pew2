@@ -197,6 +197,20 @@ leaked before you first used it. Full detail in [SECURITY.md](SECURITY.md).
 
 ---
 
+## 🎙 Live voice and calls
+
+Talk to pew2 by voice from the iPhone app, and have it ring your phone like a real call when an agent needs you.
+
+**Sign in on your computer.** Voice uses OpenAI's Realtime model. Run `pew2 openai login` and sign in with your ChatGPT account in the browser that opens, or run `pew2 openai login --device` on a machine without a browser and enter the code it prints. pew2 keeps its own sign-in in `~/.pew2/openai-auth.json` (readable only by you) and never touches Codex's. As a fallback, store an API key with `pew2 openai key` (paste it at the hidden prompt, or pipe it in), or set `OPENAI_API_KEY`. `pew2 openai status` shows which one voice uses.
+
+**Let pew2 ring your phone.** Calls that ring a locked phone need an Apple Push Notification key of your own:
+
+1. In the [Apple developer portal](https://developer.apple.com/account/resources/authkeys/list), open **Certificates, Identifiers & Profiles → Keys**, add a key with **Apple Push Notifications service (APNs)** enabled, and download the `AuthKey_XXXXXXXXXX.p8` file. Note its **Key ID** and your **Team ID** (top right of the portal).
+2. Run `pew2 voice apns --key ~/Downloads/AuthKey_XXXXXXXXXX.p8 --key-id XXXXXXXXXX --team-id YYYYYYYYYY`. pew2 copies the key into `~/.pew2` at 0600; you can delete the download.
+3. `pew2 voice status` checks it. `pew2 voice calls off` stops ringing; `pew2 voice apns --clear` removes the key.
+
+Without the key, an open app still rings and the normal "needs input" notification still arrives. pew2 rings at most once per conversation every two minutes.
+
 ## 🛠 Everyday commands
 
 ```bash

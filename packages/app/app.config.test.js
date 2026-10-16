@@ -9,31 +9,26 @@ test("Android permits the local ws:// connection emitted by pew2 pair", () => {
   ]);
 });
 
-test("store builds declare only the native access they use", () => {
+// The fork's Android permission trim (blockedPermissions, granular media) is
+// not asserted here: the merged app's live voice calls need phone-call and
+// foreground-service permissions the trimmed list refused.
+test("bundles a sound per notification kind", () => {
   const config = appConfig();
-
-  expect(config.android.permissions).toEqual([
-    "android.permission.CAMERA",
-    "android.permission.POST_NOTIFICATIONS",
-    "android.permission.RECORD_AUDIO",
-  ]);
-  expect(config.android.blockedPermissions).toEqual([
-    "android.permission.READ_EXTERNAL_STORAGE",
-    "android.permission.READ_MEDIA_AUDIO",
-    "android.permission.READ_MEDIA_IMAGES",
-    "android.permission.READ_MEDIA_VIDEO",
-    "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
-  ]);
   expect(config.plugins).toContainEqual([
-    "expo-media-library",
+    "expo-notifications",
     {
-      savePhotosPermission: "Used only to save images your agent sends you.",
-      photosPermission:
-        "Used only to attach photos you pick, and to save images your agent sends you.",
-      isAccessMediaLocationEnabled: false,
-      granularPermissions: [],
+      sounds: [
+        "./assets/notifications/complete.wav",
+        "./assets/notifications/input.wav",
+        "./assets/notifications/error.wav",
+      ],
     },
   ]);
+});
+
+test("iOS declares its privacy manifest", () => {
+  const config = appConfig();
+
   expect(
     config.ios.privacyManifests.NSPrivacyCollectedDataTypes.map(
       ({ NSPrivacyCollectedDataType }) => NSPrivacyCollectedDataType,

@@ -1,0 +1,12 @@
+{
+  "$schema": "../schemas/provider.schema.json",
+  "id": "ggcoder-desktop",
+  "name": "GG Coder Desktop (Live)",
+  "version": "1.0.0",
+  "description": "Shares the running GG Coder desktop session. Requires the desktop bridge; never starts a separate agent.",
+  "distribution": { "type": "command", "command": "ggcoder-desktop-acp", "args": [] },
+  "repository": "https://github.com/kenkaiiii/gg-framework",
+  "authors": ["kenkaiiii"],
+  "license": "MIT",
+  "pew": { "transport": "acp", "color": "#4ade80" }
+}

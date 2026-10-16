@@ -403,7 +403,7 @@ test("a push token is kept against the device that proved who it was", async () 
 
   const out = await send(
     daemon,
-    { t: "app.push", token: "ExponentPushToken[abc123]", platform: "ios" },
+    { t: "app.push", token: "ExponentPushToken[abc123]", platform: "ios", kinds: true },
     "phone-1",
   );
 
@@ -444,8 +444,8 @@ test("reconnecting with a rotated token replaces the old one", async () => {
   // Otherwise every app restart costs another copy of every banner.
   const { daemon } = stubbed();
 
-  await send(daemon, { t: "app.push", token: "ExponentPushToken[first]", platform: "ios" }, "phone-1");
-  await send(daemon, { t: "app.push", token: "ExponentPushToken[second]", platform: "ios" }, "phone-1");
+  await send(daemon, { t: "app.push", token: "ExponentPushToken[first]", platform: "ios", kinds: true }, "phone-1");
+  await send(daemon, { t: "app.push", token: "ExponentPushToken[second]", platform: "ios", kinds: true }, "phone-1");
 
   expect(daemon.pushTargets.list()).toEqual([{ token: "ExponentPushToken[second]", platform: "ios" }]);
 });

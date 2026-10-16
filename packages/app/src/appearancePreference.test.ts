@@ -18,11 +18,11 @@ test("missing and malformed preferences use defaults", () => {
 
 test("invalid fields fall back independently", () => {
   expect(parseAppearancePreference(JSON.stringify({ mode: "sepia", accent: "mint" }))).toEqual({
-    mode: "system",
+    mode: DEFAULT_APPEARANCE.mode,
     accent: "mint",
   });
   expect(parseAppearancePreference(JSON.stringify({ mode: "light", accent: 42 }))).toEqual({
     mode: "light",
-    accent: "coral",
+    accent: DEFAULT_APPEARANCE.accent,
   });
 });

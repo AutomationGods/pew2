@@ -41,6 +41,26 @@ const sessionStub: Session = {
   configOptions: [],
 };
 
+test("the session row retains images, thoughts and text while another chat is open", () => {
+  const screenshot = { update: {
+    sessionUpdate: "tool_call_update",
+    content: [{ type: "content", content: { type: "resource_link", uri: "out/screenshot.png", mimeType: "image/png" } }],
+  } };
+  let next = foldBackgroundEvent(state([], [sessionStub]), "s1", "s1:0", {
+    update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Inspecting the screen" } },
+  });
+  next = foldBackgroundEvent(next, "s1", "s1:1", screenshot);
+  next = foldBackgroundEvent(next, "s1", "s1:2", {
+    update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Here is the screenshot" } },
+  });
+  // Opening a live session restores this row, not the cleared foreground turns.
+  expect(next.turns).toEqual([]);
+  expect(next.sessions[0]!.turns).toMatchObject([
+    { role: "thought", text: "Inspecting the screen" },
+    { role: "agent", text: "Here is the screenshot", images: [{ src: "out/screenshot.png" }] },
+  ]);
+});
+
 test("a batch of chunks lands as coalesced turns in one state", () => {
   const next = foldSessionEvents(
     state([], [sessionStub]),
@@ -205,6 +225,18 @@ test("replay restores the context percentage, unlike busy", () => {
   expect(folded.usage).toEqual({ used: 250, size: 1000 });
   // Still history, so it must not look like a turn in progress.
   expect(folded.busy).toBe(false);
+});
+
+test("a replayed reading is also kept on the conversation's row", () => {
+  // Reopening a chat later replays only events this phone hasn't seen, so the
+  // row is where its reading has to survive; without it the context sheet said
+  // the agent "doesn't report context usage" on every return to a chat.
+  const row: Session = { id: "s1", providerId: "ggcoder", title: "t", startedAt: 0, turns: [], configOptions: [] };
+  const folded = foldSessionEvents(
+    { turns: [], sessions: [row], busy: false },
+    [{ sessionId: "s1", seq: 1, payload: { update: { sessionUpdate: "usage_update", used: 46_670, size: 1_000_000 } } }],
+  );
+  expect(folded.sessions[0]!.usage).toEqual({ used: 46_670, size: 1_000_000 });
 });
 
 const toolCall = (seq: number, id: string, title: string) => ({

@@ -140,7 +140,7 @@ export const ProviderAnnounce = z.object({
    * `agentSessionId`.
    */
   activeSessions: z.array(z.string()).default([]),
-  /** Whether this daemon accepts `workspace.create` requests. */
+  /** Whether this daemon accepts `workspace.create`. Absent = older daemon. */
   canCreateWorkspace: z.boolean().optional(),
   /**
    * A newer pew2 has been published and this machine is not running it yet.
@@ -159,7 +159,7 @@ export const ProviderAnnounce = z.object({
    */
   update: z
     .object({
-      /** The published version, e.g. "0.9.19". */
+      /** The published version, e.g. "0.9.22". */
       latest: z.string(),
       /**
        * Whether the daemon expects to install it without being asked.
@@ -276,6 +276,8 @@ export const ProviderCapabilities = z.object({
    * the projects it can see in `sessions`.
    */
   projects: z.array(AgentProject).optional(),
+  /** GG Coder extensions this agent speaks; see `ProviderExtensions`. */
+  extensions: z.lazy(() => ProviderExtensions).optional(),
 });
 
 /**
@@ -361,6 +363,8 @@ export const WorkspacesRequest = z.object({
   requestId: z.string(),
   /** Browse this directory. Absent means "suggest repositories". */
   path: z.string().optional(),
+  /** Also list the browsed directory's regular files (goal context). Absent = folders only. */
+  files: z.boolean().optional(),
 });
 
 export const WorkspaceEntry = z.object({
@@ -368,6 +372,8 @@ export const WorkspaceEntry = z.object({
   name: z.string(),
   repo: z.boolean(),
   updatedAt: z.string().optional(),
+  /** Absent means folder: older daemons never list files. Files are never browsable. */
+  kind: z.enum(["folder", "file"]).optional(),
 });
 
 /** Daemon -> app. Answer to `workspaces`. */
@@ -494,11 +500,24 @@ export const SetSessionConfig = z.object({
 });
 
 /** App -> daemon. Answer an outstanding permission request. */
+/**
+ * Answers to a GG Coder desktop question card, keyed by question id: a string
+ * for a pick or typed answer, a list for a multi-select. The desktop checks
+ * them against the questions it asked; this only bounds their size.
+ */
+export const DesktopAnswers = z.record(
+  z.string().max(200),
+  z.union([z.string().max(10_000), z.array(z.string().max(500)).max(20)]),
+);
+export type DesktopAnswers = z.infer<typeof DesktopAnswers>;
+
 export const PermissionReply = z.object({
   t: z.literal("session.permission"),
   sessionId: z.string(),
   requestId: z.string(),
   optionId: z.string(),
+  /** A whole question card's answers, only for a GG Coder desktop question. Optional: older apps omit it. */
+  answers: DesktopAnswers.optional(),
 });
 
 /**
@@ -634,6 +653,16 @@ export const Replay = z.object({
   permissions: z
     .array(z.object({ requestId: z.string(), params: z.unknown() }))
     .optional(),
+  /**
+   * Same rule for queued messages, open `ask_user` questions and goal state:
+   * live state only the daemon holds. Absent = an older daemon said nothing;
+   * `[]` = none. Defined after their schemas below (lazy, so order is free).
+   */
+  queued: z.lazy(() => z.array(QueuedMessage)).optional(),
+  asks: z.lazy(() => z.array(AskRequest)).optional(),
+  goal: z.lazy(() => GoalState).optional(),
+  plan: z.lazy(() => PlanState).optional(),
+  autopilot: z.lazy(() => AutopilotState).optional(),
 });
 
 /**
@@ -693,6 +722,12 @@ export const PushRegister = z.object({
    */
   token: z.string().min(1),
   platform: z.enum(["ios", "android"]),
+  /**
+   * This app has the per-kind Android channels and bundled sounds
+   * (complete / input / error). Absent means an older app: the daemon then
+   * pushes on the single `agent-turns` channel with the default sound.
+   */
+  kinds: z.boolean().optional(),
 });
 
 /**
@@ -709,6 +744,377 @@ export const DeviceJoined = z.object({
   at: z.number().int(),
 });
 
+// ── Queued messages ────────────────────────────────────────
+
+/**
+ * A message the user sent while a turn was running, waiting for the agent to
+ * pick it up. Same affordance as GG Coder's desktop queue strip.
+ *
+ * The daemon owns the queue for *every* agent: an agent that advertises GG's
+ * queue extension (`agentCapabilities._meta.gg.queue`) receives it mid-run and
+ * folds it in at its next step; any other agent gets everything still queued
+ * as its next turn the moment the current one ends. Ids are daemon-minted.
+ */
+export const QueuedMessage = z.object({
+  id: z.string(),
+  text: z.string(),
+  /** How many files ride with it, for the strip's paperclip; absent means none. */
+  attachments: z.number().int().nonnegative().optional(),
+});
+
+/**
+ * Daemon -> app. A session's queue changed: broadcast, never logged.
+ *
+ * The full list every time (replace, never patch). A queued message that is
+ * picked up leaves this list *and* appears in the log as an ordinary
+ * `user_message` at the moment it reached the agent, so the transcript shows
+ * it where the agent actually read it.
+ */
+export const SessionQueue = z.object({
+  t: z.literal("session.queue"),
+  sessionId: z.string(),
+  queued: z.array(QueuedMessage),
+  /**
+   * Messages taken off the queue *unsent* because the turn was cancelled. GG
+   * Coder hands these back to the composer rather than running them after a
+   * stop; a client puts them back into an empty draft, and ignores them
+   * otherwise. Absent on every other update.
+   */
+  returned: z.array(QueuedMessage).optional(),
+});
+
+/** App -> daemon. Withdraw one queued message before the agent reads it. */
+export const QueueCancel = z.object({
+  t: z.literal("session.queue.cancel"),
+  sessionId: z.string(),
+  id: z.string(),
+});
+
+// ── ask_user ───────────────────────────────────────────────
+
+/** One selectable answer. `value` is what the agent gets back; `label` is UI. */
+export const AskOption = z.object({
+  label: z.string(),
+  value: z.string().optional(),
+  /** One short line under the label. */
+  hint: z.string().optional(),
+  /** The agent's recommendation: tagged in the UI, never preselected. */
+  recommended: z.boolean().optional(),
+});
+
+export const AskQuestion = z.object({
+  /** The key this question's answer comes back under. */
+  id: z.string(),
+  question: z.string(),
+  kind: z.enum(["confirm", "choice", "multi", "text"]),
+  detail: z.string().optional(),
+  /** `confirm` without options means Yes / No. */
+  options: z.array(AskOption).optional(),
+  /** Whether a free-text answer is offered beside the options (default true; always on `text`). */
+  allowOther: z.boolean().optional(),
+});
+
+/**
+ * An open question from the agent (GG Coder's `ask_user` tool), relayed from
+ * the ACP extension request `_gg/ask_user`.
+ *
+ * Logged as a session event with payload `{ kind: "ask_user", requestId,
+ * questions }`, and — exactly like a permission — carried as live state in a
+ * catch-up `Replay.asks`, because a logged question is history and must never
+ * re-open a card over a finished transcript.
+ *
+ * When it stops being open — answered from any client, withdrawn or
+ * superseded by the agent, or its session/connection closed — the daemon logs
+ * `{ kind: "ask_user_closed", requestId }`, which closes the card everywhere.
+ * An ask may outlive the turn that raised it.
+ */
+export const AskRequest = z.object({
+  requestId: z.string(),
+  questions: z.array(AskQuestion),
+});
+
+/** What the agent hears back. Mirrors GG Coder's `AskUserResult` subset. */
+export const AskResult = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("answer"),
+    /** Question id -> chosen value (or label when it has none), typed text, or several for `multi`. */
+    answers: z.record(z.string(), z.union([z.string(), z.array(z.string())])),
+  }),
+  z.object({ action: z.literal("cancel") }),
+]);
+
+/** App -> daemon. Answer (or dismiss) an open question. */
+export const AskReply = z.object({
+  t: z.literal("session.ask"),
+  sessionId: z.string(),
+  requestId: z.string(),
+  result: AskResult,
+});
+
+// ── Goals (GG Coder) ───────────────────────────────────────
+
+/**
+ * A GG Coder goal: a long-running objective worked by GG Goals, a
+ * coordinator agent whose working directory is the goal's own folder
+ * (`~/.gg/goals/<id>`). Goals live on the desktop's disk and are shared with
+ * GG Coder's desktop app; the phone lists, creates and opens them through the
+ * `ggcoder` provider's ACP extension methods (`_gg/goals/*`).
+ */
+export const GoalStatus = z.enum(["briefing", "running", "paused", "interrupted", "idle"]);
+
+export const GoalContextItem = z.object({
+  kind: z.enum(["folder", "file"]),
+  path: z.string(),
+});
+
+export const GoalSummary = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** The goal text as the user wrote it. */
+  goal: z.string(),
+  context: z.array(GoalContextItem),
+  /** The goal folder: open a goal by starting/resuming a ggcoder session with this as cwd. */
+  path: z.string(),
+  createdAt: z.string(),
+  lastActiveMs: z.number(),
+  /** The newest coordinator conversation, to resume; absent opens a fresh one. */
+  agentSessionId: z.string().optional(),
+  status: GoalStatus,
+  /** Daemon session id currently open on this goal, when one is. */
+  sessionId: z.string().optional(),
+  /** Standing instructions for the goal's workers. Absent = none (or an older GG Coder). */
+  instructions: z.string().optional(),
+});
+
+/** App -> daemon. List the goals on this machine. */
+export const GoalsRequest = z.object({
+  t: z.literal("goals"),
+  requestId: z.string(),
+});
+
+/** Daemon -> app. Answer to `goals`; also broadcast unprompted after any change. */
+export const Goals = z.object({
+  t: z.literal("goals"),
+  /** Echoed when this answers a request; absent on a broadcast. */
+  requestId: z.string().optional(),
+  goals: z.array(GoalSummary),
+  /** Why there are none to show: GG Coder missing, too old, or failed. Absent on success. */
+  error: z.string().optional(),
+});
+
+/** App -> daemon. Create a goal (briefing phase). Context paths are desktop paths. */
+export const GoalCreate = z.object({
+  t: z.literal("goal.create"),
+  requestId: z.string(),
+  name: z.string(),
+  goal: z.string(),
+  context: z.array(z.string()).default([]),
+  instructions: z.string().optional(),
+  /**
+   * Files picked on the *phone* (the desktop's disk is no place to hunt for a
+   * file from a phone). The daemon writes them to pew2's own folder on the
+   * computer, where they live as long as the goal, and adds their paths to
+   * `context`. Same ceilings as a prompt's attachments. Absent = none; an
+   * older daemon drops the field, which is why `GoalResult.files` exists.
+   */
+  files: z.array(PromptAttachment).optional(),
+});
+
+/**
+ * App -> daemon. Act on one goal.
+ *  - `delete`: remove it (refused while a session on it is working).
+ *  - `pause`: stop its run and its workers; it stays paused until resumed.
+ *  - `resume`: lift a pause and carry on if it was cut off.
+ *  - `update`: change attached context / standing instructions (refused mid-run).
+ *  - `critterModel`: pin the workers' model (`model: null` follows GG Goals).
+ * Opening a goal is not here: it is `session.start` / `session.resume` on the
+ * `ggcoder` provider with `cwd` = the goal's `path`, after which the daemon
+ * runs GG Goals' kickoff turn by itself when the goal still needs one.
+ */
+export const GoalAction = z.object({
+  t: z.literal("goal.action"),
+  requestId: z.string(),
+  goalId: z.string(),
+  action: z.enum(["delete", "pause", "resume", "update", "critterModel"]),
+  context: z.array(z.string()).optional(),
+  instructions: z.string().optional(),
+  model: z.string().nullable().optional(),
+});
+
+/** Daemon -> app. Result of `goal.create` / `goal.action`. */
+export const GoalResult = z.object({
+  t: z.literal("goal.result"),
+  requestId: z.string(),
+  ok: z.boolean(),
+  goal: GoalSummary.optional(),
+  error: z.string().optional(),
+  /**
+   * How many phone files were saved for a `goal.create`. Absent from a daemon
+   * that predates `GoalCreate.files`: the app then knows its files were not
+   * received rather than assuming they were.
+   */
+  files: z.number().int().nonnegative().optional(),
+});
+
+/** One of GG Goals' workers ("critters"), as the goal's farm shows it. */
+export const GoalWorker = z.object({
+  id: z.string(),
+  /** The task name GG Goals gave it. */
+  name: z.string(),
+  /** builder | scout | researcher | checker, when known. */
+  agent: z.string().optional(),
+  state: z.enum(["starting", "running", "completed", "failed", "interrupted", "closed"]),
+  /** What it is doing right now, one line. */
+  activity: z.string().optional(),
+  startedAt: z.number().optional(),
+  elapsedMs: z.number().optional(),
+  toolUses: z.number().int().nonnegative().optional(),
+  model: z.string().optional(),
+  error: z.string().optional(),
+});
+
+/**
+ * Daemon -> app. Live state of the goal a session coordinates: phase and the
+ * worker roster. Broadcast on change (full state each time), carried in a
+ * catch-up `Replay.goal`, never logged. Ken's spoken line is NOT here: it is
+ * the last line of GG Goals' message text (`[ken:face] words`), which the app
+ * strips from the bubble and shows as Ken.
+ */
+export const GoalState = z.object({
+  t: z.literal("goal.state"),
+  sessionId: z.string(),
+  goalId: z.string(),
+  phase: z.enum(["briefing", "active"]),
+  paused: z.boolean(),
+  workers: z.array(GoalWorker),
+  critterModel: z.string().nullable().optional(),
+});
+
+// ── Plan review (GG Coder) ─────────────────────────────────
+
+/**
+ * Daemon -> app. A session's plan state (from `_gg/plan_state`): broadcast on
+ * change, carried in a catch-up `Replay.plan`, never logged.
+ *
+ * `pending` is present only while a submitted plan is waiting for the HUMAN
+ * (GG Coder already let Autopilot Ken try, and everything has settled). That is
+ * the moment the app opens the Accept / Feedback / Reject sheet. Progress of an
+ * approved plan travels as the standard ACP `plan` session update, not here.
+ */
+export const PlanState = z.object({
+  t: z.literal("plan.state"),
+  sessionId: z.string(),
+  /** The agent is in read-only plan mode, drafting. */
+  planMode: z.boolean(),
+  pending: z
+    .object({
+      planPath: z.string(),
+      /** The plan's markdown. */
+      content: z.string(),
+      /** Echo this back in `plan.decide`, so a stale sheet cannot decide a newer plan. */
+      generation: z.number().int(),
+    })
+    .nullable(),
+});
+
+/**
+ * App -> daemon. Decide a pending plan.
+ *  - `accept`: implement it. GG Coder starts a fresh context with the plan
+ *    baked in (same daemon session; the transcript gets a divider).
+ *  - `feedback`: revise it read-only with `feedback`, then submit again.
+ *  - `reject`: drop it; the agent leaves plan mode and waits.
+ * Logged as `{ kind: "plan_decision", action, feedback? }`.
+ */
+export const PlanDecide = z.object({
+  t: z.literal("plan.decide"),
+  sessionId: z.string(),
+  generation: z.number().int(),
+  action: z.enum(["accept", "feedback", "reject"]),
+  feedback: z.string().optional(),
+});
+
+// ── Autopilot (GG Coder) ───────────────────────────────────
+
+/**
+ * Daemon -> app. Whether Autopilot (Ken reviewing every finished turn and
+ * prompting GG Coder until the work is done) is on for this session's project,
+ * and whether Ken is reviewing right now. Broadcast on change, catch-up
+ * `Replay.autopilot`, never logged. Ken's verdicts themselves ARE logged, as
+ * session events `{ kind: "autopilot", phase, reason?, body?, round? }` with
+ * phase one of: review_start | prompted | done | human | capped | ignored |
+ * plan_accepted | error.
+ */
+export const AutopilotState = z.object({
+  t: z.literal("autopilot.state"),
+  sessionId: z.string(),
+  enabled: z.boolean(),
+  reviewing: z.boolean(),
+});
+
+/** App -> daemon. Turn Autopilot on or off for this session's project. */
+export const AutopilotSet = z.object({
+  t: z.literal("autopilot.set"),
+  sessionId: z.string(),
+  enabled: z.boolean(),
+});
+
+// ── Project checklist (GG Coder) ───────────────────────────
+
+export const ChecklistItemRow = z.object({
+  id: z.string(),
+  /** Section heading, e.g. "Foundations". */
+  group: z.string(),
+  title: z.string(),
+  description: z.string(),
+  status: z.enum(["not-run", "not-applicable", "due", "passed", "needs-work"]),
+  checkedAt: z.string().nullable(),
+  result: z.enum(["pass", "issues", "not-applicable"]).nullable(),
+  summary: z.string().nullable(),
+  findings: z.array(z.string()),
+  evidence: z.array(z.string()),
+  /** The project's code changed after this result was recorded. */
+  changedSinceCheck: z.boolean(),
+  /** What GG Coder detected about this project for the item, when anything. */
+  detection: z.object({ summary: z.string(), facts: z.array(z.string()) }).nullable(),
+  /** Send this as an ordinary prompt to run the check; null when it can't be run. */
+  runPrompt: z.string().nullable(),
+});
+
+/** App -> daemon. Read the project checklist for an open GG Coder session. */
+export const ChecklistRequest = z.object({
+  t: z.literal("checklist"),
+  requestId: z.string(),
+  sessionId: z.string(),
+});
+
+/**
+ * Daemon -> app. Answer to `checklist` (with `requestId`), or a nudge with no
+ * items when a turn changed the checklist (`changed: true`, the app re-asks).
+ */
+export const Checklist = z.object({
+  t: z.literal("checklist"),
+  requestId: z.string().optional(),
+  sessionId: z.string(),
+  changed: z.boolean().optional(),
+  staleAfterDays: z.number().optional(),
+  items: z.array(ChecklistItemRow).optional(),
+  error: z.string().optional(),
+});
+
+/**
+ * Which GG Coder extensions this provider speaks, from its ACP
+ * `agentCapabilities._meta.gg`. Carried on `ProviderCapabilities.extensions`;
+ * absent = an older daemon or an agent with none, so show none of these UIs.
+ */
+export const ProviderExtensions = z.object({
+  queue: z.boolean().optional(),
+  askUser: z.boolean().optional(),
+  goals: z.boolean().optional(),
+  planReview: z.boolean().optional(),
+  autopilot: z.boolean().optional(),
+  checklist: z.boolean().optional(),
+});
+
 export const ErrorMessage = z.object({
   t: z.literal("error"),
   code: z.string(),
@@ -719,11 +1125,10 @@ export const ErrorMessage = z.object({
 /**
  * A sealed message. Everything with user content travels as one of these.
  *
- * `sid` and `seq` are readable on purpose, and only because the relay keeps the
- * ordered log that lets a reconnecting phone catch up — the daemon does not
- * replay. They are bound into the AEAD as associated data, so the relay may
- * *read* them to order its log but cannot alter them without every recipient
- * rejecting the frame.
+ * `sid` and `seq` are cleartext headers bound into the AEAD as associated data,
+ * so changing either invalidates the frame. The relay neither stores nor replays
+ * session events. The daemon owns the ordered session log and answers a
+ * reconnecting phone's cursors itself.
  *
  * The definitive shape lives in `crypto.ts`, which is what actually seals and
  * opens these; this mirror exists so a message can be validated on arrival
@@ -739,6 +1144,138 @@ export const Envelope = z.object({
   n: z.string(),
   /** base64url ciphertext, including the Poly1305 tag. */
   ct: z.string(),
+});
+
+/**
+ * Live voice ("gpt live").
+ *
+ * The phone talks to OpenAI's Realtime model directly over WebRTC, so audio
+ * never crosses the relay. What the phone cannot hold is a long-lived OpenAI
+ * credential: the ChatGPT sign-in (or the fallback API key) lives on the
+ * desktop, and the daemon mints a short-lived Realtime client secret on demand.
+ * The secret travels sealed like every other frame.
+ *
+ * All additive message types, deliberately not a `WIRE_VERSION` bump: an older
+ * daemon answers `unknown_message`, which the app treats as "voice unavailable".
+ */
+
+/** App -> daemon. Ask for a short-lived Realtime client secret. */
+export const VoiceTokenRequest = z.object({
+  t: z.literal("voice.token"),
+  /** Correlates the reply. */
+  requestId: z.string().min(1),
+  /** Optional model override; the daemon picks its default otherwise. */
+  model: z.string().optional(),
+  /** Optional voice name override (e.g. "marin"). */
+  voice: z.string().optional(),
+});
+
+export const VoiceTokenError = z.enum([
+  /** Neither a ChatGPT sign-in nor an API key is configured on the desktop. */
+  "not_signed_in",
+  /** OpenAI refused the credential (expired and refresh failed, revoked, plan lacks voice). */
+  "unauthorized",
+  /** Network or OpenAI-side failure. */
+  "failed",
+]);
+
+/** Daemon -> app. The reply to `voice.token`, sent only to the asker. */
+export const VoiceTokenResult = z.object({
+  t: z.literal("voice.token.result"),
+  requestId: z.string(),
+  result: z.discriminatedUnion("ok", [
+    z.object({
+      ok: z.literal(true),
+      /** Ephemeral secret (`ek_...`) for `Authorization: Bearer` on the WebRTC call. */
+      clientSecret: z.string(),
+      /** Unix seconds. */
+      expiresAt: z.number().int(),
+      model: z.string(),
+      /** Which desktop credential paid for it. */
+      source: z.enum(["chatgpt", "api_key"]),
+    }),
+    z.object({
+      ok: z.literal(false),
+      error: VoiceTokenError,
+      message: z.string(),
+    }),
+  ]),
+});
+
+/**
+ * App -> daemon. iOS PushKit (VoIP) token, so the daemon can ring the phone
+ * through CallKit while the app is suspended or killed.
+ *
+ * Separate from `app.push` because a VoIP token is a raw APNs device token, not
+ * an Expo token: it is sent with the user's own APNs key configured on their
+ * desktop, never with a credential shipped in the daemon. Held in memory only,
+ * like Expo tokens, and re-sent on every connect. Silence is acceptance.
+ */
+export const VoipRegister = z.object({
+  t: z.literal("app.voip"),
+  /** Hex APNs device token from PushKit. */
+  token: z.string().regex(/^[0-9a-fA-F]{32,200}$/),
+  /** APNs environment the build talks to (dev-client builds use sandbox). */
+  environment: z.enum(["production", "sandbox"]),
+  /** The app's bundle id; the VoIP topic is `${bundleId}.voip`. */
+  bundleId: z.string().min(1),
+});
+
+/** One spoken line of a voice call, as captioned. */
+export const VoiceCallLine = z.object({
+  who: z.enum(["user", "assistant"]),
+  text: z.string().max(4000),
+});
+
+/** Ceiling on lines kept per call: an hour of talk is well under this. */
+export const MAX_VOICE_CALL_LINES = 400;
+
+/**
+ * App -> daemon. File a finished call's transcript in the conversation it was
+ * about. Logged as a session event `{ kind: "voice_call", callId, startedAt,
+ * endedAt, lines }` (broadcast like any event) and kept on the computer per
+ * agent conversation, so reopening it later shows the call again. A note for
+ * the human, never a prompt: the agent does not see it. Silence is acceptance.
+ */
+export const VoiceTranscript = z.object({
+  t: z.literal("voice.transcript"),
+  sessionId: z.string(),
+  callId: z.string().uuid(),
+  startedAt: z.number().int(),
+  endedAt: z.number().int(),
+  lines: z.array(VoiceCallLine).min(1).max(MAX_VOICE_CALL_LINES),
+});
+
+/** Why the daemon is calling. */
+export const VoiceCallReason = z.enum(["input", "manual"]);
+
+/**
+ * App -> daemon. "Call me": ask the daemon to ring this phone (used when the
+ * call should come from the desktop side, e.g. testing the ring path). Also
+ * sent by `pew2 call` via the daemon's local socket if available.
+ */
+export const VoiceCallRequest = z.object({
+  t: z.literal("voice.call"),
+  sessionId: z.string().optional(),
+});
+
+/**
+ * Daemon -> every client. An incoming call. A foregrounded app shows the
+ * CallKit incoming-call UI from this; a suspended one gets the same payload in
+ * the VoIP push. Answering opens a live voice session focused on `sessionId`.
+ */
+export const VoiceIncoming = z.object({
+  t: z.literal("voice.incoming"),
+  /** Unique per call (UUID), used as the CallKit call UUID. */
+  callId: z.string().uuid(),
+  reason: VoiceCallReason,
+  sessionId: z.string().optional(),
+  providerId: z.string().optional(),
+  /** Last segment of the session's cwd. */
+  folder: z.string().optional(),
+  /** One short line for the caller display, e.g. "Codex needs you in pew2". */
+  summary: z.string().optional(),
+  at: z.number().int(),
 });
 
 export const ClientMessage = z.discriminatedUnion("t", [
@@ -758,6 +1295,18 @@ export const ClientMessage = z.discriminatedUnion("t", [
   WorkspacesRequest,
   WorkspaceCreateRequest,
   PushRegister,
+  QueueCancel,
+  AskReply,
+  GoalsRequest,
+  GoalCreate,
+  GoalAction,
+  PlanDecide,
+  AutopilotSet,
+  ChecklistRequest,
+  VoiceTokenRequest,
+  VoipRegister,
+  VoiceCallRequest,
+  VoiceTranscript,
 ]);
 
 export const ServerMessage = z.discriminatedUnion("t", [
@@ -775,8 +1324,36 @@ export const ServerMessage = z.discriminatedUnion("t", [
   Workspaces,
   WorkspaceCreateResult,
   DeviceJoined,
+  SessionQueue,
+  Goals,
+  GoalResult,
+  GoalState,
+  PlanState,
+  AutopilotState,
+  Checklist,
   ErrorMessage,
+  VoiceTokenResult,
+  VoiceIncoming,
 ]);
+
+export type QueuedMessage = z.output<typeof QueuedMessage>;
+export type SessionQueue = z.output<typeof SessionQueue>;
+export type QueueCancel = z.output<typeof QueueCancel>;
+export type AskOption = z.output<typeof AskOption>;
+export type AskQuestion = z.output<typeof AskQuestion>;
+export type AskRequest = z.output<typeof AskRequest>;
+export type AskResult = z.output<typeof AskResult>;
+export type AskReply = z.output<typeof AskReply>;
+export type GoalStatus = z.output<typeof GoalStatus>;
+export type GoalContextItem = z.output<typeof GoalContextItem>;
+export type GoalSummary = z.output<typeof GoalSummary>;
+export type GoalsRequest = z.output<typeof GoalsRequest>;
+export type Goals = z.output<typeof Goals>;
+export type GoalCreate = z.output<typeof GoalCreate>;
+export type GoalAction = z.output<typeof GoalAction>;
+export type GoalResult = z.output<typeof GoalResult>;
+export type GoalWorker = z.output<typeof GoalWorker>;
+export type GoalState = z.output<typeof GoalState>;
 
 export type SetProviderConfig = z.output<typeof SetProviderConfig>;
 export type SetSessionConfig = z.output<typeof SetSessionConfig>;
@@ -808,8 +1385,25 @@ export type PushRegister = z.output<typeof PushRegister>;
 export type DeviceJoined = z.output<typeof DeviceJoined>;
 export type WorkspaceEntry = z.output<typeof WorkspaceEntry>;
 export type Workspaces = z.output<typeof Workspaces>;
+export type VoiceTokenRequest = z.output<typeof VoiceTokenRequest>;
+export type VoiceTokenError = z.output<typeof VoiceTokenError>;
+export type VoiceTokenResult = z.output<typeof VoiceTokenResult>;
+export type VoipRegister = z.output<typeof VoipRegister>;
+export type VoiceCallReason = z.output<typeof VoiceCallReason>;
+export type VoiceCallRequest = z.output<typeof VoiceCallRequest>;
+export type VoiceIncoming = z.output<typeof VoiceIncoming>;
+export type VoiceCallLine = z.output<typeof VoiceCallLine>;
+export type VoiceTranscript = z.output<typeof VoiceTranscript>;
 export type WorkspaceCreateRequest = z.output<typeof WorkspaceCreateRequest>;
 export type WorkspaceCreateError = z.output<typeof WorkspaceCreateError>;
 export type WorkspaceCreateResult = z.output<typeof WorkspaceCreateResult>;
 export type ClientMessage = z.output<typeof ClientMessage>;
 export type ServerMessage = z.output<typeof ServerMessage>;
+export type PlanState = z.output<typeof PlanState>;
+export type PlanDecide = z.output<typeof PlanDecide>;
+export type AutopilotState = z.output<typeof AutopilotState>;
+export type AutopilotSet = z.output<typeof AutopilotSet>;
+export type ChecklistItemRow = z.output<typeof ChecklistItemRow>;
+export type ChecklistRequest = z.output<typeof ChecklistRequest>;
+export type Checklist = z.output<typeof Checklist>;
+export type ProviderExtensions = z.output<typeof ProviderExtensions>;

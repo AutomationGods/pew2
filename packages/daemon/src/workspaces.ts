@@ -21,7 +21,7 @@
  * pairing token is a bearer secret over a public relay: a stolen one must not
  * become "enumerate this person's entire filesystem".
  */
-import { mkdir, readdir, realpath, stat } from "node:fs/promises";
+import { mkdir, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 
@@ -33,7 +33,50 @@ export interface WorkspaceEntry {
   repo: boolean;
   /** Last modification, ISO. Used to rank; may be absent if unreadable. */
   updatedAt?: string;
+  /** Absent means folder. Files are listed only on request and never browsed into. */
+  kind?: "folder" | "file";
 }
+
+/** Files listed per directory when a client asks for them. */
+const FILE_LIMIT = 200;
+
+/**
+ * How deep to look for repositories.
+ *
+ * Three levels covers `~/code/acme/api` — an org folder inside a code folder —
+ * which is where most checkouts actually live. Deeper multiplies the directory
+ * count for a rapidly worsening hit rate, and this runs while someone waits.
+ */
+const SCAN_DEPTH = 3;
+
+/** A ceiling on the scan, so an enormous home directory cannot hang the daemon. */
+const SCAN_LIMIT = 4_000;
+
+/**
+ * Never worth descending into.
+ *
+ * `node_modules` alone can hold tens of thousands of directories and never
+ * contains a project the user means. The dotfile rule is separate: `.config` and
+ * friends are noise in a project picker, but a dotted directory the user names
+ * explicitly is still browsable.
+ */
+const SKIP = new Set([
+  "node_modules",
+  ".git",
+  "vendor",
+  "target",
+  "dist",
+  "build",
+  "Library",
+  "Applications",
+  ".Trash",
+  "venv",
+  ".venv",
+  "__pycache__",
+  ".next",
+  ".cache",
+  "Pods",
+]);
 
 export type CreateWorkspaceResult =
   | { ok: true; path: string; name: string }
@@ -42,7 +85,14 @@ export type CreateWorkspaceResult =
       error: "invalid_name" | "invalid_parent" | "already_exists" | "create_failed";
     };
 
-/** Create one private project directory under a confined parent. */
+/**
+ * Create one private project directory under a confined parent.
+ *
+ * The name is a single path segment (no separators, no `.`/`..`, no control
+ * characters, at most 255 bytes). An explicit parent goes through the same
+ * `resolveBrowsePath()` confinement as browsing; absent means `~/gg-projects`.
+ * Never recursive and never over an existing path, so it cannot replace anything.
+ */
 export async function createWorkspaceDirectory(
   rawName: string,
   parent?: string,
@@ -94,44 +144,6 @@ export async function createWorkspaceDirectory(
     };
   }
 }
-
-/**
- * How deep to look for repositories.
- *
- * Three levels covers `~/code/acme/api` — an org folder inside a code folder —
- * which is where most checkouts actually live. Deeper multiplies the directory
- * count for a rapidly worsening hit rate, and this runs while someone waits.
- */
-const SCAN_DEPTH = 3;
-
-/** A ceiling on the scan, so an enormous home directory cannot hang the daemon. */
-const SCAN_LIMIT = 4_000;
-
-/**
- * Never worth descending into.
- *
- * `node_modules` alone can hold tens of thousands of directories and never
- * contains a project the user means. The dotfile rule is separate: `.config` and
- * friends are noise in a project picker, but a dotted directory the user names
- * explicitly is still browsable.
- */
-const SKIP = new Set([
-  "node_modules",
-  ".git",
-  "vendor",
-  "target",
-  "dist",
-  "build",
-  "Library",
-  "Applications",
-  ".Trash",
-  "venv",
-  ".venv",
-  "__pycache__",
-  ".next",
-  ".cache",
-  "Pods",
-]);
 
 /**
  * Where browsing may go.
@@ -229,7 +241,7 @@ async function isDirectory(path: string): Promise<boolean> {
  */
 export async function listDirectory(
   path: string,
-  options: { roots?: string[]; home?: string; limit?: number } = {},
+  options: { roots?: string[]; home?: string; limit?: number; files?: boolean } = {},
 ): Promise<{ path: string; parent?: string; entries: WorkspaceEntry[] } | undefined> {
   const home = options.home ?? homedir();
   // Read once: `browsableRoots()` consults the environment, and calling it three
@@ -248,12 +260,18 @@ export async function listDirectory(
   }
 
   const entries: WorkspaceEntry[] = [];
+  const files: WorkspaceEntry[] = [];
   for (const name of names.sort((a, b) => a.localeCompare(b))) {
-    if (name.startsWith(".") || SKIP.has(name)) continue;
-    if (entries.length >= (options.limit ?? 500)) break;
-
+    if (name.startsWith(".")) continue;
     const child = join(resolved, name);
-    if (!(await isDirectory(child))) continue;
+    if (!(await isDirectory(child))) {
+      // Folders first, files after, so files go to their own capped list.
+      if (options.files && files.length < FILE_LIMIT && (await isFile(child))) {
+        files.push({ path: child, name, repo: false, updatedAt: await modifiedAt(child), kind: "file" });
+      }
+      continue;
+    }
+    if (SKIP.has(name) || entries.length >= (options.limit ?? 500)) continue;
     entries.push({
       path: child,
       name,
@@ -262,7 +280,15 @@ export async function listDirectory(
     });
   }
 
-  return { path: resolved, parent: await parentOf(resolved, roots), entries };
+  return { path: resolved, parent: await parentOf(resolved, roots), entries: [...entries, ...files] };
+}
+
+async function isFile(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isFile();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -307,6 +333,49 @@ async function modifiedAt(path: string): Promise<string | undefined> {
  * submodules and vendored copies are not what the user meant, and skipping them
  * is most of what keeps this fast.
  */
+/**
+ * The folders the phone's suggestions are looked for in: the ones the user has
+ * already added — GG Coder's own project list (`~/.gg/projects.json`) and the
+ * folders pew2 has been pointed at (`known-projects.json`). Nothing else.
+ *
+ * Scanning the whole home folder for repositories reached into Documents,
+ * Desktop, Downloads, Photos and Music, and macOS asked permission for each
+ * one, every time the picker opened. These folders are the user's own choice,
+ * and macOS asks about them at most once. Browsing to any other folder by hand
+ * is unchanged, and asks only when that folder is opened.
+ *
+ * Only `path` is read from GG Coder's file: it holds credentials too, and those
+ * never leave this function.
+ */
+export async function suggestionRoots(
+  knownProjects: readonly string[],
+  ggCoderProjectsFile: string = join(homedir(), ".gg", "projects.json"),
+): Promise<string[]> {
+  const candidates: string[] = [...knownProjects];
+  try {
+    const parsed = JSON.parse(await readFile(ggCoderProjectsFile, "utf8")) as Record<string, unknown>;
+    for (const entry of Object.values(parsed ?? {})) {
+      const path = (entry as { path?: unknown } | null)?.path;
+      if (typeof path === "string" && isAbsolute(path)) candidates.push(path);
+    }
+  } catch {
+    // No GG Coder projects file: suggestions come from pew2's own list alone.
+  }
+  const seen = new Set<string>();
+  const roots: string[] = [];
+  for (const candidate of candidates) {
+    const path = resolve(candidate);
+    if (seen.has(path)) continue;
+    seen.add(path);
+    try {
+      if ((await stat(path)).isDirectory()) roots.push(path);
+    } catch {
+      // Moved or deleted since it was added: nothing to suggest from it.
+    }
+  }
+  return roots;
+}
+
 export async function discoverRepos(
   options: { roots?: string[]; depth?: number; limit?: number; scanLimit?: number } = {},
 ): Promise<WorkspaceEntry[]> {

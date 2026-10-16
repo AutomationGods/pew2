@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { PushRegistry, applyTickets, pushMessages } from "./push.js";
+import { PushRegistry, applyTickets, incomingCallMessages, pushIncomingCall, pushMessages } from "./push.js";
 
 const TOKEN = "ExponentPushToken[abcdef123456]";
 
@@ -76,6 +76,15 @@ describe("pushMessages", () => {
     ).toMatchObject({ body: "Connection failed", sound: "error.wav", channelId: "agent-error" });
   });
 
+  it("keeps an app without per-kind channels on the one channel it created", () => {
+    const old = new PushRegistry();
+    old.register("phone", TOKEN, "android", { legacy: true });
+    expect(pushMessages(old, { sessionId: "s1", kind: "input" })[0]).toMatchObject({
+      sound: "default",
+      channelId: "agent-turns",
+    });
+  });
+
   it("sends nothing when no phone has registered", () => {
     expect(pushMessages(new PushRegistry(), { sessionId: "s1" })).toEqual([]);
   });
@@ -111,5 +120,46 @@ describe("applyTickets", () => {
     registry.register("phone", TOKEN, "ios");
     applyTickets(registry, pushMessages(registry, { sessionId: "s1" }), "nonsense");
     expect(registry.size).toBe(1);
+  });
+});
+
+describe("Android incoming calls", () => {
+  const incoming = {
+    t: "voice.incoming" as const,
+    callId: "6f1c1b8e-6a7e-4c4e-9a59-1f8c2f0d9e11",
+    reason: "input" as const,
+    sessionId: "s1",
+    folder: "pew2",
+    summary: "Codex needs you in pew2",
+    at: 1,
+  };
+
+  it("sends a data-only, high-priority push to Android phones only", () => {
+    const registry = new PushRegistry();
+    registry.register("ios-phone", TOKEN, "ios");
+    registry.register("droid", "ExponentPushToken[droid]", "android");
+    const messages = incomingCallMessages(registry.list(), incoming);
+    expect(messages).toHaveLength(1);
+    const m = messages[0]!;
+    expect(m.to).toBe("ExponentPushToken[droid]");
+    expect(m.priority).toBe("high");
+    expect(m.channelId).toBe("incoming-call");
+    // No title or body: Android draws nothing and the app's task rings instead.
+    expect("title" in m || "body" in m).toBe(false);
+    expect(m.data).toMatchObject({ pew2Call: "1", callId: incoming.callId, sessionId: "s1", summary: incoming.summary });
+  });
+
+  it("rings only the asking phone when given a device", async () => {
+    const registry = new PushRegistry();
+    registry.register("a", "ExponentPushToken[a]", "android");
+    registry.register("b", "ExponentPushToken[b]", "android");
+    const bodies: unknown[] = [];
+    await pushIncomingCall(registry, incoming, "b", {
+      fetchImpl: async (_url, init) => {
+        bodies.push(JSON.parse(init.body as string));
+        return new Response(JSON.stringify({ data: [{ status: "ok" }] }));
+      },
+    });
+    expect(bodies).toEqual([[expect.objectContaining({ to: "ExponentPushToken[b]" })]]);
   });
 });
