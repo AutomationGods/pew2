@@ -12,6 +12,7 @@ What it writes:
   assets/icon.png                     iOS/store: full-bleed opaque square (iOS cuts the squircle)
   assets/splash-icon.png              the mark lifted off the canvas, transparent, for expo-splash-screen
   assets/favicon.png                  web
+  assets/widget-pew.png               the home/Lock Screen widget's Pew, transparent, small
   assets/android-icon-*.png           adaptive layers: canvas, Pew inside the 66% safe zone, silhouette
   docs/icon.png                       README
 
@@ -279,6 +280,10 @@ def write_all() -> None:
     # Monochrome (themed icons): the silhouette, tinted by the system.
     mono = fg.split()[3].point(lambda v: 255 if v > 60 else 0)
     save(Image.merge("RGBA", (mono, mono, mono, mono)), os.path.join(ASSETS, "android-icon-monochrome.png"))
+    # Widget: drawn at most ~60pt (180px at 3x), over the same canvas colour the
+    # widget paints, so the lifted glow composes back exactly. Small, because a
+    # widget extension is held to a tight memory ceiling.
+    save(lifted(0.4, sparkles=False).resize((192, 192), Image.LANCZOS), os.path.join(ASSETS, "widget-pew.png"))
 
 
 if __name__ == "__main__":

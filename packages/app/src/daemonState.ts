@@ -305,6 +305,10 @@ export interface TurnFinished {
   lastText?: string;
   /** The conversation on screen when this landed, if any. */
   activeSessionId?: string;
+  /** Not a normal finish: the agent failed, or someone pressed stop. */
+  outcome?: "failed" | "cancelled";
+  /** Why a failed turn failed, as the daemon worded it. */
+  reason?: string;
 }
 
 /**
