@@ -19,7 +19,8 @@
       "bundleIdentifier": "io.github.kenkaiii.pew2",
       "//infoPlist": "Ships verbatim into Info.plist, so no comment keys inside it — Apple reads what is written there. `ITSAppUsesNonExemptEncryption: false` answers the export-compliance question at build time instead of halting every upload to ask it. The answer is honest: this app's own cryptography is the pairing seal in @pew2/protocol (XChaCha20-Poly1305 and HKDF-SHA256 from @noble) over TLS, both exempt under the standard 'uses only encryption exempt from EAR' category. Adding a non-exempt algorithm of our own means revisiting this line, not merely the answer in the console.",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocalNetworkUsageDescription": "Used to connect to the pew2 daemon running on your computer when both are on the same network."
       }
     },
     "android": {
@@ -50,13 +51,19 @@
       [
         "expo-splash-screen",
         {
-          "//": "Without this the generated splash is pure white while the app's own background is #111111 with userInterfaceStyle dark, so every cold launch flashed white before painting. No `dark` variant: the app is dark-only, and declaring one conflicts with the app-wide userInterfaceStyle. The colour is theme.color.bg, kept in step by hand because app.json cannot import it.",
-          "backgroundColor": "#111111",
+          "//": "Without this the generated splash is pure white while the app's own background is theme.color.bg with userInterfaceStyle dark, so every cold launch flashed white before painting. No `dark` variant: the app is dark-only, and declaring one conflicts with the app-wide userInterfaceStyle. The colour is theme.color.bg, kept in step by hand because app.json cannot import it. The image is Pew from scripts/make-icon.py, lifted off that same colour so its glow composes back exactly; 250 makes his globe the size LaunchScreen's Pew opens at, so the handoff does not jump.",
+          "backgroundColor": "#0a0a0c",
           "image": "./assets/splash-icon.png",
-          "imageWidth": 160
+          "imageWidth": 250
         }
       ],
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "//": "false removes NSFaceIDUsageDescription. Nothing here stores with requireAuthentication, and the plugin otherwise ships its generic Face ID string, a purpose string for a permission the app never asks for.",
+          "faceIDPermission": false
+        }
+      ],
       [
         "expo-camera",
         {
