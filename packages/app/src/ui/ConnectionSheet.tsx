@@ -2,6 +2,7 @@ import { Alert, Pressable, StyleSheet, Text, View, useWindowDimensions } from "r
 import { StageScroll } from "./stage/StageScroll";
 import { Sheet } from "./Sheet";
 import { PrivacyLink } from "./PrivacyLink";
+import { TermsLink } from "./TermsLink";
 import { haptics } from "./haptics";
 import { Handshake, type HandshakePhase } from "./Handshake";
 import { Led } from "./stage/Led";
@@ -23,6 +24,10 @@ interface Props {
   update?: { latest: string; automatic: boolean };
   onClose: () => void;
   onUnpair: () => void;
+  /** The voice row: absent when this daemon has no voice (older, or never answered). */
+  voice?: { line: string; onOpen: () => void };
+  /** Notification permission: On / Off / Not set, and what tapping it does. */
+  alerts?: { value: string; onPress: () => void };
 }
 
 const PHASE = { online: "paired", connecting: "pairing", offline: "waiting" } satisfies Record<Status, HandshakePhase>;
@@ -38,7 +43,7 @@ function Row({ label, index, children }: { label: string; index: number; childre
   );
 }
 
-export function ConnectionSheet({ visible, machineLabel, machineRemote, status, update, onClose, onUnpair }: Props) {
+export function ConnectionSheet({ visible, machineLabel, machineRemote, status, update, onClose, onUnpair, voice, alerts }: Props) {
   const { height: screenHeight } = useWindowDimensions();
   const title = status === "online" ? "Connected" : status === "connecting" ? "Connecting…" : "Offline";
   return <Sheet visible={visible} label="Connection" labelTone={status === "connecting" ? "attention" : "agent"} pewMood={status === "online" ? "happy" : status === "connecting" ? "thinking" : "sleepy"} title={title} onClose={onClose} dismissLabel="Close connection details">
@@ -59,8 +64,21 @@ export function ConnectionSheet({ visible, machineLabel, machineRemote, status, 
             Alert.alert(`pew2 ${update.latest} is available`, `This computer can't update itself, so run this on ${machineLabel}:\n\n${INSTALL_COMMAND}`, [{ text: "OK" }]);
           }}><Text numberOfLines={1} style={[styles.value, styles.link]}>{update.latest} available · How</Text></Pressable>}
       </Row>}
+      {voice && <Row label="Calls" index={3}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Calls: ${voice.line}. Open call settings.`} hitSlop={8} onPress={() => { haptics.tap(); voice.onOpen(); }}>
+          <Text numberOfLines={1} style={[styles.value, styles.link]}>{`${voice.line} · Settings ›`}</Text>
+        </Pressable>
+      </Row>}
+      {alerts && <Row label="Alerts" index={4}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`Alerts: ${alerts.value}`} hitSlop={8} onPress={() => { haptics.tap(); alerts.onPress(); }}>
+          <Text numberOfLines={1} style={[styles.value, styles.link]}>{alerts.value}</Text>
+        </Pressable>
+      </Row>}
       <DashedRule />
-      <PrivacyLink />
+      <View style={styles.legal}>
+        <PrivacyLink />
+        <TermsLink />
+      </View>
       <Pressable accessibilityRole="button" accessibilityLabel={`Forget pairing with ${machineLabel}`} style={styles.action} onPress={() => {
         haptics.warned();
         Alert.alert("Forget this computer?", "You'll need to scan or paste its pairing link to connect again.", [
@@ -74,6 +92,7 @@ export function ConnectionSheet({ visible, machineLabel, machineRemote, status, 
 const styles = StyleSheet.create({
   // Everything shows at once (it is short); only a very small screen scrolls.
   scroll: { flexGrow: 0 },
+  legal: { flexDirection: "row", gap: theme.space(5) },
   content: { paddingBottom: theme.sectionGap, gap: theme.space(3) },
   row: { flexDirection: "row", alignItems: "center", minHeight: theme.size.touch },
   rowLabel: { width: LABEL_WIDTH },

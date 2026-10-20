@@ -687,6 +687,8 @@ export function useDaemon(
     ...actions,
     resumeNow,
     registerPush,
+    /** Send one sealed message (false when not connected). Voice uses it directly. */
+    post,
     setForeground,
     // Exported so the UI names the same agent the composer targets: the drawer
     // and top bar must not show Claude Code while a prompt would go elsewhere.

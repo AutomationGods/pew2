@@ -352,4 +352,10 @@ export interface DaemonOptions {
    * it keeps raising the local banner instead of going silent.
    */
   onPushRegistered?: (registered: boolean) => void;
+  /**
+   * Every opened daemon frame, before this hook acts on it. Voice calls
+   * (`ui/useVoice.ts`) listen here rather than adding their state to this
+   * hook: a call lives beside the conversations, not inside them.
+   */
+  onFrame?: (message: unknown) => void;
 }

@@ -111,6 +111,7 @@ export function handleSealedFrame(refs: FrameRefs, connection: FrameConnection, 
   // phone no longer holds the key for. Silently ignored — there is nothing
   // useful to show and nothing safe to act on.
   if (message === undefined) return;
+  optionsRef.current.onFrame?.(message);
 
   // Only authenticated, visible prose may wait. Control/replay/background
   // frames flush before any notification or state transition below.

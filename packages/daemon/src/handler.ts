@@ -15,11 +15,19 @@ import { GG_GOALS_ID, type Daemon, type PromptOutcome } from "./index.js";
 import { humanError } from "./errors.js";
 import { loadImage } from "./images.js";
 import { workspaceStatus } from "./git.js";
-import { resolveWorkspace } from "./workspace.js";
+import { folderName, resolveWorkspace } from "./workspace.js";
 import { suggestionRoots, discoverRepos, listDirectory } from "./workspaces.js";
 import { wire } from "@pew2/protocol";
 import { storeGoalFiles } from "./goalFiles";
 import { readKnownProjects } from "./known-projects.js";
+import { resolveSession, runVoiceTool, type VoicePort } from "./voice/tools.js";
+import { CHAT_TOOLS, REACH_PROJECTS, recentProjects, runChatTool, withinReach, type ChatPort } from "./voice/chats.js";
+import { actionLine, actionTarget } from "./voice/memory.js";
+
+/** Every chat Pew may reach by voice (`withinReach`): what it is told about and what its tools match against. */
+async function reachableChats(daemon: Daemon) {
+  return withinReach(await daemon.voiceChats().catch(() => []), Date.now());
+}
 
 const NOT_A_GOAL = "Open or create a goal first.";
 
@@ -226,7 +234,8 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         const workspace = message.cwd
           ? await namedProject(daemon, message.providerId, message.cwd)
           : ((await daemon.lastWorkspace(message.providerId)) ?? cwd);
-        await openStarted(ctx, message.providerId, workspace, message.requestId);
+        const { sessionId: started } = await openStarted(ctx, message.providerId, workspace, message.requestId);
+        daemon.voice.sessionStarted(started);
         break;
       }
 
@@ -239,6 +248,18 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         // is driven by streamed events rather than this reply.
         const sessionId = message.sessionId;
         runTurn(ctx, sessionId, daemon.prompt(sessionId, message.text, attachments));
+        break;
+      }
+
+      case "app.voip": {
+        // Same identity rule as `app.push`: keyed by the device that said hello.
+        const deviceId = ctx.deviceId;
+        if (!deviceId) {
+          reply(errorMessage("push_unidentified", "Say hello before registering for push."));
+          break;
+        }
+        daemon.pushTargets.registerVoip(deviceId, message.token, message.env);
+        console.log(`[voice] '${deviceId}' ${message.token ? `can be called (${message.env})` : "stopped calls"}`);
         break;
       }
 
@@ -508,6 +529,91 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         break;
       }
 
+      // ── Voice. Old apps never send these, so nothing changes for them. ──
+      case "voice.status": {
+        reply(await daemon.voice.status(message.requestId));
+        break;
+      }
+
+      case "voice.login": {
+        try {
+          reply(await daemon.voice.loginAction(message.action, message.requestId));
+        } catch (error) {
+          reply({ ...(await daemon.voice.status(message.requestId)), available: false, reason: humanError(error) });
+        }
+        break;
+      }
+
+      case "voice.prefs": {
+        // Answered by the `voice.status` broadcast `setPrefs` sends.
+        await daemon.voice.setPrefs(message.prefs);
+        break;
+      }
+
+      case "voice.forget": {
+        await daemon.voice.forgetThreads();
+        console.log("[voice] call history forgotten");
+        break;
+      }
+
+      case "voice.session": {
+        const projects = recentProjects(await reachableChats(daemon), REACH_PROJECTS);
+        // Called from a chat with nothing sent yet: no session exists, so the
+        // project and agent on screen are the only clue to where they are.
+        const statuses = daemon.voiceStatuses();
+        const inSession = message.sessionId && statuses.some((status) => status.sessionId === message.sessionId);
+        const known = !inSession && message.cwd ? await daemon.knownProject(message.providerId ?? "", message.cwd) : undefined;
+        const folder = folderName(known);
+        const agentName = message.providerId ? daemon.providerName(message.providerId) : undefined;
+        const place = folder ? { folder, ...(agentName ? { agentName } : {}) } : undefined;
+        reply(
+          await daemon.voice.openSession(message.requestId, message.focus, statuses, message.sessionId, projects, place),
+        );
+        break;
+      }
+
+      case "voice.tool": {
+        // Opening or starting a chat spawns an agent, so it is the one async
+        // tool; it runs well inside the app's 30 s tool timeout.
+        let first = false;
+        const result = !daemon.voice.knowsCall(message.callId)
+          ? { output: JSON.stringify({ ok: false, error: "unknown call", say: "This call has ended." }), hangUp: true }
+          : await daemon.voice.runOnce(message.callId, message.toolCallId, async () => {
+              first = true;
+              return CHAT_TOOLS.has(message.name)
+                ? runChatTool(message.name, message.arguments, chatPort(ctx, message.callId))
+                : runVoiceTool(message.name, message.arguments, voicePort(ctx, message.callId));
+            });
+        if (first) {
+          const named = (sessionId: string) => daemon.voiceStatuses(sessionId)[0]?.folder;
+          const said = actionTarget(message.name, message.arguments, result.output);
+          const target = said ? (resolveSession(said, daemon.voiceStatuses()) ?? said) : undefined;
+          daemon.voice.noteAction(message.callId, actionLine(message.name, message.arguments, result.output, named), target);
+        }
+        reply({
+          t: "voice.tool",
+          requestId: message.requestId,
+          callId: message.callId,
+          toolCallId: message.toolCallId,
+          ...result,
+        });
+        break;
+      }
+
+      case "voice.end": {
+        // The transcript is never written anywhere: its closing lines are held
+        // in memory for the next call's briefing (`voice/memory.ts`).
+        daemon.voice.endCall(message.callId, message.reason, message.transcript);
+        break;
+      }
+
+      case "voice.arm": {
+        // Answered by the `voice.status` broadcast `arm` sends. An unknown or
+        // closed session is accepted and simply never rings.
+        daemon.voice.arm(message.sessionId, message.on);
+        break;
+      }
+
       default:
         // Reached only by a sealed envelope, which is a transport concern and has
         // already been opened long before anything arrives here. A type this
@@ -557,6 +663,77 @@ function runTurn(ctx: HandlerContext, sessionId: string, turn: Promise<PromptOut
       idle({ outcome: "failed", reason: failure.message });
     },
   );
+}
+
+/** The daemon's ordinary methods, as the voice tools call them. */
+function voicePort(ctx: HandlerContext, callId: string): VoicePort {
+  const { daemon } = ctx;
+  return {
+    items: () => daemon.voice.inbox,
+    permissionOptions: (sessionId, requestId) => daemon.voicePermissionOptions(sessionId, requestId),
+    askQuestions: (sessionId, requestId) => daemon.voiceAskQuestions(sessionId, requestId),
+    answerPermission: (sessionId, requestId, optionId) => daemon.answerPermission(sessionId, requestId, optionId),
+    answerAsk: (sessionId, requestId, result) => daemon.answerAsk(sessionId, requestId, result),
+    decidePlan: (sessionId, action, generation, feedback) => {
+      // The same turn `plan.decide` runs, so busy/idle/queue rules hold.
+      runTurn(
+        ctx,
+        sessionId,
+        daemon.prompt(sessionId, "", [], {
+          planDecision: { action, generation, ...(feedback !== undefined ? { feedback } : {}) },
+        }),
+      );
+    },
+    tellAgent: (sessionId, text) => {
+      const working = daemon.isWorking(sessionId);
+      if (working === undefined) return { ok: false };
+      // Exactly `session.prompt`: runs now, or queues behind the running turn.
+      runTurn(ctx, sessionId, daemon.prompt(sessionId, text, undefined));
+      return { ok: true, queued: working };
+    },
+    statuses: (sessionId) => daemon.voiceStatuses(sessionId),
+    callMeBack: (minutes) => daemon.voice.callMeBack(minutes, callId),
+    callWhenDone: (sessionId, folder) => daemon.voice.callWhenDone(sessionId, folder),
+    setRing: (sessionId, on) => {
+      daemon.voice.arm(sessionId, on);
+      return { ringing: daemon.voice.currentPrefs.mode === "onthego" };
+    },
+    mark: (sessionId, line) => daemon.voice.markBoard(callId, sessionId, line),
+  };
+}
+
+/** What `open_chat` / `start_chat` need: the same open and start paths the app's taps take. */
+function chatPort(ctx: HandlerContext, callId: string): ChatPort {
+  const { daemon } = ctx;
+  const port = voicePort(ctx, callId);
+  return {
+    chats: () => reachableChats(daemon),
+    agents: () => daemon.voiceAgents(),
+    contextProvider: () => {
+      const context = daemon.voice.callContext(callId);
+      return context ? daemon.sessionProvider(context) : undefined;
+    },
+    resume: async (chat) => {
+      const workspace = await daemon.acceptVoiceProject(
+        (await daemon.agentSessionCwd(chat.providerId, chat.agentSessionId)) ?? chat.cwd,
+      );
+      const opened = openResumed(ctx, chat.providerId, chat.agentSessionId, workspace);
+      await opened.ready;
+      if (opened.ok()) daemon.voice.bindCall(callId, opened.sessionId);
+      return opened.ok() ? opened.sessionId : undefined;
+    },
+    start: async (providerId, cwd) => {
+      const workspace = await daemon.acceptVoiceProject(cwd);
+      const { sessionId } = await openStarted(ctx, providerId, workspace);
+      daemon.voice.sessionStarted(sessionId);
+      // A call from a new, empty chat carries on in the chat it started.
+      daemon.voice.bindCall(callId, sessionId);
+      return sessionId;
+    },
+    tellAgent: (sessionId, text) => port.tellAgent(sessionId, text),
+    statuses: (sessionId) => port.statuses(sessionId),
+    mark: (sessionId, line) => port.mark?.(sessionId, line),
+  };
 }
 
 /**
@@ -615,9 +792,10 @@ function openResumed(
   providerId: string,
   agentSessionId: string,
   workspace: string,
-): { sessionId: string; ready: Promise<boolean> } {
+): { sessionId: string; ready: Promise<boolean>; ok: () => boolean } {
   const { daemon, broadcast } = ctx;
   const message = { providerId, agentSessionId };
+  let ok = false;
   const pending = daemon.beginResumeSession(providerId, agentSessionId, workspace);
   broadcast({
     t: "session.started",
@@ -640,6 +818,7 @@ function openResumed(
   // is broadcast as `resume_failed`).
   const opened = pending.ready.then(
     () => {
+      ok = true;
       broadcast({
         t: "session.config",
         sessionId: pending.sessionId,
@@ -659,7 +838,7 @@ function openResumed(
       return false;
     },
   );
-  return { sessionId: pending.sessionId, ready: opened };
+  return { sessionId: pending.sessionId, ready: opened, ok: () => ok };
 }
 
 /** Every client's goal list moves after a change. Best effort. */
