@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { POSIX_MODES } from "../testing/platform.js";
 import {
   REASON_EXPIRED,
   REASON_SIGN_IN,
@@ -87,7 +88,8 @@ describe("resolveCredential", () => {
     expect(body).toContain("refresh_token=r1");
     const saved = JSON.parse(await readFile(p.voiceAuth, "utf8"));
     expect(saved.refreshToken).toBe("r2");
-    expect((await stat(p.voiceAuth)).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX permission bits to set or read.
+    if (POSIX_MODES) expect((await stat(p.voiceAuth)).mode & 0o777).toBe(0o600);
   });
 
   test("API key last, from env or the file", async () => {
@@ -111,8 +113,9 @@ describe("resolveCredential", () => {
 
 test("voicePaths sits beside pairing.json", () => {
   const p = voicePaths({ PEW2_HOME: "/x/.pew2", CODEX_HOME: "/c" }, "/home/u");
-  expect(p.voiceAuth).toBe("/x/.pew2/voice-auth.json");
-  expect(p.voicePrefs).toBe("/x/.pew2/voice-prefs.json");
-  expect(p.ggAuth).toBe("/home/u/.gg/auth.json");
-  expect(p.codexAuth).toBe("/c/auth.json");
+  // Built with the platform's separator (Windows: backslashes).
+  expect(p.voiceAuth).toBe(join("/x/.pew2", "voice-auth.json"));
+  expect(p.voicePrefs).toBe(join("/x/.pew2", "voice-prefs.json"));
+  expect(p.ggAuth).toBe(join("/home/u", ".gg", "auth.json"));
+  expect(p.codexAuth).toBe(join("/c", "auth.json"));
 });
