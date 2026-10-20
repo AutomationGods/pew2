@@ -16,7 +16,7 @@ import { LaunchFx, type LaunchFxValues } from "./LaunchFx";
 import type { FxScene } from "../launchFx";
 import { sounds } from "./sounds";
 import { ONBOARDING_SOUNDS, type SoundName } from "../soundsPolicy";
-import { Linking, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -46,8 +46,6 @@ import { AlertsScene, InstallScene, VoiceScene, useSceneClock } from "./Onboardi
 import { CallingFx } from "./LaunchFx";
 import { Handshake } from "./Handshake";
 import { QrScanner } from "./QrScanner";
-import { Sheet } from "./Sheet";
-import { Glass } from "./Glass";
 import { usePairing } from "./usePairing";
 import type { Pairing } from "../pairingLink";
 
@@ -84,7 +82,6 @@ export function Onboarding({ step, repair, onNext, onBack, onPaired, onDevGo }: 
     // Once, on the dev flag.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [devScan]);
-  const [pasting, setPasting] = useState(false);
 
   // The last step: hold Pew to start, the goal launch's charge and blast.
   const plain = usePlainLaunch();
@@ -246,7 +243,7 @@ export function Onboarding({ step, repair, onNext, onBack, onPaired, onDevGo }: 
 
       <View style={styles.words}>
         <Dissolve kind="swap" dissolveKey={step} style={styles.page}>
-          <Page step={step} onNext={onNext} part="words" pairing={pairing} onPaste={() => setPasting(true)} />
+          <Page step={step} onNext={onNext} part="words" pairing={pairing} />
         </Dissolve>
       </View>
 
@@ -255,7 +252,7 @@ export function Onboarding({ step, repair, onNext, onBack, onPaired, onDevGo }: 
           on the next. */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + theme.space(2) }]}>
         <Dissolve kind="swap" dissolveKey={step} style={styles.footerInner}>
-          <Page step={step} onNext={onNext} part="actions" pairing={pairing} onPaste={() => setPasting(true)} />
+          <Page step={step} onNext={onNext} part="actions" pairing={pairing} />
         </Dissolve>
         <Legal />
       </View>
@@ -304,7 +301,6 @@ export function Onboarding({ step, repair, onNext, onBack, onPaired, onDevGo }: 
           })}
         </View>
       ) : null}
-      <PasteSheet visible={pasting} pairing={pairing} onClose={() => setPasting(false)} />
       <QrScanner
         visible={pairing.scanning}
         error={pairing.scanError}
@@ -342,7 +338,7 @@ function Dot({ on, done }: { on: boolean; done: boolean }) {
  */
 type PairingFlow = ReturnType<typeof usePairing>;
 
-function Page({ step, onNext, part, pairing, onPaste }: { step: Step; onNext: () => void; part: "words" | "actions"; pairing: PairingFlow; onPaste: () => void }) {
+function Page({ step, onNext, part, pairing }: { step: Step; onNext: () => void; part: "words" | "actions"; pairing: PairingFlow }) {
   switch (step) {
     case "welcome":
       return part === "words" ? (
@@ -390,7 +386,6 @@ function Page({ step, onNext, part, pairing, onPaste }: { step: Step; onNext: ()
         </View>
       ) : (
         <Actions>
-          <StageButton kind="secondary" color={CORAL} label="Paste a link" onPress={onPaste} />
           <StageButton
             color={CORAL}
             label={pairing.phase === "paired" ? "Paired" : "Scan QR code"}
@@ -401,42 +396,6 @@ function Page({ step, onNext, part, pairing, onPaste }: { step: Step; onNext: ()
         </Actions>
       );
   }
-}
-
-/** The pasted pairing link, in a sheet: the scan is the main way. */
-function PasteSheet({ visible, pairing, onClose }: { visible: boolean; pairing: PairingFlow; onClose: () => void }) {
-  return (
-    <Sheet visible={visible} title="Pairing link" onClose={onClose} keepKeyboard>
-      <View style={styles.paste}>
-        <Glass radius={theme.radius.md} tier="control" style={[styles.inputShell, pairing.error ? styles.inputError : null]}>
-          <TextInput
-            style={styles.input}
-            value={pairing.draft}
-            onChangeText={pairing.editDraft}
-            placeholder="ws://192.168.0.10:8787/?token=…"
-            placeholderTextColor={theme.color.placeholder}
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="off"
-            spellCheck={false}
-            keyboardType="url"
-            returnKeyType="go"
-            editable={!pairing.busy}
-            onSubmitEditing={() => void pairing.submit().then((ok) => ok && onClose())}
-            accessibilityLabel="Pairing link"
-          />
-        </Glass>
-        {pairing.error ? <Text style={[text.subline, styles.failed]}>{pairing.error}</Text> : null}
-        <StageButton
-          color={CORAL}
-          disabled={pairing.busy || !pairing.draft.trim()}
-          label={pairing.busy ? "Connecting…" : "Connect"}
-          onPress={() => void pairing.submit().then((ok) => ok && onClose())}
-        />
-        <Text style={text.subline}>This link is a password. Keep it safe.</Text>
-      </View>
-    </Sheet>
-  );
 }
 
 /**
@@ -623,8 +582,4 @@ const styles = StyleSheet.create({
   commandText: { flex: 1 },
   copyButton: { minHeight: theme.size.touch, minWidth: theme.size.touch, alignItems: "center", justifyContent: "center" },
   failed: { color: theme.color.danger },
-  paste: { gap: theme.space(3), paddingBottom: theme.space(2) },
-  inputShell: { minHeight: STAGE_BUTTON_HEIGHT },
-  inputError: { borderColor: theme.color.danger },
-  input: { minHeight: STAGE_BUTTON_HEIGHT, color: theme.color.text, fontSize: theme.font.body, paddingHorizontal: theme.space(4) },
 });

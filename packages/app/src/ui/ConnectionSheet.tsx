@@ -81,7 +81,7 @@ export function ConnectionSheet({ visible, machineLabel, machineRemote, status, 
       </View>
       <Pressable accessibilityRole="button" accessibilityLabel={`Forget pairing with ${machineLabel}`} style={styles.action} onPress={() => {
         haptics.warned();
-        Alert.alert("Forget this computer?", "You'll need to scan or paste its pairing link to connect again.", [
+        Alert.alert("Forget this computer?", "You'll need to scan its code to connect again.", [
           { text: "Cancel", style: "cancel" },
           { text: "Forget", style: "destructive", onPress: () => { haptics.warned(); onUnpair(); } },
         ]);

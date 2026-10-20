@@ -1,6 +1,8 @@
 /**
- * Pairing, as state: check a scanned or pasted link, prove it with a real
- * handshake, then hand the pairing over. The screen only draws it.
+ * Pairing, as state: check a scanned code, prove it with a real handshake,
+ * then hand the pairing over. The screen only draws it. Scanning is the only
+ * way in: a pasted link put the pairing secret in the clipboard and in
+ * screenshots of the computer it was copied from.
  *
  * Shape is not proof: a retired token parses exactly like a live one, so a
  * link is stored only after `verifyPairing` completes a handshake (a 401 from
@@ -17,7 +19,6 @@ import type { HandshakePhase } from "./Handshake";
 const PAIRED_HOLD_MS = 900;
 
 export function usePairing(onPaired: (pairing: Pairing) => void) {
-  const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -44,18 +45,6 @@ export function usePairing(onPaired: (pairing: Pairing) => void) {
     return null;
   };
 
-  /** The pasted link. */
-  const submit = async (): Promise<boolean> => {
-    setBusy(true);
-    haptics.sent();
-    const failure = await accept(draft);
-    if (failure) haptics.failed();
-    else haptics.finished();
-    setError(failure);
-    if (failure) setBusy(false);
-    return failure === null;
-  };
-
   /** A scanned code: stays on the camera with the reason if it fails. */
   const scanned = async (value: string) => {
     setBusy(true);
@@ -68,13 +57,6 @@ export function usePairing(onPaired: (pairing: Pairing) => void) {
     }
     haptics.failed();
     setScanError(failure);
-    setDraft(value);
-  };
-
-  const editDraft = (next: string) => {
-    setDraft(next);
-    if (error) setError(null);
-    if (phase === "failed") setPhase("waiting");
   };
 
   const openScanner = () => {
@@ -88,5 +70,5 @@ export function usePairing(onPaired: (pairing: Pairing) => void) {
     setScanError(null);
   };
 
-  return { draft, editDraft, error, scanError, scanning, busy, phase, machine, submit, scanned, openScanner, closeScanner };
+  return { error, scanError, scanning, busy, phase, machine, scanned, openScanner, closeScanner };
 }

@@ -6,8 +6,8 @@
  * publish. Re-displaying a received secret would only add shoulder-surf and
  * screenshot exposure for no gain.
  *
- * Camera permission is genuinely optional here: pasting a link works just as
- * well, so a refusal is offered a way forward rather than treated as an error.
+ * Scanning is the only way to pair, so a refused camera is offered the way back
+ * (Settings) rather than treated as an error.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Linking, Modal, Pressable, StyleSheet, Text, View } from "react-native";
@@ -186,7 +186,7 @@ export function QrScanner({ visible, onClose, onScan, error, busy }: Props) {
                   : null)}
               >
                 {permission?.canAskAgain === false
-                  ? "Turn it on in Settings, or paste the link."
+                  ? "Turn it on in Settings."
                   : "Only used to read the code."}
               </Text>
               {permission?.canAskAgain !== false ? (
@@ -204,19 +204,6 @@ export function QrScanner({ visible, onClose, onScan, error, busy }: Props) {
                   </Pressable>
                 </Glass>
               ) : null}
-              <Glass radius={theme.radius.lg} interactive>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Paste the link instead"
-                  onPress={() => {
-                    haptics.tap();
-                    close();
-                  }}
-                  style={({ pressed }) => [styles.secondary, pressed && styles.pressed]}
-                >
-                  <Text style={styles.secondaryText}>Paste a link</Text>
-                </Pressable>
-              </Glass>
             </View>
           )}
           {/* Holds the bottom inset, so the box sits a little above centre. */}
@@ -337,11 +324,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.space(8),
   },
   allowText: { color: theme.color.text, fontSize: 16, fontWeight: "700" },
-  secondary: {
-    minHeight: theme.size.touch,
-    justifyContent: "center",
-    paddingVertical: theme.space(2),
-    paddingHorizontal: theme.space(8),
-  },
-  secondaryText: { color: theme.color.text, fontSize: 15, fontWeight: "600" },
 });
