@@ -1454,12 +1454,17 @@ export function Pew2({
                         : undefined
                     }
                     color={active?.color}
+                    // Online, the wait is for the computer's answer (`heard`),
+                    // not for the socket: it opens a second before anything
+                    // arrives, and home revealed an empty list in that second.
+                    // Capped, so an agent that never answers cannot hold it.
                     settled={
                       homeWaited &&
                       (online
-                        ? !daemon.loadingSessions
+                        ? daemon.heard || offlineWaited
                         : everOnline || offlineWaited || Boolean(daemon.fatal))
                     }
+                    heard={daemon.heard}
                     top={threadTop}
                     bottom={insets.bottom + theme.space(2)}
                     onOpen={openSession}

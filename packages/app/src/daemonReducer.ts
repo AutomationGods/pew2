@@ -43,6 +43,8 @@ export function reduceMessage(prev: State, message: any, scope: MessageScope): S
         // update it describes.
         update: message.update,
         loadingSessions: pendingCapabilities.current.size > 0,
+        // No agent to wait on (none available, or all asked already).
+        heard: prev.heard || pendingCapabilities.current.size === 0,
       };
 
     case "provider.capabilities": {
@@ -63,6 +65,7 @@ export function reduceMessage(prev: State, message: any, scope: MessageScope): S
           ? { ...prev.projects, [message.providerId]: message.projects ?? [] }
           : prev.projects,
         loadingSessions: pendingCapabilities.current.size > 0,
+        heard: prev.heard || pendingCapabilities.current.size === 0,
       };
     }
 

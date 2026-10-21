@@ -101,23 +101,22 @@ export function homeMessage(p: {
 }
 
 /**
- * How many cards home lays itself out for.
+ * How many cards home lays itself out for, which is what places Pew.
  *
- * Only an answer from the computer may say "none": until it has given one,
- * home keeps the count it showed last time, so a slow or failed connection
- * never collapses the layout to the empty state and back.
+ * Never fewer than last launch showed. Every way the list can look short while
+ * the app starts (not connected yet, connected but not answered, one agent's
+ * list in and the rest still coming) is temporary, and laying out for it moved
+ * Pew to the middle of the screen and back up a moment later. Fewer cards than
+ * that just leave the space under them empty for this launch; the next one is
+ * laid out for the new count (`parseHomeCards`). More cards than ever before is
+ * the one change that can move him, and it is a real one.
  */
 export function homeLayoutCards(p: {
   /** Cards known right now, already capped at {@link HOME_CARDS}. */
   known: number;
-  /** The computer has answered with its session list since launch. */
-  answered: boolean;
   /** The count home showed last time (`parseHomeCards`), if any. */
   remembered: number | undefined;
 }): number {
-  if (p.answered) return p.known;
-  // The larger of the two: each agent's list lands on its own, so the first
-  // to arrive can be shorter than what home is about to show.
   return Math.max(p.known, p.remembered ?? 0);
 }
 

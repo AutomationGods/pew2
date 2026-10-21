@@ -92,6 +92,12 @@ export interface HomeDashboardProps {
   color?: string;
   /** False until the first wait is over: nothing below Pew is shown before it, so nothing arrives out of order. */
   settled: boolean;
+  /**
+   * The computer has actually answered with its agents and their sessions
+   * (`State.heard`). Only then may home say there are none, or remember a
+   * count for the next launch: "online" alone is just a socket that opened.
+   */
+  heard: boolean;
   top: number;
   bottom: number;
   onOpen: (id: string) => void;
@@ -109,6 +115,7 @@ function HomeDashboardView({
   agents,
   color,
   settled,
+  heard,
   top,
   bottom,
   onOpen,
@@ -252,8 +259,17 @@ function HomeDashboardView({
   // for that moment and fade back in. What was shown stays until it changes.
   const introduced = introAt !== undefined;
   const cards = introduced ? home.cards : [];
+  // "No sessions yet" only from the computer's answer. Before it, an empty
+  // list is just one that has not arrived, and claiming it showed the empty
+  // state for a second on every launch over the relay.
   const message = introduced
-    ? homeMessage({ fatal, link, agents, empty: home.empty, hasCards: cards.length > 0 })
+    ? homeMessage({
+        fatal,
+        link,
+        agents,
+        empty: home.empty && heard,
+        hasCards: cards.length > 0,
+      })
     : undefined;
   // The toy's line, when home has nothing more important to say.
   // Not with reduced motion: there's no spin then, so no invitation to one.
@@ -279,22 +295,22 @@ function HomeDashboardView({
       setRecalled(true);
     });
   }, []);
-  // Settled while online is the computer's own answer. Settled offline (the
-  // wait ran out) is not, and saving its empty list made the next launch lay
-  // out for no cards and then jump when they arrived.
-  const answered = settled && link === "online";
+  // Remembered only from the computer's own answer. `settled` was used here
+  // and turns true as soon as the socket opens, before anything has arrived,
+  // so an empty list was saved and the next launch laid out for none.
   useEffect(() => {
-    if (answered) void saveHomeCards(home.cards.length);
-  }, [answered, home.cards.length]);
-  const willShow = homeLayoutCards({ known: home.cards.length, answered, remembered });
-  // Pew appears once his place is known: the remembered count (read at once)
-  // or, the first time ever, the settled list.
-  // And never before his colour is known: a first launch (right after
-  // pairing) has no agent yet, and Pew used to appear grey and asleep, then
-  // repaint in the agent's colour and wake when the list landed.
+    if (heard) void saveHomeCards(home.cards.length);
+  }, [heard, home.cards.length]);
+  const willShow = homeLayoutCards({ known: home.cards.length, remembered });
+  // Pew appears once his place is known, and only after the remembered count
+  // has been read (a count read late would move him): from that count, or the
+  // first time ever, from the answer itself, or, with no answer coming, from
+  // what there is. And never before his colour is known: a first launch (right
+  // after pairing) has no agent yet, and Pew used to appear grey and asleep,
+  // then repaint in the agent's colour and wake when the list landed.
   const decided =
-    settled ||
-    ((home.cards.length > 0 || (recalled && remembered !== undefined)) && color !== undefined);
+    recalled &&
+    (heard || (settled && link !== "online") || (remembered !== undefined && color !== undefined));
   const centred = willShow === 0;
   const [painted, setPainted] = useState(false);
   const onPainted = useCallback(() => {
@@ -318,6 +334,21 @@ function HomeDashboardView({
     label: LABEL_SPACE,
     chrome: CHROME,
   });
+  // What home has to say, when it says anything. Under Pew when there is no
+  // card space; otherwise in the card space, where it takes up room that is
+  // already held and so cannot move him (under him, its second line did).
+  const messageView = message ? (
+    <Dissolve kind="swap" dissolveKey={message.title} style={styles.message}>
+      <Text style={text.headline} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
+        {message.title}
+      </Text>
+      {message.line && (
+        <Text style={text.subline} numberOfLines={2}>
+          {message.line}
+        </Text>
+      )}
+    </Dissolve>
+  ) : null;
   return (
     <ScrollView
       // Only once the sessions overflow: otherwise there's nothing to scroll,
@@ -376,22 +407,8 @@ function HomeDashboardView({
                 {toyLine}
               </Led>
             </Dissolve>
-          ) : message ? (
-            <Dissolve kind="swap" dissolveKey={message.title} style={styles.message}>
-              <Text
-                style={text.headline}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.5}
-              >
-                {message.title}
-              </Text>
-              {message.line && (
-                <Text style={text.subline} numberOfLines={2}>
-                  {message.line}
-                </Text>
-              )}
-            </Dissolve>
+          ) : message && centred ? (
+            messageView
           ) : null}
         </View>
       </View>
@@ -415,6 +432,9 @@ function HomeDashboardView({
           their arrival never pushes Pew. */}
       {!centred && (
         <View style={[styles.section, { minHeight: sectionHeight }]}>
+          {cards.length === 0 && messageView ? (
+            <View style={styles.sectionMessage}>{messageView}</View>
+          ) : null}
           {cards.length > 0 && (
             <>
               <Dissolve kind="row" startAt={(introAt ?? 0) + LABEL_AFTER_MS} lateSettled={false}>
@@ -534,6 +554,7 @@ const styles = StyleSheet.create({
   under: { alignSelf: "stretch", alignItems: "center" },
 
   section: { gap: theme.space(3) },
+  sectionMessage: { flexGrow: 1, justifyContent: "center", alignItems: "center" },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: ROW_GAP },
   // Two per row: half the width less half the gap.
   cell: { width: `48.6%` },

@@ -98,16 +98,21 @@ describe("home while the connection comes and goes", () => {
 });
 
 describe("homeLayoutCards", () => {
-  it("lays out for last time's cards until the computer answers", () => {
-    expect(homeLayoutCards({ known: 0, answered: false, remembered: 6 })).toBe(6);
+  it("lays out for last time's cards before anything has arrived", () => {
+    expect(homeLayoutCards({ known: 0, remembered: 6 })).toBe(6);
   });
 
-  it("never drops to the empty layout because one agent's list landed first", () => {
-    expect(homeLayoutCards({ known: 2, answered: false, remembered: 6 })).toBe(6);
+  it("never drops to a smaller layout because one agent's list landed first", () => {
+    expect(homeLayoutCards({ known: 2, remembered: 6 })).toBe(6);
   });
 
-  it("only the computer's answer can say none", () => {
-    expect(homeLayoutCards({ known: 0, answered: true, remembered: 6 })).toBe(0);
-    expect(homeLayoutCards({ known: 0, answered: false, remembered: undefined })).toBe(0);
+  it("does not shrink during a launch even when the answer is fewer", () => {
+    // Fewer cards leave space under them; the next launch is laid out for it.
+    expect(homeLayoutCards({ known: 0, remembered: 6 })).toBe(6);
+  });
+
+  it("grows for more cards than last time, and starts empty on a first launch", () => {
+    expect(homeLayoutCards({ known: 4, remembered: 2 })).toBe(4);
+    expect(homeLayoutCards({ known: 0, remembered: undefined })).toBe(0);
   });
 });
