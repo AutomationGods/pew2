@@ -26,7 +26,13 @@
  * name and the agent's opening line. Everything else in pew2 stays sealed; this
  * one string does not, and that is the price of an instant notification.
  */
-import { endsTurn, noticeBody, noticeTitle, type NoticeKind, type NoticeOrigin } from "@pew2/protocol";
+import {
+  endsTurn,
+  noticeBody,
+  noticeTitle,
+  type NoticeKind,
+  type NoticeOrigin,
+} from "@pew2/protocol";
 
 /** Expo's push endpoint. Needs no credentials of ours; EAS holds those. */
 const PUSH_URL = "https://exp.host/--/api/v2/push/send";
@@ -154,7 +160,10 @@ export class PushRegistry {
         }
       }
       for (const [deviceId, target] of Object.entries(snapshot.voip)) {
-        if (VOIP_TOKEN_SHAPE.test(target.token) && (target.env === "sandbox" || target.env === "production")) {
+        if (
+          VOIP_TOKEN_SHAPE.test(target.token) &&
+          (target.env === "sandbox" || target.env === "production")
+        ) {
           this.registerVoip(deviceId, target.token, target.env);
         }
       }
@@ -423,7 +432,11 @@ export function relayOrigin(url: string | undefined): string | undefined {
  *
  * @returns the devices rung by VoIP, for tests and logs.
  */
-export async function pushVoiceRing(registry: PushRegistry, ring: VoiceRingPush, options: RingOptions = {}): Promise<string[]> {
+export async function pushVoiceRing(
+  registry: PushRegistry,
+  ring: VoiceRingPush,
+  options: RingOptions = {},
+): Promise<string[]> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const ringId = options.ringId ?? `ring_${Date.now().toString(36)}`;
   const rung: string[] = [];
@@ -440,9 +453,11 @@ export async function pushVoiceRing(registry: PushRegistry, ring: VoiceRingPush,
   }
   const banners = registry.entries().filter(([deviceId]) => !rung.includes(deviceId));
   if (!options.relay) options.log?.("[voice] no relay: no call, banner only");
-  else if (registry.voipList().length === 0) options.log?.("[voice] no phone registered for calls: banner only");
+  else if (registry.voipList().length === 0)
+    options.log?.("[voice] no phone registered for calls: banner only");
   if (banners.length > 0) options.log?.(`[voice] banner to ${banners.length} phone(s)`);
-  if (rung.length === 0 && banners.length === 0) options.log?.("[voice] nothing to ring: no phone registered for alerts");
+  if (rung.length === 0 && banners.length === 0)
+    options.log?.("[voice] nothing to ring: no phone registered for alerts");
   if (banners.length > 0) {
     const messages = voiceRingMessages(registry, ring).filter((message) =>
       banners.some(([, target]) => target.token === message.to),

@@ -4,7 +4,12 @@
  * Moved out of `index.ts` unchanged; `index.ts` re-exports the public ones.
  */
 import type { LoadedProvider } from "../providers/registry.js";
-import type { AcpSessionHandle, AgentSession, AvailableCommand, ConfigOption } from "../acp/connect.js";
+import type {
+  AcpSessionHandle,
+  AgentSession,
+  AvailableCommand,
+  ConfigOption,
+} from "../acp/connect.js";
 import type { SessionLog } from "../session/log.js";
 import { homedir as __homedir } from "node:os";
 import { join as __join } from "node:path";
@@ -210,7 +215,9 @@ export interface ProviderCapabilities {
 }
 
 /** `_meta.gg` as the booleans the app reads; undefined when the agent advertised none. */
-export function readExtensions(gg: Record<string, unknown> | undefined): wire.ProviderExtensions | undefined {
+export function readExtensions(
+  gg: Record<string, unknown> | undefined,
+): wire.ProviderExtensions | undefined {
   if (!gg) return undefined;
   const keys = ["queue", "askUser", "goals", "planReview", "autopilot", "checklist"] as const;
   const out: wire.ProviderExtensions = {};
@@ -219,7 +226,14 @@ export function readExtensions(gg: Record<string, unknown> | undefined): wire.Pr
 }
 
 export const AUTOPILOT_PHASES = new Set([
-  "review_start", "prompted", "done", "human", "capped", "ignored", "plan_accepted", "error",
+  "review_start",
+  "prompted",
+  "done",
+  "human",
+  "capped",
+  "ignored",
+  "plan_accepted",
+  "error",
 ]);
 
 /**
@@ -238,8 +252,7 @@ export function withStoredPrefs(
   return options.map((option) => {
     const preferred = prefs[option.id];
     if (preferred === undefined) return option;
-    const offered =
-      !option.options || option.options.some((choice) => choice.value === preferred);
+    const offered = !option.options || option.options.some((choice) => choice.value === preferred);
     return offered ? { ...option, currentValue: preferred } : option;
   });
 }

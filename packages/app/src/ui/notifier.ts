@@ -70,7 +70,9 @@ export async function clearConversationNotices(sessionId: string): Promise<void>
   try {
     const shown = await Notifications.getPresentedNotificationsAsync();
     const mine = shown.filter((n) => n.request.content.data?.sessionId === sessionId);
-    await Promise.all(mine.map((n) => Notifications.dismissNotificationAsync(n.request.identifier)));
+    await Promise.all(
+      mine.map((n) => Notifications.dismissNotificationAsync(n.request.identifier)),
+    );
   } catch {
     // Nothing to do about it.
   }
@@ -130,14 +132,14 @@ function rememberAnnounced(sessionId: string): void {
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const data = notification.request.content.data as
-      | { sessionId?: unknown; local?: unknown; kind?: unknown }
-      | undefined;
+      { sessionId?: unknown; local?: unknown; kind?: unknown } | undefined;
     const suppressed = duplicatePush({
       local: data?.local === true,
       sessionId: typeof data?.sessionId === "string" ? data.sessionId : undefined,
       kind: kindOf(data?.kind),
       openSessionId: onScreenSessionId,
-      announcedAt: typeof data?.sessionId === "string" ? announcedAt.get(data.sessionId) : undefined,
+      announcedAt:
+        typeof data?.sessionId === "string" ? announcedAt.get(data.sessionId) : undefined,
       now: Date.now(),
       windowMs: DUPLICATE_WINDOW_MS,
     });
@@ -248,7 +250,11 @@ export async function notificationsAllowed(): Promise<boolean> {
 export async function notificationStatus(): Promise<AlertStatus> {
   try {
     const read = await Notifications.getPermissionsAsync();
-    return alertStatus({ granted: read.granted, canAskAgain: read.canAskAgain, status: read.status });
+    return alertStatus({
+      granted: read.granted,
+      canAskAgain: read.canAskAgain,
+      status: read.status,
+    });
   } catch {
     return "undetermined";
   }

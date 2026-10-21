@@ -45,7 +45,12 @@ export const styles = StyleSheet.create({
     zIndex: 3,
   },
   navFade: { zIndex: 2 },
-  navAction: { width: theme.size.control, flexShrink: 0, flexDirection: "row", justifyContent: "flex-end" },
+  navAction: {
+    width: theme.size.control,
+    flexShrink: 0,
+    flexDirection: "row",
+    justifyContent: "flex-end",
+  },
   // Two controls on the right in a goal; the menu side takes the same width so
   // the title stays centred on the screen.
   navLeadGoal: { justifyContent: "flex-start" },
@@ -75,7 +80,6 @@ export const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: theme.color.bg,
   },
-
 
   greetingLift: { flex: 1 },
   // Full width: HomeGreeting puts its own text on the gutter, and its row of

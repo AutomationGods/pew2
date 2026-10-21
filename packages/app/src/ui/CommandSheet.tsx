@@ -41,7 +41,13 @@ function CommandSheetView({ visible, commands, onSelect, onClose }: CommandSheet
   const scrolls = shown.length > SHEET_VISIBLE_ROWS;
 
   return (
-    <Sheet visible={visible} label="Commands" title="Slash commands" onClose={onClose} dismissLabel="Close commands">
+    <Sheet
+      visible={visible}
+      label="Commands"
+      title="Slash commands"
+      onClose={onClose}
+      dismissLabel="Close commands"
+    >
       <View style={styles.filter}>
         <Led>/</Led>
         <TextInput
@@ -97,7 +103,12 @@ const styles = StyleSheet.create({
     minHeight: theme.size.touch,
     marginBottom: theme.space(2),
   },
-  input: { flex: 1, color: theme.color.text, fontSize: theme.font.body, paddingVertical: theme.space(2) },
+  input: {
+    flex: 1,
+    color: theme.color.text,
+    fontSize: theme.font.body,
+    paddingVertical: theme.space(2),
+  },
   row: { height: ROW_HEIGHT, justifyContent: "center" },
   pressed: { opacity: 0.6 },
 });

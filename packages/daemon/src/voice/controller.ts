@@ -8,14 +8,27 @@ import { dirname } from "node:path";
 import { wire } from "@pew2/protocol";
 import { writeFileAtomic } from "../atomic-file.js";
 import { resolveCredential, type FetchLike, type VoicePaths } from "./credentials.js";
-import { BoardThrottle, buildBoard, mark, newMemory, type BoardLine, type BoardMemory, type BoardSource } from "./board.js";
+import {
+  BoardThrottle,
+  buildBoard,
+  mark,
+  newMemory,
+  type BoardLine,
+  type BoardMemory,
+  type BoardSource,
+} from "./board.js";
 import { buildInbox, inboxSignature, ringWho, summariseInbox, type InboxSource } from "./inbox.js";
 import { DeviceLogin } from "./login.js";
 import { turnNote } from "./notes.js";
 import { CALLBACK_ANSWER_MS, MEMORY_ACTIONS, callbackLines } from "./memory.js";
 import { HOME_THREAD, threadLines, type ThreadLine, type ThreadStore } from "./threads.js";
 import * as policy from "./policy.js";
-import { buildInstructions, buildSessionConfig, mintClientSecret, type SessionStatus } from "./session.js";
+import {
+  buildInstructions,
+  buildSessionConfig,
+  mintClientSecret,
+  type SessionStatus,
+} from "./session.js";
 import type { VoiceRingPush } from "../push.js";
 
 export interface VoiceHost {
@@ -74,7 +87,10 @@ export class VoiceController {
    * id, resolved to its conversation key at the end, so a chat that only got
    * its conversation during the call still counts), or home.
    */
-  private readonly callThreads = new Map<string, { sessionId?: string; key?: string; label?: string }>();
+  private readonly callThreads = new Map<
+    string,
+    { sessionId?: string; key?: string; label?: string }
+  >();
   /** The thread a pending callback continues. */
   private callbackThread?: { sessionId?: string; key?: string; label?: string };
   /**
@@ -163,7 +179,9 @@ export class VoiceController {
   arm(sessionId: string, on: boolean): void {
     if (on) {
       this.armed.set(sessionId, this.now() + ARM_MS);
-      const waiting = this.items.filter((item) => item.sessionId === sessionId).map((item) => item.id);
+      const waiting = this.items
+        .filter((item) => item.sessionId === sessionId)
+        .map((item) => item.id);
       this.state = policy.markSeen(this.state, waiting);
     } else if (!this.armed.delete(sessionId)) {
       return;
@@ -199,7 +217,10 @@ export class VoiceController {
   }
 
   async status(requestId?: string): Promise<wire.VoiceStatus> {
-    const found = await resolveCredential(this.options.paths, { now: this.now(), fetchImpl: this.fetchImpl });
+    const found = await resolveCredential(this.options.paths, {
+      now: this.now(),
+      fetchImpl: this.fetchImpl,
+    });
     const pending = this.login.current;
     const base = {
       t: "voice.status" as const,
@@ -216,14 +237,22 @@ export class VoiceController {
         ...(found.credential.account ? { account: found.credential.account } : {}),
       };
     }
-    return { ...base, available: false, reason: this.login.failure ?? found.reason, canLogin: true };
+    return {
+      ...base,
+      available: false,
+      reason: this.login.failure ?? found.reason,
+      canLogin: true,
+    };
   }
 
   async broadcastStatus(): Promise<void> {
     this.host.broadcast(await this.status());
   }
 
-  async loginAction(action: wire.VoiceLogin["action"], requestId: string): Promise<wire.VoiceStatus> {
+  async loginAction(
+    action: wire.VoiceLogin["action"],
+    requestId: string,
+  ): Promise<wire.VoiceStatus> {
     if (action === "start") await this.login.start();
     else if (action === "cancel") this.login.cancel();
     else await this.login.logout();
@@ -235,10 +264,14 @@ export class VoiceController {
     const next = policy.withDefaults({ ...this.prefs, ...partial });
     // Switching ringing on, or widening it to every chat, never rings about
     // what is already waiting: they are holding the phone and can see it.
-    const ringingNow = (prefs: policy.Prefs) => prefs.mode === "onthego" && !policy.ringExpired(prefs, this.now());
+    const ringingNow = (prefs: policy.Prefs) =>
+      prefs.mode === "onthego" && !policy.ringExpired(prefs, this.now());
     const widened = next.ringScope === "all" && this.prefs.ringScope !== "all";
     if ((ringingNow(next) && !ringingNow(this.prefs)) || widened) {
-      this.state = policy.markSeen(this.state, this.items.map((item) => item.id));
+      this.state = policy.markSeen(
+        this.state,
+        this.items.map((item) => item.id),
+      );
     }
     this.prefs = next;
     await mkdir(dirname(this.options.paths.voicePrefs), { recursive: true, mode: 0o700 });
@@ -257,13 +290,20 @@ export class VoiceController {
     place?: { folder: string; agentName?: string },
   ): Promise<wire.VoiceSession> {
     this.inboxChanged();
-    const found = await resolveCredential(this.options.paths, { now: this.now(), fetchImpl: this.fetchImpl });
+    const found = await resolveCredential(this.options.paths, {
+      now: this.now(),
+      fetchImpl: this.fetchImpl,
+    });
     if (!found.ok) return { t: "voice.session", requestId, ok: false, error: found.reason };
     const items = this.items;
-    const known = context && statuses.some((status) => status.sessionId === context) ? context : undefined;
-    const callback = this.callbackRungAt !== undefined && this.now() - this.callbackRungAt <= CALLBACK_ANSWER_MS && this.callbackAskedAt !== undefined
-      ? { askedAt: this.callbackAskedAt }
-      : undefined;
+    const known =
+      context && statuses.some((status) => status.sessionId === context) ? context : undefined;
+    const callback =
+      this.callbackRungAt !== undefined &&
+      this.now() - this.callbackRungAt <= CALLBACK_ANSWER_MS &&
+      this.callbackAskedAt !== undefined
+        ? { askedAt: this.callbackAskedAt }
+        : undefined;
     this.callbackRungAt = undefined;
     // The thread this call continues: the callback's, else the chat they
     // called from, else home. A chat with no conversation yet (new, nothing
@@ -277,9 +317,17 @@ export class VoiceController {
           : { key: HOME_THREAD };
     if (callback) this.callbackThread = undefined;
     const earlier = thread.key ? await this.options.threads?.get(thread.key) : undefined;
-    const about = thread.key && thread.key !== HOME_THREAD ? `the ${earlier?.label ?? thread.label ?? "same"} chat` : undefined;
-    const remembered = [...callbackLines(this.now(), callback), ...threadLines(earlier, this.now(), about)];
-    const config = buildSessionConfig(buildInstructions(items, statuses, focus, this.now(), known, projects, place, remembered));
+    const about =
+      thread.key && thread.key !== HOME_THREAD
+        ? `the ${earlier?.label ?? thread.label ?? "same"} chat`
+        : undefined;
+    const remembered = [
+      ...callbackLines(this.now(), callback),
+      ...threadLines(earlier, this.now(), about),
+    ];
+    const config = buildSessionConfig(
+      buildInstructions(items, statuses, focus, this.now(), known, projects, place, remembered),
+    );
     const minted = await mintClientSecret(found.credential.token, config, this.fetchImpl);
     if (!minted.ok) return { t: "voice.session", requestId, ok: false, error: minted.error };
     const callId = `call_${this.now().toString(36)}_${++this.callCounter}`;
@@ -314,7 +362,11 @@ export class VoiceController {
    * Run a tool call once per id: a repeat gets the first run's answer (even
    * one still running). Answers are dropped with their call.
    */
-  runOnce(callId: string, toolCallId: string, run: () => Promise<{ output: string; hangUp?: boolean }>): Promise<{ output: string; hangUp?: boolean }> {
+  runOnce(
+    callId: string,
+    toolCallId: string,
+    run: () => Promise<{ output: string; hangUp?: boolean }>,
+  ): Promise<{ output: string; hangUp?: boolean }> {
     const key = `${callId}\u0000${toolCallId}`;
     const existing = this.answered.get(key);
     if (existing) return existing;
@@ -332,11 +384,17 @@ export class VoiceController {
   ): Promise<void> {
     const store = this.options.threads;
     if (!store) return;
-    const resolved = thread.sessionId ? { ...thread, ...this.host.threadFor?.(thread.sessionId) } : thread;
+    const resolved = thread.sessionId
+      ? { ...thread, ...this.host.threadFor?.(thread.sessionId) }
+      : thread;
     if (resolved.key) {
       const lines: ThreadLine[] = [
         ...(transcript ?? []).map((line) => ({ role: line.role, text: line.text })),
-        ...actions.map((action) => ({ role: "assistant" as const, text: action.text, action: true as const })),
+        ...actions.map((action) => ({
+          role: "assistant" as const,
+          text: action.text,
+          action: true as const,
+        })),
       ];
       await store.append(resolved.key, lines, resolved.label);
     }
@@ -377,15 +435,20 @@ export class VoiceController {
     this.actions.set(callId, list.slice(-MEMORY_ACTIONS));
   }
 
-
   /** A call (or a ring) ended. Unknown ids still count: a missed ring was never minted. */
-  endCall(callId: string, reason?: wire.VoiceEnd["reason"], transcript?: wire.VoiceEnd["transcript"]): void {
+  endCall(
+    callId: string,
+    reason?: wire.VoiceEnd["reason"],
+    transcript?: wire.VoiceEnd["transcript"],
+  ): void {
     // Only a call this daemon minted adds to a thread: a declined ring has no transcript.
     const thread = this.callThreads.get(callId);
-    if (this.calls.has(callId) && thread) void this.saveCall(thread, transcript, this.actions.get(callId) ?? []);
+    if (this.calls.has(callId) && thread)
+      void this.saveCall(thread, transcript, this.actions.get(callId) ?? []);
     this.callThreads.delete(callId);
     this.actions.delete(callId);
-    for (const key of this.answered.keys()) if (key.startsWith(`${callId}\u0000`)) this.answered.delete(key);
+    for (const key of this.answered.keys())
+      if (key.startsWith(`${callId}\u0000`)) this.answered.delete(key);
     this.calls.delete(callId);
     if (this.board?.callId === callId) this.closeBoard();
     this.state = policy.callEnded(this.state, this.now(), reason);
@@ -428,7 +491,9 @@ export class VoiceController {
     // Idle before it ever started (the message is still on its way) is not done.
     if (!wait.started && !needsThem && this.now() - wait.since < WAIT_START_MS) return;
     this.waitingOn = undefined;
-    this.log(`[voice] ${wait.folder ?? wait.sessionId} ${needsThem ? "needs them" : "is done"}: calling back`);
+    this.log(
+      `[voice] ${wait.folder ?? wait.sessionId} ${needsThem ? "needs them" : "is done"}: calling back`,
+    );
     // Due now (not in half a minute): it already waited for the work.
     this.state = { ...this.state, callbackAt: this.now() };
     this.schedule();
@@ -439,7 +504,9 @@ export class VoiceController {
     // The callback continues the thread of the call it was asked on.
     const thread = callId ? this.callThreads.get(callId) : undefined;
     if (thread) this.callbackThread = thread;
-    this.log(`[voice] call back at ${new Date(this.now() + minutes * 60_000).toLocaleTimeString()}`);
+    this.log(
+      `[voice] call back at ${new Date(this.now() + minutes * 60_000).toLocaleTimeString()}`,
+    );
     this.state = policy.callMeBack(this.state, this.now(), minutes);
     this.schedule();
   }
@@ -453,9 +520,12 @@ export class VoiceController {
       now: this.now,
       setTimer: this.setTimer,
       build: () => buildBoard(this.host.boardSources?.() ?? [], memory, this.now()),
-      send: (sessions) => this.host.broadcast({ t: "voice.board", callId, sessions } satisfies wire.VoiceBoard),
+      send: (sessions) =>
+        this.host.broadcast({ t: "voice.board", callId, sessions } satisfies wire.VoiceBoard),
     });
-    const working = new Map((this.host.boardSources?.() ?? []).map((source) => [source.sessionId, source.working]));
+    const working = new Map(
+      (this.host.boardSources?.() ?? []).map((source) => [source.sessionId, source.working]),
+    );
     this.board = { callId, memory, throttle, working, ...(context ? { context } : {}) };
     throttle.flushNow();
   }
@@ -491,10 +561,19 @@ export class VoiceController {
       const was = board.working.get(source.sessionId);
       board.working.set(source.sessionId, source.working);
       if (was === undefined || was === source.working) continue;
-      const watched = board.memory.touched.has(source.sessionId) || source.sessionId === board.context;
+      const watched =
+        board.memory.touched.has(source.sessionId) || source.sessionId === board.context;
       if (!watched) continue;
-      const note = turnNote(source, source.working, this.items.some((item) => item.sessionId === source.sessionId));
-      this.host.broadcast({ t: "voice.note", callId: board.callId, ...note } satisfies wire.VoiceNote);
+      const note = turnNote(
+        source,
+        source.working,
+        this.items.some((item) => item.sessionId === source.sessionId),
+      );
+      this.host.broadcast({
+        t: "voice.note",
+        callId: board.callId,
+        ...note,
+      } satisfies wire.VoiceNote);
     }
   }
 
@@ -528,7 +607,9 @@ export class VoiceController {
     }
     if (changed) void this.broadcastStatus();
     const ringable =
-      this.prefs.ringScope === "all" ? this.items : this.items.filter((item) => this.armed.has(item.sessionId));
+      this.prefs.ringScope === "all"
+        ? this.items
+        : this.items.filter((item) => this.armed.has(item.sessionId));
     const decision = policy.tick(this.state, now, ringable, this.prefs);
     this.state = decision.state;
     if (decision.ring) {
@@ -547,15 +628,19 @@ export class VoiceController {
     const wakes = [decision.wakeAt, ...this.armed.values()];
     if (this.prefs.mode === "onthego" && this.prefs.ringUntil > 0) wakes.push(this.prefs.ringUntil);
     const wakeAt = wakes.reduce<number | undefined>(
-      (soonest, at) => (at === undefined ? soonest : soonest === undefined ? at : Math.min(soonest, at)),
+      (soonest, at) =>
+        at === undefined ? soonest : soonest === undefined ? at : Math.min(soonest, at),
       undefined,
     );
     if (wakeAt !== undefined) {
-      this.timer = this.setTimer(() => {
-        this.timer = undefined;
-        this.inboxChanged();
-        this.schedule();
-      }, Math.max(1000, wakeAt - now));
+      this.timer = this.setTimer(
+        () => {
+          this.timer = undefined;
+          this.inboxChanged();
+          this.schedule();
+        },
+        Math.max(1000, wakeAt - now),
+      );
     }
   }
 

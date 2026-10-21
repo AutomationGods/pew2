@@ -156,11 +156,18 @@ export class Daemon extends DaemonConnectSession {
             }),
         broadcast: (message) => this.send(message),
         ring: (push) =>
-          void pushVoiceRing(this.pushTargets, { ...push, badge: this.waitingOnYou() }, { relay: this.ringRelay, log: (line) => console.log(line) }),
+          void pushVoiceRing(
+            this.pushTargets,
+            { ...push, badge: this.waitingOnYou() },
+            { relay: this.ringRelay, log: (line) => console.log(line) },
+          ),
         threadFor: (sessionId) => {
           const session = this.sessions.get(sessionId);
           if (!session?.agentSessionId) return undefined;
-          return { key: threadKey(session.providerId, session.agentSessionId), label: folderName(session.cwd) };
+          return {
+            key: threadKey(session.providerId, session.agentSessionId),
+            label: folderName(session.cwd),
+          };
         },
       },
       {
@@ -182,12 +189,14 @@ export class Daemon extends DaemonConnectSession {
   async voiceChats(): Promise<VoiceChat[]> {
     const live = new Map<string, string>();
     for (const session of this.sessions.values()) {
-      if (session.agentSessionId) live.set(`${session.providerId}\u0000${session.agentSessionId}`, session.log.sessionId);
+      if (session.agentSessionId)
+        live.set(`${session.providerId}\u0000${session.agentSessionId}`, session.log.sessionId);
     }
     const chats: VoiceChat[] = [];
     for (const provider of this.providers) {
       const providerId = provider.manifest.id;
-      if (providerId === GG_GOALS_ID || !this.isEnabled(providerId) || !isAvailable(provider)) continue;
+      if (providerId === GG_GOALS_ID || !this.isEnabled(providerId) || !isAvailable(provider))
+        continue;
       if (provider.manifest.pew.experimental && !this.includeExperimental) continue;
       for (const stored of await this.projectsWithHistory(providerId)) {
         const liveId = live.get(`${providerId}\u0000${stored.sessionId}`);
@@ -213,7 +222,9 @@ export class Daemon extends DaemonConnectSession {
   /** The agents Pew may start a chat with: id and display name. */
   voiceAgents(): { providerId: string; agentName: string }[] {
     return this.providers
-      .filter((p) => p.manifest.id !== GG_GOALS_ID && this.isEnabled(p.manifest.id) && isAvailable(p))
+      .filter(
+        (p) => p.manifest.id !== GG_GOALS_ID && this.isEnabled(p.manifest.id) && isAvailable(p),
+      )
       .filter((p) => !p.manifest.pew.experimental || this.includeExperimental)
       .map((p) => ({ providerId: p.manifest.id, agentName: p.manifest.name }));
   }
@@ -446,7 +457,8 @@ export class Daemon extends DaemonConnectSession {
     rememberTurnText(session, payload);
     const event = session.log.append(payload);
     const kind = (payload as { kind?: unknown } | null)?.kind;
-    if (kind === "permission_request" || kind === "ask_user" || kind === "ask_user_closed") this.touchInbox();
+    if (kind === "permission_request" || kind === "ask_user" || kind === "ask_user_closed")
+      this.touchInbox();
     else this.touchBoard();
     if (!session.live) return;
     if (!session.streamingReplay) {

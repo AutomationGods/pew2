@@ -26,37 +26,34 @@ export function useAttachments(devSheet: string | undefined) {
     setAttachments((current) => current.filter((file) => file.id !== id));
   }, []);
 
-  const pickAttachment = useCallback(
-    (source: AttachmentSource) => {
-      setAttachOpen(false);
-      // Reading and downscaling a photo takes a moment, so the list is read
-      // through its ref mirror afterwards rather than from this closure: two
-      // overlapping picks would otherwise have the second overwrite the first.
-      void (async () => {
-        const room = MAX_ATTACHMENTS - attachmentsRef.current.length;
-        const outcome =
-          source === "camera"
-            ? await takePhoto()
-            : source === "files"
-              ? await pickFiles(room)
-              : await pickPhotos(room);
+  const pickAttachment = useCallback((source: AttachmentSource) => {
+    setAttachOpen(false);
+    // Reading and downscaling a photo takes a moment, so the list is read
+    // through its ref mirror afterwards rather than from this closure: two
+    // overlapping picks would otherwise have the second overwrite the first.
+    void (async () => {
+      const room = MAX_ATTACHMENTS - attachmentsRef.current.length;
+      const outcome =
+        source === "camera"
+          ? await takePhoto()
+          : source === "files"
+            ? await pickFiles(room)
+            : await pickPhotos(room);
 
-        // Backing out of the picker is an ordinary thing to do and says nothing.
-        if (outcome.status === "cancelled") return;
-        if (outcome.status !== "picked") {
-          Alert.alert("Attach", outcome.message);
-          return;
-        }
+      // Backing out of the picker is an ordinary thing to do and says nothing.
+      if (outcome.status === "cancelled") return;
+      if (outcome.status !== "picked") {
+        Alert.alert("Attach", outcome.message);
+        return;
+      }
 
-        // Merged out here, not in an updater: React may invoke an updater
-        // twice, and an alert is not something to show twice.
-        const merged = addAttachments(attachmentsRef.current, outcome.attachments);
-        setAttachments(merged.attachments);
-        if (merged.rejected) Alert.alert("Attach", merged.rejected);
-      })();
-    },
-    [],
-  );
+      // Merged out here, not in an updater: React may invoke an updater
+      // twice, and an alert is not something to show twice.
+      const merged = addAttachments(attachmentsRef.current, outcome.attachments);
+      setAttachments(merged.attachments);
+      if (merged.rejected) Alert.alert("Attach", merged.rejected);
+    })();
+  }, []);
 
   return {
     attachments,

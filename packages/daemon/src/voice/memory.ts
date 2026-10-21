@@ -20,7 +20,12 @@ const clipText = (text: string, max: number) => {
  * the facts the next call needs ("Sent billing-api: run the tests").
  * Undefined for looking (status, inbox) or anything that failed.
  */
-export function actionLine(name: string, rawArgs: string, output: string, nameOf: (sessionId: string) => string | undefined): string | undefined {
+export function actionLine(
+  name: string,
+  rawArgs: string,
+  output: string,
+  nameOf: (sessionId: string) => string | undefined,
+): string | undefined {
   let result: { ok?: unknown };
   let args: Record<string, unknown> = {};
   try {
@@ -31,8 +36,10 @@ export function actionLine(name: string, rawArgs: string, output: string, nameOf
     return undefined;
   }
   if (result.ok !== true) return undefined;
-  const str = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
-  const session = (id: unknown) => (typeof id === "string" ? (nameOf(id) ?? "a session") : "a session");
+  const str = (value: unknown) =>
+    typeof value === "string" && value.trim() ? value.trim() : undefined;
+  const session = (id: unknown) =>
+    typeof id === "string" ? (nameOf(id) ?? "a session") : "a session";
   const item = (id: unknown) => (typeof id === "string" ? session(id.split(":")[0]) : "a session");
   switch (name) {
     case "tell_agent":
@@ -87,7 +94,8 @@ export function actionTarget(name: string, rawArgs: string, output: string): str
   } catch {
     return undefined;
   }
-  if (name === "open_chat" || name === "start_chat") return typeof result.session_id === "string" ? result.session_id : undefined;
+  if (name === "open_chat" || name === "start_chat")
+    return typeof result.session_id === "string" ? result.session_id : undefined;
   if (typeof args.session_id === "string" && args.session_id) return args.session_id;
   if (typeof args.item_id === "string" && args.item_id) return args.item_id.split(":")[0];
   return undefined;

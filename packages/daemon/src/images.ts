@@ -122,12 +122,14 @@ export interface ImageBlock {
   data: string;
 }
 
-export type HistoryImage = ImageBlock | {
-  type: "resource_link";
-  uri: string;
-  name: string;
-  mimeType?: string;
-};
+export type HistoryImage =
+  | ImageBlock
+  | {
+      type: "resource_link";
+      uri: string;
+      name: string;
+      mimeType?: string;
+    };
 
 /**
  * Pictures inside a message read from an agent's own on-disk history.
@@ -167,7 +169,8 @@ export function historyImages(content: unknown): HistoryImage[] {
 
     if (part.type === "resource_link" && typeof part.uri === "string") {
       images.push({
-        type: "resource_link", uri: part.uri,
+        type: "resource_link",
+        uri: part.uri,
         name: typeof part.name === "string" ? part.name : "Image",
         ...(typeof part.mimeType === "string" ? { mimeType: part.mimeType } : {}),
       });

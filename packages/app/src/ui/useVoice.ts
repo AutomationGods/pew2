@@ -26,7 +26,12 @@ import {
 } from "../voiceCall";
 import { IDLE_BOARD, boardFromInbox, foldBoard, type BoardState } from "../voiceBoard";
 import { openTransport, type VoiceTransport } from "./voiceTransport";
-import { cancelsEcho, onRouteChange, setProximity, setVoiceChatMode } from "../../modules/pew-audio-route";
+import {
+  cancelsEcho,
+  onRouteChange,
+  setProximity,
+  setVoiceChatMode,
+} from "../../modules/pew-audio-route";
 import { setOnCall } from "./notifier";
 import { sounds } from "./sounds";
 import { setAudioModeAsync } from "expo-audio";
@@ -46,16 +51,18 @@ const AUDIO_SETTLE_MS = 1500;
 const END_TONE_MS = 1200;
 
 function enterCallAudio(): Promise<void> {
-  return setAudioModeAsync({
-    playsInSilentMode: true,
-    allowsRecording: true,
-    interruptionMode: "doNotMix",
-    shouldPlayInBackground: true,
-    shouldRouteThroughEarpiece: false,
-  })
-    // Voice chat mode (system echo cancellation), still before the mic opens.
-    .then(() => void setVoiceChatMode())
-    .catch(() => {});
+  return (
+    setAudioModeAsync({
+      playsInSilentMode: true,
+      allowsRecording: true,
+      interruptionMode: "doNotMix",
+      shouldPlayInBackground: true,
+      shouldRouteThroughEarpiece: false,
+    })
+      // Voice chat mode (system echo cancellation), still before the mic opens.
+      .then(() => void setVoiceChatMode())
+      .catch(() => {})
+  );
 }
 
 interface Options {
@@ -176,7 +183,10 @@ export function useVoice({ post, online }: Options) {
       // The hang-up tone first, while the call's audio is still up: played
       // after the connection closes, it waited seconds for WebRTC to let go.
       const after = step.state.phase;
-      if ((after === "ended" && (before === "live" || before === "ending")) || (after === "failed" && before !== "failed")) {
+      if (
+        (after === "ended" && (before === "live" || before === "ending")) ||
+        (after === "failed" && before !== "failed")
+      ) {
         sounds.callCue("call-end");
       }
       callRef.current = step.state;
@@ -204,7 +214,8 @@ export function useVoice({ post, online }: Options) {
         const items = readInboxItems((message as { items?: unknown }).items);
         if (items) setInbox(items);
       }
-      if (t === "voice.board" || t === "voice.inbox") setBoard(foldBoard(boardRef.current, message, Date.now()));
+      if (t === "voice.board" || t === "voice.inbox")
+        setBoard(foldBoard(boardRef.current, message, Date.now()));
       dispatch({ type: "daemon", message });
     },
     [dispatch, setKnown, setBoard],
@@ -270,7 +281,14 @@ export function useVoice({ post, online }: Options) {
       }
       // A new call starts from the inbox in hand; the daemon's board replaces it within a frame.
       setBoard(boardFromInbox(callRef.current.inbox ?? []));
-      dispatch({ type: "start", requestId: nextId(), focus, sessionId, ...(place ? { place } : {}), echoGuard: !cancelsEcho() });
+      dispatch({
+        type: "start",
+        requestId: nextId(),
+        focus,
+        sessionId,
+        ...(place ? { place } : {}),
+        echoGuard: !cancelsEcho(),
+      });
     },
     [dispatch, nextId, setBoard],
   );
@@ -288,24 +306,34 @@ export function useVoice({ post, online }: Options) {
   const interrupt = useCallback(() => dispatch({ type: "interrupt" }), [dispatch]);
   /** The user answered the call screen's card by tapping: send it, and tell Pew. */
   const answerOnScreen = useCallback(
-    (input: Omit<Extract<CallInput, { type: "answeredOnScreen" }>, "type">) => dispatch({ type: "answeredOnScreen", ...input }),
+    (input: Omit<Extract<CallInput, { type: "answeredOnScreen" }>, "type">) =>
+      dispatch({ type: "answeredOnScreen", ...input }),
     [dispatch],
   );
   const login = useCallback(
-    (action: "start" | "cancel" | "logout") => postRef.current({ t: "voice.login", requestId: nextId(), action }),
+    (action: "start" | "cancel" | "logout") =>
+      postRef.current({ t: "voice.login", requestId: nextId(), action }),
     [nextId],
   );
-  const setMode = useCallback((mode: VoiceMode) => postRef.current({ t: "voice.prefs", prefs: { mode } }), []);
+  const setMode = useCallback(
+    (mode: VoiceMode) => postRef.current({ t: "voice.prefs", prefs: { mode } }),
+    [],
+  );
   /** Forget what was said on earlier calls (the threads kept per chat on the computer). */
-  const forgetHistory = useCallback(() => postRef.current({ t: "voice.forget" } satisfies wire.VoiceForget), []);
+  const forgetHistory = useCallback(
+    () => postRef.current({ t: "voice.forget" } satisfies wire.VoiceForget),
+    [],
+  );
   /** Change any of the call policy's settings; the `voice.status` broadcast confirms. */
   const setPrefs = useCallback(
-    (prefs: Partial<wire.VoicePrefsValues>) => postRef.current({ t: "voice.prefs", prefs } satisfies wire.VoicePrefs),
+    (prefs: Partial<wire.VoicePrefsValues>) =>
+      postRef.current({ t: "voice.prefs", prefs } satisfies wire.VoicePrefs),
     [],
   );
   /** Let a conversation ring (or stop it). Answered by a `voice.status` with `armed`. */
   const arm = useCallback(
-    (sessionId: string, on: boolean) => postRef.current({ t: "voice.arm", sessionId, on } satisfies wire.VoiceArm),
+    (sessionId: string, on: boolean) =>
+      postRef.current({ t: "voice.arm", sessionId, on } satisfies wire.VoiceArm),
     [],
   );
 
@@ -324,7 +352,8 @@ export function useVoice({ post, online }: Options) {
   // Loaded while nothing is playing (off a call), so the first ring isn't late.
   const voiceAvailable = knowledge.kind === "known" && knowledge.status.available;
   useEffect(() => {
-    if (voiceAvailable && !callActive(callRef.current)) sounds.prepareCues(["call-dial", "call-connect", "call-end"]);
+    if (voiceAvailable && !callActive(callRef.current))
+      sounds.prepareCues(["call-dial", "call-connect", "call-end"]);
   }, [voiceAvailable]);
 
   // No banners over the call (they still reach Notification Center).
@@ -358,7 +387,26 @@ export function useVoice({ post, online }: Options) {
     };
   }, [live, micLevel]);
 
-  return { knowledge, inbox, call, board, micLevel, speech, startCall, hangUp, setMuted, dismiss, interrupt, answerOnScreen, login, setMode, setPrefs, arm, forgetHistory, onFrame };
+  return {
+    knowledge,
+    inbox,
+    call,
+    board,
+    micLevel,
+    speech,
+    startCall,
+    hangUp,
+    setMuted,
+    dismiss,
+    interrupt,
+    answerOnScreen,
+    login,
+    setMode,
+    setPrefs,
+    arm,
+    forgetHistory,
+    onFrame,
+  };
 }
 
 export type Voice = ReturnType<typeof useVoice>;

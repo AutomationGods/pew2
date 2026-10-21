@@ -63,8 +63,6 @@ module.exports = ({ config }) => {
   return {
     ...expo,
     ...(owner ? { owner } : {}),
-    ...(projectId
-      ? { extra: { ...expo.extra, eas: { ...expo.extra?.eas, projectId } } }
-      : {}),
+    ...(projectId ? { extra: { ...expo.extra, eas: { ...expo.extra?.eas, projectId } } } : {}),
   };
 };

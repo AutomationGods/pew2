@@ -129,12 +129,17 @@ function NewChatSheetView({
   // Chosen card: the user's pick, else the project already open, else the newest.
   const chosen = picked ?? currentCwd ?? projects[0]?.path;
   const chosenName =
-    projects.find((p) => p.path === chosen)?.name ?? (chosen === currentCwd ? currentFolder : undefined) ?? (chosen ? folderOf(chosen) : undefined);
+    projects.find((p) => p.path === chosen)?.name ??
+    (chosen === currentCwd ? currentFolder : undefined) ??
+    (chosen ? folderOf(chosen) : undefined);
   const [now, setNow] = useState(() => Date.now());
   // Offered whenever the daemon can answer — including, especially, when there
   // are no projects at all. That is the cold start this exists for.
   const canBrowse = onBrowse !== undefined;
-  const cells = useMemo<GridCell[]>(() => (canBrowse ? [...projects, BROWSE_CELL] : projects), [projects, canBrowse]);
+  const cells = useMemo<GridCell[]>(
+    () => (canBrowse ? [...projects, BROWSE_CELL] : projects),
+    [projects, canBrowse],
+  );
 
   // One value for one movement. This used to be two — a native-driven spring
   // for the slide and a JS-driven one for the height, because legacy `Animated`
@@ -183,8 +188,7 @@ function NewChatSheetView({
   const browseEntries = browse?.entries ?? [];
   // The refusal notice occupies a row of its own, above a list that is still
   // showing where the user was.
-  const browseRows =
-    browseEntries.length + (browse?.parent ? 1 : 0) + (browse?.refused ? 1 : 0);
+  const browseRows = browseEntries.length + (browse?.parent ? 1 : 0) + (browse?.refused ? 1 : 0);
   const browseHeight = Math.max(1, Math.min(browseRows, SHEET_VISIBLE_ROWS)) * SHEET_ROW_HEIGHT;
   const browseScrolls = browseRows > SHEET_VISIBLE_ROWS;
 
@@ -254,7 +258,9 @@ function NewChatSheetView({
       label="New chat"
       title={
         step === STEP_CHOICES
-          ? agents ? "New conversation" : "Where should it work?"
+          ? agents
+            ? "New conversation"
+            : "Where should it work?"
           : // Named while browsing: several levels down, "Browse" alone gives
             // no clue where you are, and the path is too long for a title.
             browse?.path
@@ -331,7 +337,9 @@ function NewChatSheetView({
                     style={[styles.tile, dashedOutline, styles.browseCard]}
                   >
                     <Ionicons name="search-outline" size={18} color={theme.color.textDim} />
-                    <Text style={styles.cardTitle} numberOfLines={1}>Browse folders</Text>
+                    <Text style={styles.cardTitle} numberOfLines={1}>
+                      Browse folders
+                    </Text>
                   </PressScale>
                 </Dissolve>
               ) : (
@@ -369,12 +377,8 @@ function NewChatSheetView({
               secondHeight.value = event.nativeEvent.layout.height;
             }}
           >
-            {(
-              <StageScroll
-                rail="inside"
-                style={{ height: browseHeight }}
-                bounces={browseScrolls}
-              >
+            {
+              <StageScroll rail="inside" style={{ height: browseHeight }} bounces={browseScrolls}>
                 {browse?.parent !== undefined && (
                   <Row
                     icon="arrow-up-outline"
@@ -419,7 +423,7 @@ function NewChatSheetView({
                   </View>
                 )}
               </StageScroll>
-            )}
+            }
           </Animated.View>
         )}
       </Animated.View>
@@ -469,7 +473,9 @@ function ProjectCard({
   const ago = agoLabel(project.updatedAt, now);
   const meta = [
     current ? "here" : undefined,
-    project.sessions !== undefined ? `${project.sessions} chat${project.sessions === 1 ? "" : "s"}` : undefined,
+    project.sessions !== undefined
+      ? `${project.sessions} chat${project.sessions === 1 ? "" : "s"}`
+      : undefined,
     ago,
   ].filter((part): part is string => part !== undefined);
   return (
@@ -484,7 +490,9 @@ function ProjectCard({
         accessibilityLabel={[project.name, ...meta].join(", ")}
         style={[
           styles.tile,
-          selected ? { borderWidth: 1, borderColor: agent, backgroundColor: withAlpha(agent, 0.1) } : dashedOutline,
+          selected
+            ? { borderWidth: 1, borderColor: agent, backgroundColor: withAlpha(agent, 0.1) }
+            : dashedOutline,
         ]}
       >
         <Text style={styles.cardTitle} numberOfLines={1}>
@@ -626,7 +634,12 @@ const styles = StyleSheet.create({
   grid: { gap: theme.space(2), padding: theme.space(4), paddingBottom: theme.space(3) },
   gridRow: { gap: theme.space(2) },
   cell: { flex: 1, maxWidth: "50%" },
-  tile: { height: 84, borderRadius: theme.radius.md, padding: theme.space(3), justifyContent: "space-between" },
+  tile: {
+    height: 84,
+    borderRadius: theme.radius.md,
+    padding: theme.space(3),
+    justifyContent: "space-between",
+  },
   browseCard: { justifyContent: "center", gap: theme.space(1) },
   cardTitle: { color: theme.color.text, fontSize: theme.font.body },
   // On the sheet's rail, like the cards above it.

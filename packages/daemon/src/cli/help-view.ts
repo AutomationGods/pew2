@@ -82,9 +82,11 @@ export function helpView(options: RenderOptions = {}): string[] {
   const all = HELP_GROUPS.flatMap((group) => group.entries);
   const column = Math.max(...all.map((entry) => entry.command.length)) + 3;
   // Command in bold, its note dim, both on the same column so the notes line up.
-  const row = (command: string, note: string) => `  ${s.bold(padEnd(command, column))}${s.hex(PALETTE.faint, note)}`;
+  const row = (command: string, note: string) =>
+    `  ${s.bold(padEnd(command, column))}${s.hex(PALETTE.faint, note)}`;
   // A flag sits under its command, indented, with its own note on the same column.
-  const flagRow = (flag: string, note: string) => `  ${s.hex(PALETTE.faint, padEnd(`    ${flag}`, column))}${s.hex(PALETTE.faint, note)}`;
+  const flagRow = (flag: string, note: string) =>
+    `  ${s.hex(PALETTE.faint, padEnd(`    ${flag}`, column))}${s.hex(PALETTE.faint, note)}`;
 
   const out = [...r.intro("pew2", "your coding agents, on your phone")];
   for (const group of HELP_GROUPS) {

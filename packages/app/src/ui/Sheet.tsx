@@ -164,7 +164,19 @@ const SHEET_PAD = theme.space(5);
 /** The strip's Pew: chip-sized, with room in its box to bounce. */
 const STRIP_PEW = 40;
 
-function SheetView({ visible, title, onClose, onBack, dismissLabel, label, labelTone, pewMood, keepKeyboard = false, titleAccessory, children }: SheetProps) {
+function SheetView({
+  visible,
+  title,
+  onClose,
+  onBack,
+  dismissLabel,
+  label,
+  labelTone,
+  pewMood,
+  keepKeyboard = false,
+  titleAccessory,
+  children,
+}: SheetProps) {
   const insets = useSafeAreaInsets();
   const agentColor = useAgentColor();
   const reduceMotion = useReducedMotion();
@@ -241,9 +253,7 @@ function SheetView({ visible, title, onClose, onBack, dismissLabel, label, label
 
   useEffect(() => {
     if (visible) {
-      progress.value = reduceMotion
-        ? withTiming(1, INSTANT)
-        : withSpring(1, ARRIVE);
+      progress.value = reduceMotion ? withTiming(1, INSTANT) : withSpring(1, ARRIVE);
       return;
     }
     progress.value = withTiming(0, reduceMotion ? INSTANT : DEPART, (finished) => {
@@ -385,7 +395,13 @@ function SheetView({ visible, title, onClose, onBack, dismissLabel, label, label
                   <CrossfadeIcon name="back" />
                 </CircleButton>
               ) : null}
-              <Pew size={STRIP_PEW} mood={pewMood ?? (onClose ? "idle" : "talking")} color={agentColor} paused={!visible} style={styles.stripPew} />
+              <Pew
+                size={STRIP_PEW}
+                mood={pewMood ?? (onClose ? "idle" : "talking")}
+                color={agentColor}
+                paused={!visible}
+                style={styles.stripPew}
+              />
               <View style={styles.stripLabel}>
                 <Led tone={labelTone === "attention" ? "attention" : "agent"}>{label ?? title}</Led>
               </View>
@@ -416,7 +432,12 @@ function SheetView({ visible, title, onClose, onBack, dismissLabel, label, label
         </GestureDetector>
 
         {/* Contents resolve in on each open, after the card starts to land. */}
-        <Dissolve dissolveKey={visible ? "open" : "closed"} enabled={visible} delay={60} style={styles.dissolveBody}>
+        <Dissolve
+          dissolveKey={visible ? "open" : "closed"}
+          enabled={visible}
+          delay={60}
+          style={styles.dissolveBody}
+        >
           {children}
         </Dissolve>
       </Animated.View>

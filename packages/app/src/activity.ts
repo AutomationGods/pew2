@@ -20,15 +20,7 @@ import { readChunk } from "./chunks";
 
 /** ACP tool kinds. `other` is the documented default. */
 export type ToolKind =
-  | "read"
-  | "edit"
-  | "delete"
-  | "move"
-  | "search"
-  | "execute"
-  | "think"
-  | "fetch"
-  | "other";
+  "read" | "edit" | "delete" | "move" | "search" | "execute" | "think" | "fetch" | "other";
 
 export type ToolStatus = "pending" | "in_progress" | "completed" | "failed";
 
@@ -77,9 +69,7 @@ const KINDS = new Set<ToolKind>([
 const STATUSES = new Set<ToolStatus>(["pending", "in_progress", "completed", "failed"]);
 
 function readKind(value: unknown): ToolKind {
-  return typeof value === "string" && KINDS.has(value as ToolKind)
-    ? (value as ToolKind)
-    : "other";
+  return typeof value === "string" && KINDS.has(value as ToolKind) ? (value as ToolKind) : "other";
 }
 
 function readStatus(value: unknown): ToolStatus | undefined {

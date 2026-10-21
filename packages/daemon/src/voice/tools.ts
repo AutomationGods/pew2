@@ -150,7 +150,10 @@ export function spokenQuestions(raw: unknown[] | undefined) {
 }
 
 /** An answer as words for the call board: option labels where a value maps to one. */
-export function answerInWords(answers: Record<string, string | string[]>, questions: unknown[] | undefined): string {
+export function answerInWords(
+  answers: Record<string, string | string[]>,
+  questions: unknown[] | undefined,
+): string {
   const spoken = spokenQuestions(questions) ?? [];
   return Object.entries(answers)
     .map(([id, value]) => {
@@ -189,15 +192,25 @@ export function withoutCallback(text: string): { text: string; asked: boolean } 
     // that is only the ask ("Then call me back.") goes whole.
     const before = sentence
       .slice(0, match.index)
-      .replace(/[\s,;]*(?:\b(?:and|then|when|once|after|so|also|please|it's|its|done|finished|you're|is)\b[\s,;]*)*$/i, "")
+      .replace(
+        /[\s,;]*(?:\b(?:and|then|when|once|after|so|also|please|it's|its|done|finished|you're|is)\b[\s,;]*)*$/i,
+        "",
+      )
       .trim();
-    if (before && /\w{3,}/.test(before) && !/^(?:then|when|once|after)\b/i.test(before)) kept.push(`${before}.`);
+    if (before && /\w{3,}/.test(before) && !/^(?:then|when|once|after)\b/i.test(before))
+      kept.push(`${before}.`);
   }
-  const cleaned = kept.join(" ").replace(/\s{2,}/g, " ").trim();
+  const cleaned = kept
+    .join(" ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
   return { text: cleaned, asked: true };
 }
 
-export function resolveSession(said: string, statuses: readonly SessionStatus[]): string | undefined {
+export function resolveSession(
+  said: string,
+  statuses: readonly SessionStatus[],
+): string | undefined {
   const raw = said.trim();
   if (!raw) return undefined;
   const exact = statuses.find((status) => status.sessionId === raw);
@@ -210,10 +223,13 @@ export function resolveSession(said: string, statuses: readonly SessionStatus[])
       .trim();
   const want = words(raw);
   if (!want) return undefined;
-  const names = (status: SessionStatus) => [status.folder, status.agentName].filter((x): x is string => !!x).map(words);
+  const names = (status: SessionStatus) =>
+    [status.folder, status.agentName].filter((x): x is string => !!x).map(words);
   const whole = statuses.filter((status) => names(status).some((name) => name === want));
   if (whole.length === 1) return whole[0]!.sessionId;
-  const partial = statuses.filter((status) => names(status).some((name) => name.includes(want) || want.includes(name)));
+  const partial = statuses.filter((status) =>
+    names(status).some((name) => name.includes(want) || want.includes(name)),
+  );
   return partial.length === 1 ? partial[0]!.sessionId : undefined;
 }
 
@@ -287,9 +303,17 @@ export function runVoiceTool(name: string, rawArgs: string, port: VoicePort): To
         result = { action: "answer", answers };
       }
       // Read before answering: the questions are gone once the ask closes.
-      const spoken = result.action === "answer" ? answerInWords(result.answers, port.askQuestions?.(item.sessionId, item.requestId)) : "";
+      const spoken =
+        result.action === "answer"
+          ? answerInWords(result.answers, port.askQuestions?.(item.sessionId, item.requestId))
+          : "";
       if (!port.answerAsk(item.sessionId, item.requestId, result)) return gone();
-      port.mark?.(item.sessionId, result.action === "cancel" ? { kind: "note", text: "Question dismissed" } : { kind: "pew", text: spoken });
+      port.mark?.(
+        item.sessionId,
+        result.action === "cancel"
+          ? { kind: "note", text: "Question dismissed" }
+          : { kind: "pew", text: spoken },
+      );
       return out({ ok: true, say: result.action === "cancel" ? "Dismissed." : "Answered." });
     }
 
@@ -308,7 +332,12 @@ export function runVoiceTool(name: string, rawArgs: string, port: VoicePort): To
       port.decidePlan(item.sessionId, action, Number(item.requestId), feedback);
       port.mark?.(item.sessionId, {
         kind: "note",
-        text: action === "accept" ? "Plan accepted" : action === "reject" ? "Plan rejected" : "Feedback sent",
+        text:
+          action === "accept"
+            ? "Plan accepted"
+            : action === "reject"
+              ? "Plan rejected"
+              : "Feedback sent",
       });
       return out({
         ok: true,
@@ -336,12 +365,17 @@ export function runVoiceTool(name: string, rawArgs: string, port: VoicePort): To
         say: sent.queued ? "Queued." : "Sent.",
         // "…and call me back" belongs to Pew, not the agent: taken out of the
         // message, and Pew reminded to book it (when it hasn't already).
-        ...(asked ? { note: "Their call-me-back was left out of the agent's message: book it with call_me_back (when_done) if you haven't." } : {}),
+        ...(asked
+          ? {
+              note: "Their call-me-back was left out of the agent's message: book it with call_me_back (when_done) if you haven't.",
+            }
+          : {}),
       });
     }
 
     case "get_status": {
-      const said = typeof args.session_id === "string" && args.session_id ? args.session_id : undefined;
+      const said =
+        typeof args.session_id === "string" && args.session_id ? args.session_id : undefined;
       const sessionId = said ? (resolveSession(said, port.statuses()) ?? said) : undefined;
       const statuses = port.statuses(sessionId);
       if (sessionId && statuses.length > 0) port.mark?.(sessionId);
@@ -350,12 +384,19 @@ export function runVoiceTool(name: string, rawArgs: string, port: VoicePort): To
       return out({
         ok: true,
         sessions: statuses.map((status) => {
-          const waits = items.filter((item) => item.sessionId === status.sessionId).map((item) => `${item.kind}: ${item.title}`);
+          const waits = items
+            .filter((item) => item.sessionId === status.sessionId)
+            .map((item) => `${item.kind}: ${item.title}`);
           return {
             session_id: status.sessionId,
             ...(status.folder ? { folder: status.folder } : {}),
             ...(status.agentName ? { agent: status.agentName } : {}),
-            state: waits.length > 0 ? "waiting on you" : status.working ? "working" : "idle (its turn is done)",
+            state:
+              waits.length > 0
+                ? "waiting on you"
+                : status.working
+                  ? "working"
+                  : "idle (its turn is done)",
             ...(status.working && status.activity ? { doing_now: status.activity } : {}),
             last_reply: status.lastLines,
             ...(waits.length > 0 ? { waiting_on_you: waits } : {}),
@@ -370,22 +411,32 @@ export function runVoiceTool(name: string, rawArgs: string, port: VoicePort): To
 
     case "call_me_back": {
       // "Call me back when it's done": wait for that session, not a clock.
-      const waitFor = typeof args.when_done === "string" && args.when_done ? args.when_done : undefined;
+      const waitFor =
+        typeof args.when_done === "string" && args.when_done ? args.when_done : undefined;
       if (waitFor && port.callWhenDone) {
         const statuses = port.statuses();
         const id = resolveSession(waitFor, statuses);
         const status = statuses.find((s) => s.sessionId === id);
-        if (!status) return out({ ok: false, error: "unknown session", say: `I can't find ${waitFor}. Which one?` });
+        if (!status)
+          return out({
+            ok: false,
+            error: "unknown session",
+            say: `I can't find ${waitFor}. Which one?`,
+          });
         const name = status.folder ?? status.agentName ?? "it";
         port.callWhenDone(status.sessionId, status.folder);
         return out({ ok: true, when_done: name, say: `I'll call when ${name} is done.` }, true);
       }
       // Seconds win when given ("in 30 seconds"); half a minute at the least.
       const seconds = Number(args.seconds);
-      const asked = Number.isFinite(seconds) && seconds > 0 ? seconds / 60 : Number(args.minutes) || 15;
+      const asked =
+        Number.isFinite(seconds) && seconds > 0 ? seconds / 60 : Number(args.minutes) || 15;
       const minutes = Math.min(240, Math.max(0.5, Math.round(asked * 2) / 2));
       port.callMeBack(minutes);
-      const when = minutes < 1 ? `${Math.round(minutes * 60)} seconds` : `${minutes} minute${minutes === 1 ? "" : "s"}`;
+      const when =
+        minutes < 1
+          ? `${Math.round(minutes * 60)} seconds`
+          : `${minutes} minute${minutes === 1 ? "" : "s"}`;
       return out({ ok: true, minutes, say: `Talk in ${when}.` }, true);
     }
 
@@ -398,7 +449,10 @@ export function runVoiceTool(name: string, rawArgs: string, port: VoicePort): To
         return fail("That session isn't open.", "unknown session");
       }
       const { ringing } = port.setRing(sessionId, on);
-      port.mark?.(sessionId, { kind: "note", text: on ? "Rings you when it needs you" : "Won't ring you" });
+      port.mark?.(sessionId, {
+        kind: "note",
+        text: on ? "Rings you when it needs you" : "Won't ring you",
+      });
       const say = !on
         ? "Okay, it won't ring you."
         : ringing

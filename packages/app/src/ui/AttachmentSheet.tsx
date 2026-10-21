@@ -44,10 +44,22 @@ const SOURCES: {
 function AttachmentSheetView({ visible, onSelect, onClose }: AttachmentSheetProps) {
   const agent = useAgentColor();
   return (
-    <Sheet visible={visible} label="Attach" title="Add to the message" onClose={onClose} dismissLabel="Close attachments">
+    <Sheet
+      visible={visible}
+      label="Attach"
+      title="Add to the message"
+      onClose={onClose}
+      dismissLabel="Close attachments"
+    >
       <View style={styles.tiles}>
         {SOURCES.map((source, index) => (
-          <Dissolve key={source.id} kind="row" delay={visible ? index * 50 : 0} dissolveKey={String(visible)} style={styles.cell}>
+          <Dissolve
+            key={source.id}
+            kind="row"
+            delay={visible ? index * 50 : 0}
+            dissolveKey={String(visible)}
+            style={styles.cell}
+          >
             <PressScale
               feel="tap"
               style={styles.tile}
@@ -59,7 +71,11 @@ function AttachmentSheetView({ visible, onSelect, onClose }: AttachmentSheetProp
                 name={source.icon}
                 size={26}
                 color={agent}
-                style={{ textShadowColor: agent, textShadowRadius: 8, textShadowOffset: { width: 0, height: 0 } }}
+                style={{
+                  textShadowColor: agent,
+                  textShadowRadius: 8,
+                  textShadowOffset: { width: 0, height: 0 },
+                }}
               />
               <Led tone="text" size={11} unlit numberOfLines={1}>
                 {source.label}

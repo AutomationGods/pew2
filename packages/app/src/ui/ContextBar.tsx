@@ -24,7 +24,15 @@ export interface ContextBarProps {
   /** GG Coder: the agent is in plan mode. */
   planMode?: boolean;
 }
-function ContextBarView({ workspace, usage, showCommands, onCommands, onDetails, onChecklist, planMode }: ContextBarProps) {
+function ContextBarView({
+  workspace,
+  usage,
+  showCommands,
+  onCommands,
+  onDetails,
+  onChecklist,
+  planMode,
+}: ContextBarProps) {
   const details = contextDetails(workspace, usage);
   const critical = details.level === "critical";
   return (
@@ -36,23 +44,44 @@ function ContextBarView({ workspace, usage, showCommands, onCommands, onDetails,
       keyboardShouldPersistTaps="handled"
     >
       {showCommands && (
-        <StageChip label="Commands" accessibilityLabel="Show commands" onPress={onCommands}
-          trailing={<DotGlyph name="chevron-down" size={10} color={theme.color.textDim} />} />
+        <StageChip
+          label="Commands"
+          accessibilityLabel="Show commands"
+          onPress={onCommands}
+          trailing={<DotGlyph name="chevron-down" size={10} color={theme.color.textDim} />}
+        />
       )}
-      <StageChip label={workspace?.folder || "Project"} maxLabelWidth={140}
-        accessibilityLabel={`${details.project}. Show project details`} onPress={onDetails}
-        trailing={<DotGlyph name="chevron-down" size={10} color={theme.color.textDim} />} />
+      <StageChip
+        label={workspace?.folder || "Project"}
+        maxLabelWidth={140}
+        accessibilityLabel={`${details.project}. Show project details`}
+        onPress={onDetails}
+        trailing={<DotGlyph name="chevron-down" size={10} color={theme.color.textDim} />}
+      />
       {details.warning && (
-        <StageChip label={details.usage} lit tone={critical ? "danger" : "attention"}
+        <StageChip
+          label={details.usage}
+          lit
+          tone={critical ? "danger" : "attention"}
           leading={<Pixel kind="attention" color={critical ? theme.color.danger : undefined} />}
-          accessibilityLabel={details.usageAccessibility} />
+          accessibilityLabel={details.usageAccessibility}
+        />
       )}
       {onChecklist && (
-        <StageChip label="Checklist" accessibilityLabel="Checklist" onPress={onChecklist}
-          leading={<Pixel kind="unread" />} />
+        <StageChip
+          label="Checklist"
+          accessibilityLabel="Checklist"
+          onPress={onChecklist}
+          leading={<Pixel kind="unread" />}
+        />
       )}
       {planMode && (
-        <StageChip label="Plan mode" lit accessibilityLabel="Plan mode" leading={<Pixel kind="live" />} />
+        <StageChip
+          label="Plan mode"
+          lit
+          accessibilityLabel="Plan mode"
+          leading={<Pixel kind="live" />}
+        />
       )}
     </ScrollView>
   );

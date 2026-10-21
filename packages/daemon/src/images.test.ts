@@ -3,13 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { POSIX_PATHS } from "./testing/platform.js";
-import {
-  historyImages,
-  imageMimeType,
-  loadImage,
-  nodeImageFs,
-  toLocalPath,
-} from "./images";
+import { historyImages, imageMimeType, loadImage, nodeImageFs, toLocalPath } from "./images";
 
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -169,9 +163,7 @@ test("a file swapped for a symlink after the check is not followed", async () =>
   // than refusing everything.
   await rm(target);
   await writeFile(target, PNG);
-  expect((await loadImage("out/plot.png", { cwd: root, env: {}, fs })).mimeType).toBe(
-    "image/png",
-  );
+  expect((await loadImage("out/plot.png", { cwd: root, env: {}, fs })).mimeType).toBe("image/png");
 });
 
 test("a windows drive letter is a path, not a URI scheme", () => {

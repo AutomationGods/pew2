@@ -21,7 +21,14 @@ import { wire } from "@pew2/protocol";
 import { storeGoalFiles } from "./goalFiles";
 import { readKnownProjects } from "./known-projects.js";
 import { resolveSession, runVoiceTool, type VoicePort } from "./voice/tools.js";
-import { CHAT_TOOLS, REACH_PROJECTS, recentProjects, runChatTool, withinReach, type ChatPort } from "./voice/chats.js";
+import {
+  CHAT_TOOLS,
+  REACH_PROJECTS,
+  recentProjects,
+  runChatTool,
+  withinReach,
+  type ChatPort,
+} from "./voice/chats.js";
 import { actionLine, actionTarget } from "./voice/memory.js";
 
 /** Every chat Pew may reach by voice (`withinReach`): what it is told about and what its tools match against. */
@@ -202,29 +209,30 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         // conversation comes first — it is the authority on where its own
         // session lives, it needs no client to be up to date, and it is right
         // even for an older app that sends no `cwd` at all.
-        if (message.providerId === GG_GOALS_ID && !(message.cwd && daemon.isGoalFolder(message.cwd))) {
+        if (
+          message.providerId === GG_GOALS_ID &&
+          !(message.cwd && daemon.isGoalFolder(message.cwd))
+        ) {
           reply({ t: "error", code: "not_a_goal", message: NOT_A_GOAL });
           break;
         }
-        const recorded = await daemon.agentSessionCwd(
-          message.providerId,
-          message.agentSessionId,
-        );
+        const recorded = await daemon.agentSessionCwd(message.providerId, message.agentSessionId);
         // Only asked when the agent had no record: checking a path also files it
         // as a project this client has opened, and the one it sent here is not
         // the one being opened.
         const named =
           recorded ??
-          (message.cwd
-            ? await daemon.knownProject(message.providerId, message.cwd)
-            : undefined);
+          (message.cwd ? await daemon.knownProject(message.providerId, message.cwd) : undefined);
         const workspace = named ?? (await daemon.lastWorkspace(message.providerId)) ?? cwd;
         openResumed(ctx, message.providerId, message.agentSessionId, workspace);
         break;
       }
 
       case "session.start": {
-        if (message.providerId === GG_GOALS_ID && !(message.cwd && daemon.isGoalFolder(message.cwd))) {
+        if (
+          message.providerId === GG_GOALS_ID &&
+          !(message.cwd && daemon.isGoalFolder(message.cwd))
+        ) {
           reply({ t: "error", code: "not_a_goal", message: NOT_A_GOAL });
           break;
         }
@@ -234,7 +242,12 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         const workspace = message.cwd
           ? await namedProject(daemon, message.providerId, message.cwd)
           : ((await daemon.lastWorkspace(message.providerId)) ?? cwd);
-        const { sessionId: started } = await openStarted(ctx, message.providerId, workspace, message.requestId);
+        const { sessionId: started } = await openStarted(
+          ctx,
+          message.providerId,
+          workspace,
+          message.requestId,
+        );
         daemon.voice.sessionStarted(started);
         break;
       }
@@ -259,7 +272,9 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
           break;
         }
         daemon.pushTargets.registerVoip(deviceId, message.token, message.env);
-        console.log(`[voice] '${deviceId}' ${message.token ? `can be called (${message.env})` : "stopped calls"}`);
+        console.log(
+          `[voice] '${deviceId}' ${message.token ? `can be called (${message.env})` : "stopped calls"}`,
+        );
         break;
       }
 
@@ -292,11 +307,7 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
       // choice so the session this prompt creates opens with it already set,
       // instead of the change being dropped on the floor.
       case "provider.config": {
-        await daemon.rememberConfigOption(
-          message.providerId,
-          message.configId,
-          message.value,
-        );
+        await daemon.rememberConfigOption(message.providerId, message.configId, message.value);
         break;
       }
 
@@ -322,8 +333,7 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         // The root comes from the session the daemon started, never from the
         // message: a client-supplied `cwd` would let a caller name its own
         // containment root and read anything on the machine.
-        const root =
-          (message.sessionId ? daemon.sessionCwd(message.sessionId) : undefined) ?? cwd;
+        const root = (message.sessionId ? daemon.sessionCwd(message.sessionId) : undefined) ?? cwd;
         try {
           const image = await loadImage(uri, { cwd: root });
           reply({ t: "image", requestId, uri, ...image });
@@ -441,7 +451,11 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
 
       case "plan.decide": {
         if (daemon.sessionProvider(message.sessionId) === GG_GOALS_ID) {
-          reply({ t: "error", code: "unsupported", message: "Plans are for GG Coder conversations." });
+          reply({
+            t: "error",
+            code: "unsupported",
+            message: "Plans are for GG Coder conversations.",
+          });
           break;
         }
         // A turn on the normal prompt path, so busy/idle/queue rules hold.
@@ -465,7 +479,12 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
       case "checklist": {
         try {
           const result = await daemon.checklist(message.sessionId);
-          reply({ t: "checklist", requestId: message.requestId, sessionId: message.sessionId, ...result });
+          reply({
+            t: "checklist",
+            requestId: message.requestId,
+            sessionId: message.sessionId,
+            ...result,
+          });
         } catch (error) {
           reply({
             t: "checklist",
@@ -498,10 +517,21 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
             context: [...message.context, ...filePaths],
             instructions: message.instructions,
           });
-          reply({ t: "goal.result", requestId: message.requestId, ok: true, goal, files: filePaths.length });
+          reply({
+            t: "goal.result",
+            requestId: message.requestId,
+            ok: true,
+            goal,
+            files: filePaths.length,
+          });
           await broadcastGoals(ctx);
         } catch (error) {
-          reply({ t: "goal.result", requestId: message.requestId, ok: false, error: humanError(error) });
+          reply({
+            t: "goal.result",
+            requestId: message.requestId,
+            ok: false,
+            error: humanError(error),
+          });
         }
         break;
       }
@@ -524,7 +554,12 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
           });
           await broadcastGoals(ctx);
         } catch (error) {
-          reply({ t: "goal.result", requestId: message.requestId, ok: false, error: humanError(error) });
+          reply({
+            t: "goal.result",
+            requestId: message.requestId,
+            ok: false,
+            error: humanError(error),
+          });
         }
         break;
       }
@@ -539,7 +574,11 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         try {
           reply(await daemon.voice.loginAction(message.action, message.requestId));
         } catch (error) {
-          reply({ ...(await daemon.voice.status(message.requestId)), available: false, reason: humanError(error) });
+          reply({
+            ...(await daemon.voice.status(message.requestId)),
+            available: false,
+            reason: humanError(error),
+          });
         }
         break;
       }
@@ -561,13 +600,24 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         // Called from a chat with nothing sent yet: no session exists, so the
         // project and agent on screen are the only clue to where they are.
         const statuses = daemon.voiceStatuses();
-        const inSession = message.sessionId && statuses.some((status) => status.sessionId === message.sessionId);
-        const known = !inSession && message.cwd ? await daemon.knownProject(message.providerId ?? "", message.cwd) : undefined;
+        const inSession =
+          message.sessionId && statuses.some((status) => status.sessionId === message.sessionId);
+        const known =
+          !inSession && message.cwd
+            ? await daemon.knownProject(message.providerId ?? "", message.cwd)
+            : undefined;
         const folder = folderName(known);
         const agentName = message.providerId ? daemon.providerName(message.providerId) : undefined;
         const place = folder ? { folder, ...(agentName ? { agentName } : {}) } : undefined;
         reply(
-          await daemon.voice.openSession(message.requestId, message.focus, statuses, message.sessionId, projects, place),
+          await daemon.voice.openSession(
+            message.requestId,
+            message.focus,
+            statuses,
+            message.sessionId,
+            projects,
+            place,
+          ),
         );
         break;
       }
@@ -577,7 +627,14 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         // tool; it runs well inside the app's 30 s tool timeout.
         let first = false;
         const result = !daemon.voice.knowsCall(message.callId)
-          ? { output: JSON.stringify({ ok: false, error: "unknown call", say: "This call has ended." }), hangUp: true }
+          ? {
+              output: JSON.stringify({
+                ok: false,
+                error: "unknown call",
+                say: "This call has ended.",
+              }),
+              hangUp: true,
+            }
           : await daemon.voice.runOnce(message.callId, message.toolCallId, async () => {
               first = true;
               return CHAT_TOOLS.has(message.name)
@@ -588,7 +645,11 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
           const named = (sessionId: string) => daemon.voiceStatuses(sessionId)[0]?.folder;
           const said = actionTarget(message.name, message.arguments, result.output);
           const target = said ? (resolveSession(said, daemon.voiceStatuses()) ?? said) : undefined;
-          daemon.voice.noteAction(message.callId, actionLine(message.name, message.arguments, result.output, named), target);
+          daemon.voice.noteAction(
+            message.callId,
+            actionLine(message.name, message.arguments, result.output, named),
+            target,
+          );
         }
         reply({
           t: "voice.tool",
@@ -670,9 +731,11 @@ function voicePort(ctx: HandlerContext, callId: string): VoicePort {
   const { daemon } = ctx;
   return {
     items: () => daemon.voice.inbox,
-    permissionOptions: (sessionId, requestId) => daemon.voicePermissionOptions(sessionId, requestId),
+    permissionOptions: (sessionId, requestId) =>
+      daemon.voicePermissionOptions(sessionId, requestId),
     askQuestions: (sessionId, requestId) => daemon.voiceAskQuestions(sessionId, requestId),
-    answerPermission: (sessionId, requestId, optionId) => daemon.answerPermission(sessionId, requestId, optionId),
+    answerPermission: (sessionId, requestId, optionId) =>
+      daemon.answerPermission(sessionId, requestId, optionId),
     answerAsk: (sessionId, requestId, result) => daemon.answerAsk(sessionId, requestId, result),
     decidePlan: (sessionId, action, generation, feedback) => {
       // The same turn `plan.decide` runs, so busy/idle/queue rules hold.

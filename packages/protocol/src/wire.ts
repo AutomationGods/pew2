@@ -608,9 +608,7 @@ export const Replay = z.object({
    * it can know: the resolver lives with the ACP connection. Same shape as the
    * logged event's payload, so both paths render through one reader.
    */
-  permissions: z
-    .array(z.object({ requestId: z.string(), params: z.unknown() }))
-    .optional(),
+  permissions: z.array(z.object({ requestId: z.string(), params: z.unknown() })).optional(),
   /**
    * Same rule for queued messages, open `ask_user` questions and goal state:
    * live state only the daemon holds. Absent = an older daemon said nothing;
@@ -704,7 +702,10 @@ export const PushRegister = z.object({
  */
 export const VoipRegister = z.object({
   t: z.literal("app.voip"),
-  token: z.string().regex(/^[0-9a-f]{64,200}$/).nullable(),
+  token: z
+    .string()
+    .regex(/^[0-9a-f]{64,200}$/)
+    .nullable(),
   /** Which APNs a token belongs to: development builds get sandbox tokens. */
   env: z.enum(["sandbox", "production"]),
 });
@@ -998,7 +999,9 @@ export const VoiceInboxItem = z.object({
    */
   questions: z.array(AskQuestion).optional(),
   /** An approval's choices, for the same card. Absent: older daemon, or not an approval. */
-  options: z.array(z.object({ optionId: z.string(), name: z.string(), kind: z.string().optional() })).optional(),
+  options: z
+    .array(z.object({ optionId: z.string(), name: z.string(), kind: z.string().optional() }))
+    .optional(),
   /** An approval's whole request, uncapped (`title` is one capped line). */
   detail: z.string().optional(),
 });
@@ -1157,7 +1160,9 @@ export const VoiceEnd = z.object({
   callId: z.string(),
   reason: z.enum(["hangup", "missed", "declined", "failed"]).optional(),
   /** Spoken transcript lines, for the record; optional and capped by the daemon. */
-  transcript: z.array(z.object({ role: z.enum(["user", "assistant"]), text: z.string() })).optional(),
+  transcript: z
+    .array(z.object({ role: z.enum(["user", "assistant"]), text: z.string() }))
+    .optional(),
 });
 
 // ── Goals (GG Coder) ───────────────────────────────────────

@@ -182,10 +182,7 @@ export function useDrawer({
         })
         .onUpdate((event) => {
           const base = menuOpen ? 1 : 0;
-          drawer$.value = Math.min(
-            1,
-            Math.max(0, base + event.translationX / DRAWER_WIDTH),
-          );
+          drawer$.value = Math.min(1, Math.max(0, base + event.translationX / DRAWER_WIDTH));
         })
         .onEnd((event) => {
           // Signed against the one direction that has somewhere to go, so a drag

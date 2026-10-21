@@ -158,7 +158,10 @@ test("reopening a conversation restores the model it was last held at", async ()
         name: "Model",
         type: "select",
         currentValue: "opus-5",
-        options: [{ value: "opus-5", name: "Opus" }, { value: "sonnet", name: "Sonnet" }],
+        options: [
+          { value: "opus-5", name: "Opus" },
+          { value: "sonnet", name: "Sonnet" },
+        ],
       },
     ],
     setConfigOption: async (configId: string, value: string | boolean) => {
@@ -195,9 +198,7 @@ test("a conversation never configured here keeps the agent's own settings", asyn
 
   session.handle = {
     sessionId: "agent-2",
-    configOptions: [
-      { id: "__acp_model", name: "Model", type: "select", currentValue: "opus-5" },
-    ],
+    configOptions: [{ id: "__acp_model", name: "Model", type: "select", currentValue: "opus-5" }],
     setConfigOption: async (configId: string) => {
       applied.push(configId);
       return [];
@@ -654,7 +655,11 @@ test("a prompt over the attachment limits is refused before anything is echoed",
 
   await expect(
     daemon.prompt("s1", "look", [
-      { name: "huge.bin", mimeType: "application/octet-stream", data: "A".repeat(12 * 1024 * 1024) },
+      {
+        name: "huge.bin",
+        mimeType: "application/octet-stream",
+        data: "A".repeat(12 * 1024 * 1024),
+      },
     ]),
   ).rejects.toThrow(/limit/);
 
@@ -704,7 +709,11 @@ function plantIdleSession(
 ) {
   let closed = false;
   const session = {
-    handle: { close: () => { closed = true; } } as unknown as AcpSessionHandle,
+    handle: {
+      close: () => {
+        closed = true;
+      },
+    } as unknown as AcpSessionHandle,
     log: new SessionLog(sessionId),
     providerId: "test",
     cwd: "/tmp",
