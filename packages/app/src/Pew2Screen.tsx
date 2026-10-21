@@ -30,7 +30,7 @@ import { useAppActive } from "./ui/useAppActive";
 import { waitingCount } from "./notificationPolicy";
 import { onWidgetLink, useHomeWidget } from "./ui/useHomeWidget";
 import { widgetSnapshot } from "./widgetSnapshot";
-import { homeDashboard } from "./homeDashboard";
+import { homeDashboard, homeLink } from "./homeDashboard";
 import { HomeDashboard } from "./ui/HomeDashboard";
 import { pushAddress } from "./ui/push";
 import { ComposerDock, type ComposerDockHandle } from "./ui/ComposerDock";
@@ -99,7 +99,16 @@ const NOOP = () => {};
 /** How long a fresh launch's home waits for the computer before saying it can't reach it. */
 const HOME_OFFLINE_WAIT_MS = 8000;
 
-export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => void }) {
+export function Pew2({
+  pairing,
+  onUnpair,
+  onFirstPaint,
+}: {
+  pairing: Pairing;
+  onUnpair: () => void;
+  /** Home has placed Pew and is drawing smoothly: the splash may go (`App.tsx`). */
+  onFirstPaint?: () => void;
+}) {
   const { choice, setChoice, voiceRequest, setVoiceRequest, pushExpected, announceTurn } =
     useTurnBanners();
   // useVoice needs the daemon's `post`, and the daemon needs voice's frame
@@ -1436,7 +1445,8 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
                 ) : daemon.loadingSession ? null : onHome ? (
                   <HomeDashboard
                     home={devHome ?? dashboard}
-                    online={online}
+                    link={homeLink(daemon.status, daemon.unreachable)}
+                    onFirstPaint={onFirstPaint}
                     fatal={daemon.fatal}
                     agents={
                       daemon.providers.length > 0

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { HOME_CARDS, homeDashboard, parseHomeCards } from "./homeDashboard";
+import {
+  HOME_CARDS,
+  homeDashboard,
+  homeLayoutCards,
+  homeLink,
+  homeMessage,
+  parseHomeCards,
+} from "./homeDashboard";
 import type { WidgetInput } from "./widgetSnapshot";
 
 const providers = [{ id: "claude", name: "Claude Code", color: "#D97757" }];
@@ -62,4 +69,45 @@ it("remembers how many cards home showed, within the limit", () => {
   expect(parseHomeCards("0")).toBe(0);
   expect(parseHomeCards(null)).toBeUndefined();
   expect(parseHomeCards("x")).toBeUndefined();
+});
+
+describe("home while the connection comes and goes", () => {
+  const base = { agents: 2, empty: false, hasCards: true };
+
+  it("re-dialling is connecting, not offline: the app says can't reach only once retries stall", () => {
+    expect(homeLink("connecting", false)).toBe("connecting");
+    expect(homeLink("offline", false)).toBe("connecting");
+    expect(homeLink("online", false)).toBe("online");
+    expect(homeLink("offline", true)).toBe("unreachable");
+  });
+
+  it("says nothing while re-dialling with the cards up, so nothing under Pew changes on every return", () => {
+    expect(homeMessage({ ...base, link: "connecting" })).toBeUndefined();
+    expect(homeMessage({ ...base, link: "unreachable" })?.title).toBe("Can't reach your computer");
+  });
+
+  it("with nothing to show yet, says it is connecting rather than that it failed", () => {
+    expect(homeMessage({ ...base, hasCards: false, link: "connecting" })?.title).toBe(
+      "Connecting…",
+    );
+  });
+
+  it("a refusal outranks everything", () => {
+    expect(homeMessage({ ...base, link: "online", fatal: "rotated" })?.title).toBe("Can't connect");
+  });
+});
+
+describe("homeLayoutCards", () => {
+  it("lays out for last time's cards until the computer answers", () => {
+    expect(homeLayoutCards({ known: 0, answered: false, remembered: 6 })).toBe(6);
+  });
+
+  it("never drops to the empty layout because one agent's list landed first", () => {
+    expect(homeLayoutCards({ known: 2, answered: false, remembered: 6 })).toBe(6);
+  });
+
+  it("only the computer's answer can say none", () => {
+    expect(homeLayoutCards({ known: 0, answered: true, remembered: 6 })).toBe(0);
+    expect(homeLayoutCards({ known: 0, answered: false, remembered: undefined })).toBe(0);
+  });
 });

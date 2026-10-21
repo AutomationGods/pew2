@@ -40,6 +40,13 @@ import { BitcountPropSingle_700Bold } from "@expo-google-fonts/bitcount-prop-sin
 /** `EXPO_PUBLIC_DEV_ONBOARDING=<step>`: show that page, leaving the stored pairing alone. */
 const DEV_STEP = __DEV__ ? devStep(process.env.EXPO_PUBLIC_DEV_ONBOARDING) : undefined;
 
+/**
+ * The longest the splash waits for home's first settled paint. A screen that
+ * is not home (a conversation being reopened) never reports one, and a slow
+ * device must not be held on the splash for it.
+ */
+const SPLASH_HOLD_MAX_MS = 1500;
+
 export default function App() {
   const [fontsLoaded, fontError] = useFonts({
     BitcountPropSingle_400Regular,
@@ -166,13 +173,28 @@ function Root() {
   // and calling it during the commit that renders the first screen can uncover
   // the window before that screen has been drawn into it — a flash of empty
   // canvas, which is the exact thing the splash is being held to prevent.
+  //
+  // For the paired app, later still: until home reports its first settled
+  // paint (`onFirstPaint`), capped. Building home freezes the screen for the
+  // better part of a second, and a splash lifted at the start of that freeze
+  // was never seen to go: its dissolve played out while nothing was drawn, and
+  // the next frame was home, with Pew suddenly higher and smaller than the
+  // splash had him. Held across the freeze, the dissolve is seen in full. It
+  // costs nothing, because the screen could not have moved anyway.
+  const waitsForPaint = pairing !== null && onboard.step === undefined;
+  const [painted, setPainted] = useState(false);
+  const onFirstPaint = useCallback(() => setPainted(true), []);
   useEffect(() => {
     if (!checked) return;
+    if (waitsForPaint && !painted) {
+      const cap = setTimeout(() => setPainted(true), SPLASH_HOLD_MAX_MS);
+      return () => clearTimeout(cap);
+    }
     const frame = requestAnimationFrame(() => {
       void SplashScreen.hideAsync().catch(() => {});
     });
     return () => cancelAnimationFrame(frame);
-  }, [checked]);
+  }, [checked, waitsForPaint, painted]);
 
   const go = useCallback((progress: Progress, next: Gate) => {
     // A dev-forced page never writes, so the stored state survives screenshots.
@@ -233,7 +255,7 @@ function Root() {
         onDevGo={__DEV__ ? (to) => setOnboard({ step: to, repair: false }) : undefined}
       />
     );
-  if (pairing) return <Pew2 pairing={pairing} onUnpair={unpair} />;
+  if (pairing) return <Pew2 pairing={pairing} onUnpair={unpair} onFirstPaint={onFirstPaint} />;
   // Unreachable through `gate`, but never a blank screen.
   return (
     <Onboarding
