@@ -11,6 +11,20 @@ installs them separately, and what an app and a daemon must agree on is
 
 Dates are the day the tag was cut.
 
+## 0.9.26 — 2026-10-21
+
+### Fixed
+
+- **Notifications keep coming after the daemon restarts.** The phones to notify
+  were held only in memory, so after a self-update, a crash or a reboot the
+  daemon knew no phone at all, and finished turns and approvals went
+  unannounced until the app was next opened. They are now saved in
+  `~/.pew2/push-targets.json` (owner-only, tied to the pairing — `pew2 pair
+  --rotate` forgets them). Connect the phone once after updating to save it.
+- **The daemon answers the app's liveness check on the local network**, as the
+  relay already does, so a phone reopened on the same Wi-Fi can confirm its
+  connection instead of rebuilding it. Needs the matching app update to matter.
+
 ## 0.9.25 — 2026-10-20
 
 ### Changed
