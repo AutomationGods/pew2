@@ -36,6 +36,7 @@ export type ConnectionRefs = FrameRefs &
     | "pushRegistered"
     | "voipRegistered"
     | "pendingVoiceTokens"
+    | "pendingWalkie"
     | "resume"
     | "retry"
     | "sessionsRef"
@@ -68,6 +69,7 @@ export function openConnection(
     pushRegistered,
     voipRegistered,
     pendingVoiceTokens,
+    pendingWalkie,
     resume,
     retry,
     sessionsRef,
@@ -117,6 +119,8 @@ export function openConnection(
     voipRegistered.current = false;
     for (const resolve of pendingVoiceTokens.current.values()) resolve(undefined);
     pendingVoiceTokens.current.clear();
+    for (const finish of pendingWalkie.current.values()) finish(undefined);
+    pendingWalkie.current.clear();
     // Fresh per connection: the counters that make replay detectable are only
     // meaningful within one socket, so carrying them across a reconnect would
     // make the new connection's first frames look like replays.

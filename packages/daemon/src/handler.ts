@@ -23,6 +23,9 @@ import { readKnownProjects } from "./known-projects.js";
 
 const NOT_A_GOAL = "Open or create a goal first.";
 import { mintVoiceToken } from "./voice.js";
+import { voiceRespond } from "./voice-respond.js";
+import { mintGeminiToken } from "./gemini-voice.js";
+import { isLocalWatcher } from "./device-claim.js";
 
 export interface HandlerContext {
   daemon: Daemon;
@@ -270,8 +273,25 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
 
       case "voice.token": {
         // Only the asker gets the secret: it is a credential for one call.
-        const result = await mintVoiceToken({ model: message.model, voice: message.voice }, { env: daemon.voiceEnv });
+        // Absent engine is OpenAI: what every app before Gemini meant.
+        const result =
+          message.engine === "gemini"
+            ? await mintGeminiToken({ model: message.model }, { env: daemon.voiceEnv })
+            : await mintVoiceToken({ model: message.model, voice: message.voice }, { env: daemon.voiceEnv });
         reply({ t: "voice.token.result", requestId: message.requestId, result });
+        break;
+      }
+
+      case "voice.respond": {
+        // Walkie-talkie: one Responses turn on the ChatGPT plan, streamed back
+        // to the asker only. Not awaited: a turn runs for seconds, and the LAN
+        // transport handles one frame at a time per client.
+        const requestId = message.requestId;
+        void voiceRespond(
+          message,
+          (event) => reply({ t: "voice.respond.event", requestId, event }),
+          { env: daemon.voiceEnv, session: daemon.planSession, models: daemon.planModels },
+        );
         break;
       }
 
@@ -292,10 +312,11 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
       case "voice.call": {
         // Rings every connected client (broadcast) and this phone's VoIP token.
         const notice = message.sessionId ? daemon.sessionNotice(message.sessionId) : {};
-        await daemon.calls.ringManual(
-          { sessionId: message.sessionId, folder: notice.folder, agentName: notice.agentName },
-          ctx.deviceId,
-        );
+        const origin = { sessionId: message.sessionId, folder: notice.folder, agentName: notice.agentName };
+        // The computer asking (`pew2 call`, a test script) has no phone of
+        // its own; ringing "the asker" would ring nothing at all.
+        if (ctx.deviceId && isLocalWatcher(ctx.deviceId)) await daemon.calls.ringEveryPhone(origin);
+        else await daemon.calls.ringManual(origin, ctx.deviceId);
         break;
       }
 

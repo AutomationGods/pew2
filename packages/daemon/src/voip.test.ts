@@ -97,4 +97,22 @@ describe("APNs", () => {
     await ringer.ringManual({}, undefined);
     expect(android).toEqual([undefined, "droid"]);
   });
+
+  it("a call from the computer itself rings every phone, with no cooldown", async () => {
+    const { env } = await setup();
+    const android: (string | undefined)[] = [];
+    const broadcast: unknown[] = [];
+    const ringer = new CallRinger({
+      env,
+      broadcast: (m) => broadcast.push(m),
+      transport: async () => ({ status: 200 }),
+      androidRing: async (_incoming, deviceId) => { android.push(deviceId); },
+    });
+    const first = await ringer.ringEveryPhone({});
+    const second = await ringer.ringEveryPhone({});
+    expect(first?.reason).toBe("manual");
+    expect(second).toBeDefined();
+    expect(android).toEqual([undefined, undefined]);
+    expect(broadcast).toHaveLength(2);
+  });
 });

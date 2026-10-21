@@ -42,7 +42,7 @@ test("a bare machine reports blocking problems, each with a fix", async () => {
 
   expect(report.ok).toBe(false);
   const ids = report.problems.map((p) => p.id).sort();
-  expect(ids).toEqual(["daemon-unreachable", "local-only", "no-providers"]);
+  expect(ids).toEqual(["daemon-unreachable", "local-only", "no-gemini-key", "no-providers"]);
   // The whole contract: an agent can act on every problem without parsing prose.
   for (const problem of report.problems) expect(problem.fix.length).toBeGreaterThan(0);
   expect(report.problems.find((p) => p.id === "no-providers")!.fix).toBe("pew2 detect");
@@ -62,7 +62,7 @@ test("setup configures what is installed and stops blocking once it can run", as
   expect(first.detect.detected.map((d) => d.id)).toEqual(["claude-code"]);
   expect(first.ok).toBe(false);
   // Only the daemon is still blocking; the provider problem resolved itself.
-  expect(first.doctor.problems.map((p) => p.id)).toEqual(["daemon-unreachable", "local-only"]);
+  expect(first.doctor.problems.map((p) => p.id)).toEqual(["daemon-unreachable", "local-only", "no-gemini-key"]);
   expect(first.nextSteps).toHaveLength(1);
 
   // Start the daemon — the one remaining fix — and the loop terminates.
@@ -92,7 +92,8 @@ test("a missing optional API key warns without blocking", async () => {
 
   // An agent with its own login flow must not trap the setup loop.
   expect(report.ok).toBe(true);
-  expect(report.problems).toEqual([]);
+  // Only the optional live-voice key is left, and only as a warning.
+  expect(report.problems.map((p) => [p.id, p.severity])).toEqual([["no-gemini-key", "warning"]]);
 });
 
 test("a required API key is reported but never blocks the loop", async () => {

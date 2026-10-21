@@ -64,5 +64,11 @@ export interface DaemonRefs {
    * raw `result`, or `undefined` for an older daemon / timeout / lost socket.
    */
   pendingVoiceTokens: RefObject<Map<string, (result: unknown) => void>>;
+  /**
+   * Walkie-talkie `voice.respond` turns awaiting events, by requestId. Each
+   * `voice.respond.event` is passed on; `undefined` means the turn is gone
+   * (older daemon, lost socket) and the listener must finish.
+   */
+  pendingWalkie: RefObject<Map<string, (event: unknown) => void>>;
   targetProviderRef: RefObject<string | undefined>;
 }

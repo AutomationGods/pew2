@@ -44,6 +44,7 @@ export function reduceMessage(prev: State, message: any, scope: MessageScope): S
         // update it describes.
         update: message.update,
         canCreateWorkspace: message.canCreateWorkspace === true,
+        voiceEngines: Array.isArray(message.voiceEngines) ? message.voiceEngines : undefined,
         loadingSessions: pendingCapabilities.current.size > 0,
       };
 

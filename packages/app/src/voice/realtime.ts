@@ -8,6 +8,12 @@
  */
 import { NativeModules, Platform } from "react-native";
 import type * as WebRTC from "react-native-webrtc";
+import { diagnosticLine, judgeConnection, RECONNECT_GRACE_MS } from "./protocol";
+
+/** Device-log line for a call ("[pew2-voice] ..."), readable with `adb logcat -s ReactNativeJS`. */
+function trace(message: string): void {
+  console.info(`[pew2-voice] ${message}`);
+}
 
 const REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls";
 
@@ -56,9 +62,9 @@ export function audioSessionActivated(active: boolean): void {
 }
 
 export interface RealtimeHandlers {
-  onState: (state: "connecting" | "connected" | "ended") => void;
+  onState: (state: "connecting" | "connected" | "reconnecting" | "ended") => void;
   onEvent: (event: unknown) => void;
-  onError: (error: "mic_denied" | "unsupported" | "failed", detail?: string) => void;
+  onError: (error: "mic_denied" | "unsupported" | "failed" | "gemini_key" | "gemini_quota", detail?: string) => void;
 }
 
 export interface RealtimeCall {
@@ -90,9 +96,13 @@ export async function startRealtime(
 
   const pc = new rtc.RTCPeerConnection({});
   let ended = false;
-  const end = () => {
+  let graceTimer: ReturnType<typeof setTimeout> | undefined;
+  const end = (reason: string) => {
     if (ended) return;
     ended = true;
+    trace(`call ended: ${reason}`);
+    if (graceTimer) clearTimeout(graceTimer);
+    graceTimer = undefined;
     try {
       channel.close();
     } catch {
@@ -119,7 +129,7 @@ export async function startRealtime(
     setMuted: (muted) => {
       for (const track of stream.getAudioTracks()) track.enabled = !muted;
     },
-    hangUp: end,
+    hangUp: () => end("hung up on the phone"),
   };
 
   // The typings inherit `addEventListener` from event-target-shim, which does
@@ -127,23 +137,47 @@ export async function startRealtime(
   type Listenable = { addEventListener: (type: string, listener: (event: never) => void) => void };
   const channelEvents = channel as unknown as Listenable;
   const pcEvents = pc as unknown as Listenable;
-  channelEvents.addEventListener("open", () => onOpen(call));
+  channelEvents.addEventListener("open", () => {
+    trace("event channel open");
+    onOpen(call);
+  });
+  channelEvents.addEventListener("close", () => trace("event channel closed"));
+  channelEvents.addEventListener("error", () => trace("event channel error"));
   channelEvents.addEventListener("message", (message: { data: unknown }) => {
     if (typeof message.data !== "string") return;
+    let parsed: unknown;
     try {
-      handlers.onEvent(JSON.parse(message.data));
+      parsed = JSON.parse(message.data);
     } catch {
-      // Not JSON; nothing to fold.
+      return; // Not JSON; nothing to fold.
     }
+    const line = diagnosticLine(parsed);
+    if (line) trace(line);
+    handlers.onEvent(parsed);
   });
+  pcEvents.addEventListener("iceconnectionstatechange", () => trace(`ice ${String(pc.iceConnectionState)}`));
   pcEvents.addEventListener("connectionstatechange", () => {
-    const state = pc.connectionState;
-    if (state === "connected") handlers.onState("connected");
-    if (state === "failed") {
+    if (ended) return;
+    const verdict = judgeConnection(pc.connectionState);
+    trace(`connection ${String(pc.connectionState)}`);
+    if (verdict === "connected") {
+      if (graceTimer) clearTimeout(graceTimer);
+      graceTimer = undefined;
+      handlers.onState("connected");
+    } else if (verdict === "reconnecting") {
+      handlers.onState("reconnecting");
+      graceTimer ??= setTimeout(() => {
+        graceTimer = undefined;
+        if (ended || judgeConnection(pc.connectionState) === "connected") return;
+        handlers.onError("failed", "the connection dropped and did not come back");
+        end("no connection after the grace period");
+      }, RECONNECT_GRACE_MS);
+    } else if (verdict === "lost") {
       handlers.onError("failed", "the connection dropped");
-      end();
+      end("connection failed");
+    } else if (verdict === "ended") {
+      end("connection closed");
     }
-    if (state === "closed" || state === "disconnected") end();
   });
 
   try {
@@ -162,7 +196,7 @@ export async function startRealtime(
     await pc.setRemoteDescription(new rtc.RTCSessionDescription({ type: "answer", sdp }));
   } catch (error) {
     handlers.onError("failed", error instanceof Error ? error.message : undefined);
-    end();
+    end(`setup failed: ${error instanceof Error ? error.message : String(error)}`);
     return undefined;
   }
   return call;

@@ -143,6 +143,12 @@ export const ProviderAnnounce = z.object({
   /** Whether this daemon accepts `workspace.create`. Absent = older daemon. */
   canCreateWorkspace: z.boolean().optional(),
   /**
+   * Live-voice engines this computer can mint a token for right now (a Gemini
+   * key stored; an OpenAI sign-in or key). Absent = an older daemon, which can
+   * only mean OpenAI; `[]` = voice is not set up here.
+   */
+  voiceEngines: z.array(z.enum(["openai", "gemini"])).optional(),
+  /**
    * A newer pew2 has been published and this machine is not running it yet.
    *
    * Absent is the normal state, and deliberately means two different things:
@@ -1159,6 +1165,9 @@ export const Envelope = z.object({
  * daemon answers `unknown_message`, which the app treats as "voice unavailable".
  */
 
+/** A live-voice service the daemon can mint short-lived tokens for. */
+export const VoiceEngine = z.enum(["openai", "gemini"]);
+
 /** App -> daemon. Ask for a short-lived Realtime client secret. */
 export const VoiceTokenRequest = z.object({
   t: z.literal("voice.token"),
@@ -1168,6 +1177,11 @@ export const VoiceTokenRequest = z.object({
   model: z.string().optional(),
   /** Optional voice name override (e.g. "marin"). */
   voice: z.string().optional(),
+  /**
+   * Which live-voice service to mint for. Absent = "openai" (what every older
+   * app means). "gemini" mints a Gemini Live ephemeral token (`auth_tokens/...`).
+   */
+  engine: VoiceEngine.optional(),
 });
 
 export const VoiceTokenError = z.enum([
@@ -1193,6 +1207,8 @@ export const VoiceTokenResult = z.object({
       model: z.string(),
       /** Which desktop credential paid for it. */
       source: z.enum(["chatgpt", "api_key"]),
+      /** Which service the secret is for. Absent = "openai" (an older daemon). */
+      engine: VoiceEngine.optional(),
     }),
     z.object({
       ok: z.literal(false),
@@ -1278,6 +1294,75 @@ export const VoiceIncoming = z.object({
   at: z.number().int(),
 });
 
+/**
+ * Walkie-talkie voice: one Responses API turn paid for by the user's ChatGPT
+ * plan (the "Sign in with ChatGPT — ChatGPT plan usage" grant held on the
+ * computer, `pew2 openai login --plan`). The phone does speech-to-text and
+ * text-to-speech itself and keeps the conversation history; the daemon only
+ * adds the credential and streams the answer back as replies to the asker,
+ * never as session events. Additive: an older daemon answers
+ * `unknown_message`, which the app shows as "Update pew2 on your computer".
+ */
+export const VoiceRespondRequest = z.object({
+  t: z.literal("voice.respond"),
+  requestId: z.string().min(1).max(200),
+  /** Becomes the request's `instructions` (system items are not allowed). */
+  instructions: z.string().max(20_000),
+  /** Responses API input items, the whole history (no `previous_response_id`). */
+  input: z.array(z.record(z.string(), z.unknown())).min(1).max(400),
+  /** Responses API tools; function tools grouped in namespaces. */
+  tools: z.array(z.record(z.string(), z.unknown())).max(16).optional(),
+  /** Optional model slug; the daemon picks from the account's model list otherwise. */
+  model: z.string().max(200).optional(),
+});
+
+export const VoiceRespondError = z.enum([
+  /** No plan sign-in on the computer. */
+  "not_signed_in",
+  /** Signed in, but `chatgpt.tokens.use.direct` was not granted (or the grant does not cover this). */
+  "plan_not_enabled",
+  /** The sign-in ended (revoked, refresh refused, invalid user): sign in again. */
+  "reauth",
+  /** `subscription_sharing_usage_limit_exceeded`: link to ChatGPT usage settings. */
+  "usage_limit",
+  /** `subscription_sharing_user_not_eligible`, or a region/policy refusal. */
+  "not_eligible",
+  /** Temporarily unavailable on OpenAI's side; try again later. */
+  "unavailable",
+  /** OpenAI refused part of the request (unsupported tool, model or field). */
+  "unsupported",
+  /** The answer stopped early (`response.incomplete` or a dropped stream). */
+  "incomplete",
+  /** Anything else: network, unexpected status. */
+  "failed",
+]);
+
+/** Daemon -> the asker only. One step of a `voice.respond` turn. */
+export const VoiceRespondEvent = z.object({
+  t: z.literal("voice.respond.event"),
+  requestId: z.string(),
+  event: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("delta"), text: z.string() }),
+    z.object({
+      kind: z.literal("call"),
+      callId: z.string(),
+      name: z.string(),
+      namespace: z.string().optional(),
+      arguments: z.string(),
+    }),
+    z.object({ kind: z.literal("done"), model: z.string() }),
+    z.object({
+      kind: z.literal("error"),
+      error: VoiceRespondError,
+      message: z.string(),
+      /** "Manage usage" link, for the usage-limit state. */
+      manageUrl: z.string().optional(),
+      /** OpenAI's request id, for diagnosis. */
+      openaiRequestId: z.string().optional(),
+    }),
+  ]),
+});
+
 export const ClientMessage = z.discriminatedUnion("t", [
   Hello,
   Envelope,
@@ -1307,6 +1392,7 @@ export const ClientMessage = z.discriminatedUnion("t", [
   VoipRegister,
   VoiceCallRequest,
   VoiceTranscript,
+  VoiceRespondRequest,
 ]);
 
 export const ServerMessage = z.discriminatedUnion("t", [
@@ -1334,6 +1420,7 @@ export const ServerMessage = z.discriminatedUnion("t", [
   ErrorMessage,
   VoiceTokenResult,
   VoiceIncoming,
+  VoiceRespondEvent,
 ]);
 
 export type QueuedMessage = z.output<typeof QueuedMessage>;
@@ -1387,6 +1474,7 @@ export type WorkspaceEntry = z.output<typeof WorkspaceEntry>;
 export type Workspaces = z.output<typeof Workspaces>;
 export type VoiceTokenRequest = z.output<typeof VoiceTokenRequest>;
 export type VoiceTokenError = z.output<typeof VoiceTokenError>;
+export type VoiceEngine = z.output<typeof VoiceEngine>;
 export type VoiceTokenResult = z.output<typeof VoiceTokenResult>;
 export type VoipRegister = z.output<typeof VoipRegister>;
 export type VoiceCallReason = z.output<typeof VoiceCallReason>;
@@ -1394,6 +1482,9 @@ export type VoiceCallRequest = z.output<typeof VoiceCallRequest>;
 export type VoiceIncoming = z.output<typeof VoiceIncoming>;
 export type VoiceCallLine = z.output<typeof VoiceCallLine>;
 export type VoiceTranscript = z.output<typeof VoiceTranscript>;
+export type VoiceRespondRequest = z.output<typeof VoiceRespondRequest>;
+export type VoiceRespondError = z.output<typeof VoiceRespondError>;
+export type VoiceRespondEvent = z.output<typeof VoiceRespondEvent>;
 export type WorkspaceCreateRequest = z.output<typeof WorkspaceCreateRequest>;
 export type WorkspaceCreateError = z.output<typeof WorkspaceCreateError>;
 export type WorkspaceCreateResult = z.output<typeof WorkspaceCreateResult>;

@@ -9,6 +9,8 @@ import type { LoadedProvider } from "../providers/registry.js";
 import type { AcpSessionHandle, AgentSession } from "../acp/connect.js";
 import { PushRegistry, pushIncomingCall } from "../push.js";
 import { CallRinger } from "../voip.js";
+import { PlanSession } from "../openai-plan.js";
+import { PlanModelCache } from "../voice-respond.js";
 import type { wire } from "@pew2/protocol";
 import { WorkspaceStatusCache } from "../git.js";
 import type { ActiveSession, ProviderCapabilities } from "./types.js";
@@ -87,6 +89,9 @@ export abstract class DaemonState {
    * transport is attached at the time, so it is safe to build before `attach`.
    */
   readonly calls: CallRinger;
+  /** Walkie-talkie: serialized ChatGPT-plan refreshes and the cached model pick. */
+  readonly planSession = new PlanSession();
+  readonly planModels = new PlanModelCache();
 
   protected readonly spares = new Map<
     // Keyed by provider *and* directory. `cwd` is part of a spare's identity

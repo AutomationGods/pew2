@@ -171,6 +171,8 @@ export interface State {
    * older daemon, so the picker does not offer a button that would be refused.
    */
   canCreateWorkspace?: boolean;
+  /** Live-voice engines the computer can mint for. Absent = older daemon (OpenAI only). */
+  voiceEngines?: string[];
   /** The picker's latest "new project" request, if any. */
   createProject?: WorkspaceCreate;
   /**

@@ -22,6 +22,8 @@ interface CallScreenProps {
   onMute: (muted: boolean) => void;
   onSpeaker: (on: boolean) => void;
   onRetry: () => void;
+  /** Offered when OpenAI refused the live call: switch to walkie-talkie. */
+  onUseWalkie?: () => void;
 }
 
 function statusLine(call: VoiceCallState): string {
@@ -30,6 +32,8 @@ function statusLine(call: VoiceCallState): string {
       return "Connecting…";
     case "connected":
       return call.muted ? "Live · muted" : "Live";
+    case "reconnecting":
+      return "Signal dropped · reconnecting…";
     case "error":
       return "Couldn't connect";
     case "idle":
@@ -37,7 +41,7 @@ function statusLine(call: VoiceCallState): string {
   }
 }
 
-export function CallScreen({ call, onHangUp, onMute, onSpeaker, onRetry }: CallScreenProps): React.JSX.Element {
+export function CallScreen({ call, onHangUp, onMute, onSpeaker, onRetry, onUseWalkie }: CallScreenProps): React.JSX.Element {
   const palette = usePalette();
   const styles = makeStyles(palette);
   const scroll = useRef<ScrollView>(null);
@@ -82,6 +86,16 @@ export function CallScreen({ call, onHangUp, onMute, onSpeaker, onRetry }: CallS
                   style={({ pressed }) => [styles.retry, pressed && styles.pressed]}
                 >
                   <Text style={styles.retryText}>Try again</Text>
+                </Pressable>
+              )}
+              {call.error === "refused" && onUseWalkie && (
+                <Pressable
+                  onPress={onUseWalkie}
+                  accessibilityRole="button"
+                  accessibilityLabel="Use walkie-talkie instead"
+                  style={({ pressed }) => [styles.retry, pressed && styles.pressed]}
+                >
+                  <Text style={styles.retryText}>Use walkie-talkie instead</Text>
                 </Pressable>
               )}
             </View>

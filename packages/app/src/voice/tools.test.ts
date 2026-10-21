@@ -55,6 +55,18 @@ describe("runVoiceTool", () => {
     expect(runVoiceTool("send_prompt", '{"sessionId":"s1","text":""}', ctx)).toHaveProperty("error");
     expect(runVoiceTool("send_prompt", '{"sessionId":"s1","text":"x"}', context(sessions, false).ctx)).toHaveProperty("error");
   });
+
+  test("a prompt only queued on the phone is never reported as sent", () => {
+    const { ctx } = context(sessions);
+    const offline = { ...ctx, connected: () => false };
+    const result = runVoiceTool("send_prompt", '{"sessionId":"s1","text":"review the UI"}', offline) as Record<string, unknown>;
+    expect(result.ok).toBe(true);
+    expect(result.queued).toBe("review the UI");
+    expect(result).not.toHaveProperty("sent");
+    expect(String(result.note)).toContain("queued, not sent");
+    const online = runVoiceTool("send_prompt", '{"sessionId":"s1","text":"review the UI"}', { ...ctx, connected: () => true });
+    expect(online).toEqual({ ok: true, sent: "review the UI" });
+  });
   test("answer_permission", () => {
     const { ctx, calls } = context(sessions);
     expect(runVoiceTool("answer_permission", '{"sessionId":"s2","choice":"yes"}', ctx)).toEqual({ ok: true, chose: "Allow" });

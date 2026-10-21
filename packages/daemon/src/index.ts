@@ -19,6 +19,7 @@ import { writeSessionPrefs } from "./session-prefs.js";
 import type { wire } from "@pew2/protocol";
 import { pushAgentNotice, pushFinishedTurn } from "./push.js";
 import { saveVoiceCall, voiceCallNote } from "./voice-calls.js";
+import { voiceEngines } from "./gemini-voice.js";
 import { desktopAskId, kenNeedsYou, readDesktopState } from "./acp/sharedDesktop.js";
 import { DaemonConnectSession } from "./daemon/connect-session.js";
 import {
@@ -241,6 +242,9 @@ export class Daemon extends DaemonConnectSession {
     // restarting the daemon.
     this.disabled = await readDisabled();
     this.closeDisabled();
+    // Re-read with the providers (every `hello` lands here), so a key stored
+    // with `pew2 voice gemini-key` reaches the phone on its next connect.
+    this.voiceEngineList = await voiceEngines(this.voiceEnv).catch(() => undefined);
     this.announceProviders();
     return { errors };
   }
@@ -275,6 +279,9 @@ export class Daemon extends DaemonConnectSession {
   protected isEnabled(providerId: string): boolean {
     return !this.disabled.has(providerId);
   }
+
+  /** Live-voice engines with a credential here, as of the last refresh. */
+  private voiceEngineList: wire.VoiceEngine[] | undefined;
 
   private announceProviders() {
     const announce: wire.ProviderAnnounce = {
@@ -314,6 +321,7 @@ export class Daemon extends DaemonConnectSession {
       // with the previous process and must be resumed, not prompted.
       activeSessions: [...this.sessions.keys()],
       canCreateWorkspace: true,
+      voiceEngines: this.voiceEngineList,
       // Omitted entirely when there is nothing to say, so an app that has been
       // told once does not keep a stale banner when the update lands.
       update: this.updateStatus,

@@ -203,6 +203,15 @@ export class CallRinger {
     return this.ring("input", origin);
   }
 
+  /**
+   * "Call me" from the computer itself (the CLI, a test): it has no phone of
+   * its own, so every paired phone rings, the same way an agent's question
+   * does, but without the per-session cooldown.
+   */
+  ringEveryPhone(origin: CallOrigin): Promise<wire.VoiceIncoming | undefined> {
+    return this.ring("manual", origin);
+  }
+
   /** "Call me" from the app: ring only that phone's VoIP token. */
   ringManual(origin: CallOrigin, deviceId: string | undefined): Promise<wire.VoiceIncoming | undefined> {
     const target = deviceId ? this.voip.get(deviceId) : undefined;

@@ -20,11 +20,13 @@ import {
   type ProjectPreferences,
 } from "./projectPreferences";
 import type { Provider } from "./useDaemon";
+import { parseVoiceMode, type VoiceMode } from "./voice/walkie";
 
 const LAST_PROVIDER_KEY = "pew2.lastProviderId";
 const PROVIDERS_KEY = "pew2.providers";
 const PROJECTS_KEY = "pew2.selectedProjects";
 const APPEARANCE_KEY = "pew2.appearance";
+const VOICE_MODE_KEY = "pew2.voiceMode";
 
 /** The agent last targeted on this device, or null if never chosen. */
 export async function loadLastProvider(): Promise<string | null> {
@@ -110,6 +112,23 @@ export async function saveAppearancePreference(
     await SecureStore.setItemAsync(APPEARANCE_KEY, serializeAppearancePreference(preference));
   } catch {
     // Appearance applies immediately; persistence failure never blocks the app.
+  }
+}
+
+/** Live call or walkie-talkie, if the user ever chose; undefined means "use the default". */
+export async function loadVoiceMode(): Promise<VoiceMode | undefined> {
+  try {
+    return parseVoiceMode(await SecureStore.getItemAsync(VOICE_MODE_KEY));
+  } catch {
+    return undefined;
+  }
+}
+
+export async function saveVoiceMode(mode: VoiceMode): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(VOICE_MODE_KEY, mode);
+  } catch {
+    // The choice still applies for this run.
   }
 }
 

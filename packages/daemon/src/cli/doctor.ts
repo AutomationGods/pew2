@@ -11,6 +11,7 @@
  * key on an agent that has its own login flow is a warning, not a failure, and
  * must not trap an agent in a loop it cannot escape.
  */
+import { readGeminiKey } from "../gemini-voice.js";
 import { loadProviders, isAvailable, unavailableReason, providerDirs } from "../providers/registry.js";
 import {
   lanAddresses,
@@ -70,7 +71,8 @@ export interface Problem {
     | "not-paired"
     | "no-lan-address"
     | "local-only"
-    | "not-autostarted";
+    | "not-autostarted"
+    | "no-gemini-key";
   severity: Severity;
   /** The provider this concerns, when it concerns one. */
   provider?: string;
@@ -285,6 +287,16 @@ export async function doctor(options: DoctorOptions = {}): Promise<DoctorReport>
       severity: "warning",
       detail: "No relay. Works on the same network only.",
       fix: "pew2 relay wss://your-relay.workers.dev",
+    });
+  }
+
+  // Live voice is an extra: a missing key is advice, never a failure.
+  if (!(await readGeminiKey(env).catch(() => undefined))) {
+    problems.push({
+      id: "no-gemini-key",
+      severity: "warning",
+      detail: "No Gemini API key, so live voice calls from the phone use OpenAI only.",
+      fix: "pew2 voice gemini-key",
     });
   }
 

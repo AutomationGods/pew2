@@ -77,6 +77,7 @@ export type FrameRefs = Pick<
   | "pushRegistered"
   | "voipRegistered"
   | "pendingVoiceTokens"
+  | "pendingWalkie"
 >;
 
 export function handleSealedFrame(refs: FrameRefs, connection: FrameConnection, frame: unknown): void {
@@ -108,6 +109,7 @@ export function handleSealedFrame(refs: FrameRefs, connection: FrameConnection, 
     pushRegistered,
     voipRegistered,
     pendingVoiceTokens,
+    pendingWalkie,
   } = refs;
   const { ws, secure, resetStream, batch, flushOutbox } = connection;
 
@@ -634,6 +636,13 @@ export function handleSealedFrame(refs: FrameRefs, connection: FrameConnection, 
   if (message.t === "error" && message.code === "unknown_message") {
     for (const resolve of pendingVoiceTokens.current.values()) resolve(undefined);
     pendingVoiceTokens.current.clear();
+    // Same for walkie-talkie: a daemon older than `voice.respond`.
+    for (const finish of pendingWalkie.current.values()) finish(undefined);
+    pendingWalkie.current.clear();
+  }
+  if (message.t === "voice.respond.event" && typeof message.requestId === "string") {
+    pendingWalkie.current.get(message.requestId)?.(message.event);
+    return;
   }
   if (message.t === "voice.token.result" && typeof message.requestId === "string") {
     const resolve = pendingVoiceTokens.current.get(message.requestId);

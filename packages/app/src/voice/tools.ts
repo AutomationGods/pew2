@@ -24,6 +24,13 @@ export interface VoiceToolContext {
   isLive: (sessionId: string) => boolean;
   providerName: (providerId: string) => string | undefined;
   prompt: (sessionId: string, text: string) => boolean;
+  /**
+   * Whether the phone is talking to the computer right now. `prompt` also
+   * answers true for a message it only *queued* (the outbox delivers it on
+   * reconnect), so without this the call said "Sent" for a prompt that was
+   * still sitting on the phone, and the agent never heard it.
+   */
+  connected?: () => boolean;
   answer: (sessionId: string, requestId: string, optionId: string) => boolean;
   cancel: (sessionId: string) => boolean;
   /** GG Coder questions (`ask_user`) still open in a session, oldest first. */
@@ -334,7 +341,15 @@ export function runVoiceTool(name: string, rawArgs: string, ctx: VoiceToolContex
       if (!s) return { error: "No session with that id. Call list_sessions." };
       if (!text) return { error: "The prompt is empty." };
       if (!ctx.isLive(s.id)) return { error: "That session is closed. Open it on the phone first." };
-      return ctx.prompt(s.id, text) ? { ok: true, sent: text } : { error: "Not connected to the computer." };
+      const online = ctx.connected?.() ?? true;
+      if (!ctx.prompt(s.id, text)) return { error: "Not connected to the computer." };
+      return online
+        ? { ok: true, sent: text }
+        : {
+            ok: true,
+            queued: text,
+            note: "The phone is not connected to the computer right now. The prompt is waiting on the phone and goes out when it reconnects. Tell the user it is queued, not sent, and do not say the agent is working on it.",
+          };
     }
     case "answer_permission": {
       const s = find();

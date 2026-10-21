@@ -28,6 +28,11 @@ import { useTurnBanners } from "./ui/useTurnBanners";
 import { pushAddress } from "./ui/push";
 import { CallScreen } from "./ui/CallScreen";
 import { useVoiceCall } from "./voice/useVoiceCall";
+import { useWalkie } from "./voice/useWalkie";
+import type { VoiceToolContext } from "./voice/tools";
+import { effectiveVoiceMode, type VoiceMode } from "./voice/walkie";
+import { WalkieTalkie } from "./ui/WalkieTalkie";
+import { loadVoiceMode, saveVoiceMode } from "./preferences";
 import { parseIncoming } from "./voice/protocol";
 import { voipAddress } from "./voice/callkit";
 import { ComposerDock, type ComposerDockHandle } from "./ui/ComposerDock";
@@ -117,9 +122,33 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
   // calls them long after this render.
   const daemonRef = useRef(daemon);
   daemonRef.current = daemon;
+  const voiceTools: VoiceToolContext = {
+    sessions: () => daemonRef.current.sessions,
+    isLive: (id) => daemonRef.current.isLiveSession(id),
+    providerName: (id) => daemonRef.current.providers.find((p) => p.id === id)?.name,
+    prompt: (id, text) => daemonRef.current.prompt(text, id),
+    connected: () => daemonRef.current.status === "online",
+    answer: (id, requestId, optionId) => daemonRef.current.answerSession(id, requestId, optionId),
+    cancel: (id) => daemonRef.current.cancelSession(id),
+    // GG Coder: open questions and goals, from the same state the cards use.
+    asks: (id) => daemonRef.current.gg.asks[id] ?? [],
+    answerAsk: (id, requestId, result) => {
+      if (daemonRef.current.status !== "online") return false;
+      daemonRef.current.answerAsk(id, requestId, result);
+      return true;
+    },
+    goals: () => (daemonRef.current.hasGgCoder ? daemonRef.current.gg.goals : []),
+    goalWorkers: (id) => daemonRef.current.gg.goalStates[id]?.workers,
+    goalAction: (goalId, action) => daemonRef.current.goalAction(goalId, action) !== undefined,
+  };
+  const voiceDescribe = (sessionId: string | undefined) => {
+    const session = sessionId ? daemonRef.current.sessions.find((s) => s.id === sessionId) : undefined;
+    return { sessionId, title: session?.title, folder: session?.folder };
+  };
   const voice = useVoiceCall({
     online: daemon.status === "online",
     requestVoiceToken: daemon.requestVoiceToken,
+    voiceEngines: daemon.voiceEngines,
     openSession: (id) => {
       const session = daemonRef.current.sessions.find((s) => s.id === id);
       if (session) daemonRef.current.openSession(session.id);
@@ -131,26 +160,40 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
       const session = sessionId ? daemonRef.current.sessions.find((s) => s.id === sessionId) : undefined;
       return { sessionId, title: session?.title, folder: session?.folder };
     },
-    tools: {
-      sessions: () => daemonRef.current.sessions,
-      isLive: (id) => daemonRef.current.isLiveSession(id),
-      providerName: (id) => daemonRef.current.providers.find((p) => p.id === id)?.name,
-      prompt: (id, text) => daemonRef.current.prompt(text, id),
-      answer: (id, requestId, optionId) => daemonRef.current.answerSession(id, requestId, optionId),
-      cancel: (id) => daemonRef.current.cancelSession(id),
-      // GG Coder: open questions and goals, from the same state the cards use.
-      asks: (id) => daemonRef.current.gg.asks[id] ?? [],
-      answerAsk: (id, requestId, result) => {
-        if (daemonRef.current.status !== "online") return false;
-        daemonRef.current.answerAsk(id, requestId, result);
-        return true;
-      },
-      goals: () => (daemonRef.current.hasGgCoder ? daemonRef.current.gg.goals : []),
-      goalWorkers: (id) => daemonRef.current.gg.goalStates[id]?.workers,
-      goalAction: (goalId, action) => daemonRef.current.goalAction(goalId, action) !== undefined,
-    },
+    tools: voiceTools,
   });
   ringRef.current = voice.ring;
+
+  // Walkie-talkie: the same tools, on the ChatGPT plan, turn by turn.
+  const walkie = useWalkie({
+    online: daemon.status === "online",
+    voiceRespond: daemon.voiceRespond,
+    tools: voiceTools,
+    describe: voiceDescribe,
+    saveTranscript: (sessionId, transcript) => {
+      daemonRef.current.saveCallTranscript(sessionId, transcript);
+    },
+  });
+  const [savedVoiceMode, setSavedVoiceMode] = useState<VoiceMode | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    void loadVoiceMode().then((mode) => {
+      if (!cancelled && mode) setSavedVoiceMode(mode);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  // `voiceEngines` is optional on the wire: absent (older daemon) means unknown.
+  const voiceMode = effectiveVoiceMode(savedVoiceMode, daemon.voiceEngines);
+  const chooseVoiceMode = useCallback((mode: VoiceMode) => {
+    setSavedVoiceMode(mode);
+    void saveVoiceMode(mode);
+  }, []);
+  const startVoice = useCallback((sessionId?: string) => {
+    if (voiceMode === "walkie") walkie.open(sessionId);
+    else voice.startCall(sessionId);
+  }, [voiceMode, walkie, voice]);
 
   const [drawerProjection, setDrawerProjection] = useState(() => ({
     source: daemon.sessions, rows: projectDrawerRows([], daemon.sessions),
@@ -926,8 +969,8 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
         inThread={inThread}
         holdingRestore={holdingRestore}
         active={active}
-        voiceAvailable={voice.available}
-        onStartCall={() => voice.startCall(daemon.sessionId)}
+        voiceAvailable={voiceMode === "walkie" || voice.available}
+        onStartCall={() => startVoice(daemon.sessionId)}
       />
 
       {/* The one thing the keyboard moves: the thread and the dock ride up as a
@@ -1090,7 +1133,7 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
       {/* Outside the lifted pane: a sheet belongs to the screen's bottom edge,
           not to the composer, so it must not ride up with the keyboard. */}
       <ContextDetailsSheet visible={contextOpen} workspace={daemon.workspace} usage={daemon.usage} inConversation={daemon.sessionId !== undefined} onClose={closeContext} />
-      <ConnectionSheet visible={connectionOpen} machineLabel={daemon.machineName ?? "Your computer"} machineRemote={pairing.remote} status={daemon.status} update={daemon.update} onClose={closeConnection} onUnpair={onUnpair} />
+      <ConnectionSheet visible={connectionOpen} machineLabel={daemon.machineName ?? "Your computer"} machineRemote={pairing.remote} status={daemon.status} update={daemon.update} onClose={closeConnection} onUnpair={onUnpair} voiceMode={voiceMode} onVoiceMode={chooseVoiceMode} />
       <CommandSheet
         visible={commandsOpen}
         commands={daemon.commands}
@@ -1176,7 +1219,14 @@ export function Pew2({ pairing, onUnpair }: { pairing: Pairing; onUnpair: () => 
         onMute={voice.setMuted}
         onSpeaker={voice.setSpeaker}
         onRetry={voice.retry}
+        onUseWalkie={() => {
+          const sessionId = voice.state.focus.sessionId;
+          voice.hangUp();
+          chooseVoiceMode("walkie");
+          walkie.open(sessionId);
+        }}
       />
+      <WalkieTalkie walkie={walkie.state} onPressIn={walkie.pressIn} onPressOut={walkie.pressOut} onClose={walkie.close} />
     </View>
     </AgentColorProvider>
     </ImageResolverProvider>

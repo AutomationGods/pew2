@@ -3,11 +3,12 @@
  * tools run against the app's state, and CallKit kept in step.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import * as Crypto from "expo-crypto";
 import {
   foldEvent,
   readTokenResult,
+  refusesSession,
   voiceInstructions,
   type Caption,
   type IncomingCall,
@@ -15,7 +16,9 @@ import {
   toolOutputEvents,
 } from "./protocol";
 import { runVoiceTool, sessionActedOn, sessionUpdate, transcriptOf, type VoiceToolContext } from "./tools";
-import { audioSessionActivated, startRealtime, voiceAvailable, type RealtimeCall } from "./realtime";
+import { audioSessionActivated, startRealtime, voiceAvailable, type RealtimeCall, type RealtimeHandlers } from "./realtime";
+import { geminiAvailable, startGemini } from "./gemini";
+import { chooseEngine, geminiTokenFailure, tokenEngine, type VoiceEngine } from "./geminiProtocol";
 import {
   callKitAvailable,
   endCall,
@@ -27,7 +30,34 @@ import {
 } from "./callkit";
 import { onCallNotificationTap, ringAndroidOrNotify } from "./androidRing";
 
-export type CallPhase = "idle" | "connecting" | "connected" | "error";
+export type CallPhase = "idle" | "connecting" | "connected" | "reconnecting" | "error";
+
+/**
+ * Android hands a backgrounded app a *silent* microphone: recording "works"
+ * and every sample is zero, unless a microphone-type foreground service was
+ * started while the app was in front. A call answered from the lock screen
+ * or the system call screen starts here with the app still in the background
+ * (callkeep's `backToForeground` is asynchronous), so the model heard nothing
+ * ("Sounds like nothing came through") until the user happened to open the
+ * app. Wait, briefly, for the app to be in front before opening the mic.
+ */
+const FOREGROUND_WAIT_MS = 6_000;
+
+function whenActive(timeoutMs: number): Promise<boolean> {
+  if (AppState.currentState === "active") return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      sub.remove();
+      resolve(AppState.currentState === "active");
+    }, timeoutMs);
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next !== "active") return;
+      clearTimeout(timer);
+      sub.remove();
+      resolve(true);
+    });
+  });
+}
 
 export interface CallFocus {
   sessionId?: string;
@@ -57,7 +87,9 @@ const IDLE: VoiceCallState = {
 
 export interface VoiceCallDeps {
   online: boolean;
-  requestVoiceToken: () => Promise<unknown>;
+  requestVoiceToken: (model?: string, voice?: string, engine?: VoiceEngine) => Promise<unknown>;
+  /** Engines the computer can mint for (`providers.voiceEngines`); absent = older daemon. */
+  voiceEngines?: string[];
   tools: VoiceToolContext;
   /** Resolve a session id into what the call screen names. */
   describe: (sessionId: string | undefined) => CallFocus;
@@ -93,7 +125,8 @@ export function useVoiceCall(deps: VoiceCallDeps) {
     setState((s) => ({ ...s, phase: "error", error, errorDetail: detail }));
   }, []);
 
-  const teardown = useCallback((fromCallKit: boolean) => {
+  const teardown = useCallback((fromCallKit: boolean, why: string) => {
+    if (rtc.current || callId.current) console.info(`[pew2-voice] teardown: ${why}`);
     generation.current += 1;
     rtc.current?.hangUp();
     rtc.current = undefined;
@@ -111,30 +144,67 @@ export function useVoiceCall(deps: VoiceCallDeps) {
   }, []);
 
   const hangUp = useCallback(() => {
-    teardown(false);
+    teardown(false, "hang-up button");
     setState(IDLE);
   }, [teardown]);
 
   const connect = useCallback(
-    async (focus: CallFocus) => {
+    /**
+     * `viaCallKit`: the call was answered through the phone's own call system
+     * (CallKit / Android Telecom). Telecom puts its own call screen in front,
+     * so the app is *not* active, yet the mic works: callkeep starts a
+     * microphone-type foreground service the moment the call rings, which is
+     * exactly the exemption Android needs. Waiting for the app to come to the
+     * front there left an answered call silent until the user gave up.
+     */
+    async (focus: CallFocus, viaCallKit = false) => {
       const mine = ++generation.current;
       const current = () => generation.current === mine;
       const d = depsRef.current;
-      if (!voiceAvailable()) return fail("unsupported");
+      // Gemini when the computer can mint for it and this build has the audio
+      // engine; otherwise OpenAI exactly as before.
+      const wanted = chooseEngine(d.voiceEngines) === "gemini" && geminiAvailable() ? "gemini" : "openai";
+      if (wanted === "openai" && !voiceAvailable()) return fail("unsupported");
       if (!d.online) return fail("offline");
 
-      const raw = await d.requestVoiceToken();
+      const raw = await d.requestVoiceToken(undefined, undefined, wanted === "gemini" ? "gemini" : undefined);
       if (!current()) return;
       if (raw === undefined) return fail("unavailable");
       const token = readTokenResult(raw);
-      if (!token.ok) return fail(token.error, token.message);
+      if (!token.ok) return fail(wanted === "gemini" ? geminiTokenFailure(token.error, token.message) : token.error, token.message);
+      const engine = tokenEngine(raw);
+      console.info(`[pew2-voice] engine ${engine} (${token.model || "default model"})`);
+      const start =
+        engine === "gemini"
+          ? (secret: string, handlers: RealtimeHandlers, onOpen: (call: RealtimeCall) => void) =>
+              startGemini(secret, token.model, handlers, onOpen, async () => {
+                if (!current()) return undefined;
+                const next = readTokenResult(await depsRef.current.requestVoiceToken(token.model, undefined, "gemini"));
+                return next.ok ? next.clientSecret : undefined;
+              })
+          : startRealtime;
 
-      const call = await startRealtime(
+      if (Platform.OS === "android" && !viaCallKit && !(await whenActive(FOREGROUND_WAIT_MS))) {
+        if (!current()) return;
+        // Still in the background: the mic would record silence. Say so on
+        // the call screen instead of letting the model talk to nobody.
+        setState((s) => ({ ...s, errorDetail: "Open pew2 so it can hear you." }));
+        if (!(await whenActive(60_000))) {
+          if (current()) fail("failed", "pew2 could not use the microphone because the app stayed in the background.");
+          return;
+        }
+        if (current()) setState((s) => ({ ...s, errorDetail: undefined }));
+      }
+      if (!current()) return;
+
+      let answeredOnce = false;
+      const call = await start(
         token.clientSecret,
         {
           onState: (phase) => {
             if (!current()) return;
             if (phase === "connected") setState((s) => (s.phase === "error" ? s : { ...s, phase: "connected" }));
+            if (phase === "reconnecting") setState((s) => (s.phase === "error" ? s : { ...s, phase: "reconnecting" }));
             if (phase === "ended") setState((s) => (s.phase === "error" ? s : { ...s, phase: "idle" }));
           },
           onError: (error, detail) => {
@@ -142,6 +212,20 @@ export function useVoiceCall(deps: VoiceCallDeps) {
           },
           onEvent: (event) => {
             if (!current()) return;
+            if (!answeredOnce && (event as { type?: unknown })?.type === "response.done") {
+              answeredOnce = true;
+              if (refusesSession(event)) {
+                // OpenAI opened the session and then would not answer at all:
+                // say so now, rather than wait out the dropped connection.
+                console.info("[pew2-voice] first reply failed: OpenAI refused the session");
+                fail("refused");
+                // Close the link to OpenAI; the call screen stays up with the
+                // reason until the user hangs up.
+                rtc.current?.hangUp();
+                rtc.current = undefined;
+                return;
+              }
+            }
             const folded = foldEvent(captions.current, event);
             if (folded.captions !== captions.current) {
               captions.current = folded.captions;
@@ -182,7 +266,7 @@ export function useVoiceCall(deps: VoiceCallDeps) {
   /** Show the call screen and connect; CallKit owns audio where it exists. */
   const begin = useCallback(
     (call: IncomingCall, viaCallKit: boolean) => {
-      teardown(false);
+      teardown(false, "a new call replaced it");
       const focus = depsRef.current.describe(call.sessionId);
       if (call.sessionId) depsRef.current.openSession(call.sessionId);
       captions.current = [];
@@ -191,7 +275,7 @@ export function useVoiceCall(deps: VoiceCallDeps) {
       touched.current = new Set(call.sessionId ? [call.sessionId] : []);
       setState({ ...IDLE, open: true, phase: "connecting", focus });
       if (!viaCallKit) startOutgoing(call);
-      void connect(focus);
+      void connect(focus, viaCallKit);
     },
     [connect, teardown],
   );
@@ -236,7 +320,7 @@ export function useVoiceCall(deps: VoiceCallDeps) {
       },
       onEnd: (id) => {
         if (callId.current !== id) return;
-        teardown(true);
+        teardown(true, "ended from the system call screen");
         setState(IDLE);
       },
       onAudioSession: audioSessionActivated,
@@ -269,5 +353,5 @@ export function useVoiceCall(deps: VoiceCallDeps) {
     void connect(state.focus);
   }, [connect, state.focus]);
 
-  return { state, startCall, ring, hangUp, setMuted, setSpeaker, retry, available: voiceAvailable() };
+  return { state, startCall, ring, hangUp, setMuted, setSpeaker, retry, available: voiceAvailable() || geminiAvailable() };
 }

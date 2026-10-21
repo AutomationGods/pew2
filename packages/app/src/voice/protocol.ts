@@ -24,7 +24,12 @@ export type VoiceFailure =
   | "unavailable"
   | "offline"
   | "mic_denied"
-  | "unsupported";
+  | "unsupported"
+  | "refused"
+  /** Gemini refused the key on the computer (invalid, revoked, no permission). */
+  | "gemini_key"
+  /** The Gemini API quota or billing for that key is used up. */
+  | "gemini_quota";
 
 /** Read a `voice.token.result` frame's `result` into a `VoiceToken`. */
 export function readTokenResult(result: unknown): VoiceToken {
@@ -63,6 +68,12 @@ export function voiceFailureMessage(error: VoiceFailure, detail = ""): string {
       return "pew2 can't use the microphone. Allow it in Settings > pew2 > Microphone.";
     case "unsupported":
       return "This build of the app can't make voice calls. Install the latest build.";
+    case "refused":
+      return "OpenAI isn't allowing live voice on your ChatGPT plan right now, so it couldn't answer. Nothing is wrong with your phone or computer; calls will work again as soon as OpenAI allows it.";
+    case "gemini_key":
+      return "Google refused the Gemini API key on your computer. Run `pew2 voice gemini-key` there with a valid key, then try again.";
+    case "gemini_quota":
+      return "Your Gemini API quota is used up for now (the free tier has a daily limit). Try again later, or add billing in Google AI Studio.";
     case "failed":
       return detail ? `Voice couldn't start: ${detail}` : "Voice couldn't start. Try again.";
   }
@@ -264,4 +275,88 @@ export function toolOutputEvents(callId: string, output: unknown): unknown[] {
     },
     { type: "response.create" },
   ];
+}
+
+/**
+ * How long a call may sit in WebRTC's `disconnected` state before it is given
+ * up. `disconnected` is not an ending: it is what ICE reports for a dropped
+ * packet run, a Wi-Fi to cellular handover or a tunnel under a bridge, and it
+ * returns to `connected` on its own. Ending the call there was hanging up on
+ * the user at every blip. Only `failed` and `closed` are final.
+ */
+export const RECONNECT_GRACE_MS = 20_000;
+
+export type ConnectionVerdict = "connected" | "reconnecting" | "lost" | "ended" | "pending";
+
+/** What a WebRTC connection state means for the call (pure, so it can be tested). */
+export function judgeConnection(state: string | undefined): ConnectionVerdict {
+  switch (state) {
+    case "connected":
+      return "connected";
+    case "disconnected":
+      return "reconnecting";
+    case "failed":
+      return "lost";
+    case "closed":
+      return "ended";
+    default:
+      return "pending";
+  }
+}
+
+/**
+ * One line for the device log about a Realtime server event, or undefined for
+ * the chatter (audio deltas, transcript deltas) that would bury it. What a
+ * dropped or silent call needs is the server's own account: its errors, the
+ * session lifecycle, a response that ended other than `completed`, and
+ * whether it ever heard the user speak. Never the words: transcripts stay out
+ * of the log.
+ */
+const str = (value: unknown): string => (typeof value === "string" || typeof value === "number" ? String(value) : "");
+
+export function diagnosticLine(event: unknown): string | undefined {
+  if (!event || typeof event !== "object") return undefined;
+  const e = event as Record<string, unknown>;
+  const type = typeof e.type === "string" ? e.type : undefined;
+  if (!type) return undefined;
+  if (type === "error") {
+    const err = (e.error ?? {}) as Record<string, unknown>;
+    return `server error ${str(err.type)} ${str(err.code)}: ${str(err.message).slice(0, 200)}`;
+  }
+  if (type === "response.done") {
+    const response = (e.response ?? {}) as Record<string, unknown>;
+    const status = str(response.status);
+    if (status === "completed") return undefined;
+    return `response ${status}: ${JSON.stringify(response.status_details ?? null).slice(0, 300)}`;
+  }
+  if (
+    type === "session.created" ||
+    type === "session.updated" ||
+    type === "input_audio_buffer.speech_started" ||
+    type === "input_audio_buffer.speech_stopped" ||
+    type === "rate_limits.updated" ||
+    type === "output_audio_buffer.started" ||
+    type === "output_audio_buffer.stopped" ||
+    type.startsWith("session.") ||
+    type.endsWith(".failed")
+  ) {
+    return type;
+  }
+  return undefined;
+}
+
+/**
+ * Whether a server event means OpenAI will not run this voice session at all,
+ * as opposed to one reply going wrong mid-call. Used only for the session's
+ * *first* response (the greeting): a ChatGPT-plan token that OpenAI does not
+ * admit to Realtime opens the session, accepts `session.update`, then fails
+ * every response with a bare `server_error` and drops the connection. Without
+ * this the phone sat in silence for 16 seconds and then blamed the network.
+ */
+export function refusesSession(event: unknown): boolean {
+  if (!event || typeof event !== "object") return false;
+  const e = event as Record<string, unknown>;
+  if (e.type !== "response.done") return false;
+  const response = (e.response ?? {}) as Record<string, unknown>;
+  return response.status === "failed";
 }

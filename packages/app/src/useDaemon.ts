@@ -66,6 +66,8 @@ export type { PushAddress, TurnFinished, VoipAddress } from "./daemonState";
 
 /** How long a `voice.token` may go unanswered before it counts as unavailable. */
 const VOICE_TOKEN_TIMEOUT = 20_000;
+/** How long a walkie-talkie turn may go without any event from the computer. */
+const WALKIE_IDLE_TIMEOUT = 90_000;
 
 /**
  * @param deviceId Identifies this phone to the relay, which uses it to tell
@@ -280,6 +282,7 @@ export function useDaemon(
   // raw `result`, or `undefined` for an older daemon / timeout / lost socket.
   const pendingVoiceTokens = useRef(new Map<string, (result: unknown) => void>());
   const voiceCounter = useRef(0);
+  const pendingWalkie = useRef(new Map<string, (event: unknown) => void>());
 
   // The agent this device used last, read once from storage.
   //
@@ -429,6 +432,7 @@ export function useDaemon(
           pushRegistered,
           voipRegistered,
           pendingVoiceTokens,
+          pendingWalkie,
           queued,
           restoring,
           resume,
@@ -732,7 +736,7 @@ export function useDaemon(
        * `result` of `voice.token.result`, or undefined when this daemon cannot
        * answer (too old, offline, or silent past the timeout).
        */
-      requestVoiceToken: (model?: string, voice?: string): Promise<unknown> => {
+      requestVoiceToken: (model?: string, voice?: string, engine?: "openai" | "gemini"): Promise<unknown> => {
         const requestId = `voice_${deviceId}_${++voiceCounter.current}`;
         return new Promise<unknown>((resolve) => {
           const timer = setTimeout(() => {
@@ -743,10 +747,49 @@ export function useDaemon(
             clearTimeout(timer);
             resolve(result);
           });
-          if (!post({ t: "voice.token", requestId, ...(model ? { model } : {}), ...(voice ? { voice } : {}) })) {
+          if (!post({ t: "voice.token", requestId, ...(model ? { model } : {}), ...(voice ? { voice } : {}), ...(engine ? { engine } : {}) })) {
             pendingVoiceTokens.current.delete(requestId);
             clearTimeout(timer);
             resolve(undefined);
+          }
+        });
+      },
+      /**
+       * Walkie-talkie: one `voice.respond` turn. Every event is handed to
+       * `onEvent`; resolves after a terminal event (`done`/`error`), or with
+       * none at all when this daemon predates walkie-talkie or the socket
+       * dropped. Silence past the timeout ends it as a failure.
+       */
+      voiceRespond: (
+        body: { instructions: string; input: unknown[]; tools?: unknown[] },
+        onEvent: (event: unknown) => void,
+      ): Promise<void> => {
+        const requestId = `walkie_${deviceId}_${++voiceCounter.current}`;
+        return new Promise<void>((resolve) => {
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const finish = () => {
+            if (timer) clearTimeout(timer);
+            pendingWalkie.current.delete(requestId);
+            resolve();
+          };
+          const arm = () => {
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(() => {
+              onEvent({ kind: "error", error: "failed", message: "Your computer stopped answering. Try again." });
+              finish();
+            }, WALKIE_IDLE_TIMEOUT);
+          };
+          pendingWalkie.current.set(requestId, (event) => {
+            if (event === undefined) return finish();
+            onEvent(event);
+            const kind = (event as { kind?: unknown } | null)?.kind;
+            if (kind === "done" || kind === "error") finish();
+            else arm();
+          });
+          arm();
+          if (!post({ t: "voice.respond", requestId, ...body })) {
+            onEvent({ kind: "error", error: "offline", message: "" });
+            finish();
           }
         });
       },

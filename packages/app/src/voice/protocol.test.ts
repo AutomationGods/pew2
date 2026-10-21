@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { callerName, findCallPush, foldEvent, parseIncoming, readTokenResult, toolOutputEvents, voiceFailureMessage } from "./protocol";
+import { callerName, diagnosticLine, refusesSession, findCallPush, foldEvent, judgeConnection, parseIncoming, readTokenResult, RECONNECT_GRACE_MS, toolOutputEvents, voiceFailureMessage } from "./protocol";
 
 const ID = "3F2504E0-4F89-41D3-9A0C-0305E82C3301";
 
@@ -80,5 +80,55 @@ describe("findCallPush (Android ringing)", () => {
   test("ignores ordinary agent banners", () => {
     expect(findCallPush({ data: { sessionId: "s1", kind: "input" } })).toBeUndefined();
     expect(findCallPush({ data: { dataString: JSON.stringify({ sessionId: "s1" }) } })).toBeUndefined();
+  });
+});
+
+describe("judgeConnection", () => {
+  test("a dropped network is a wait, not a hang-up", () => {
+    expect(judgeConnection("disconnected")).toBe("reconnecting");
+    expect(judgeConnection("connected")).toBe("connected");
+  });
+  test("only failed and closed end the call", () => {
+    expect(judgeConnection("failed")).toBe("lost");
+    expect(judgeConnection("closed")).toBe("ended");
+    expect(judgeConnection("new")).toBe("pending");
+    expect(judgeConnection("connecting")).toBe("pending");
+    expect(judgeConnection(undefined)).toBe("pending");
+  });
+  test("the wait is long enough for a handover, short enough to notice", () => {
+    expect(RECONNECT_GRACE_MS).toBeGreaterThanOrEqual(10_000);
+    expect(RECONNECT_GRACE_MS).toBeLessThanOrEqual(30_000);
+  });
+});
+
+describe("diagnosticLine", () => {
+  test("server errors and failed responses are logged with their reason", () => {
+    expect(diagnosticLine({ type: "error", error: { type: "invalid_request_error", code: "x", message: "bad tool" } })).toContain("bad tool");
+    expect(diagnosticLine({ type: "response.done", response: { status: "failed", status_details: { error: { code: "insufficient_quota" } } } })).toContain("insufficient_quota");
+    expect(diagnosticLine({ type: "response.done", response: { status: "completed" } })).toBeUndefined();
+  });
+  test("lifecycle and speech detection are logged, chatter and words are not", () => {
+    expect(diagnosticLine({ type: "session.created" })).toBe("session.created");
+    expect(diagnosticLine({ type: "input_audio_buffer.speech_started" })).toBe("input_audio_buffer.speech_started");
+    expect(diagnosticLine({ type: "response.output_audio.delta", delta: "AAAA" })).toBeUndefined();
+    expect(diagnosticLine({ type: "conversation.item.input_audio_transcription.completed", transcript: "secret" })).toBeUndefined();
+    expect(diagnosticLine(null)).toBeUndefined();
+  });
+});
+
+describe("refusesSession", () => {
+  test("a failed first reply means OpenAI will not run this call", () => {
+    expect(refusesSession({ type: "response.done", response: { status: "failed", status_details: { error: { type: "server_error" } } } })).toBe(true);
+  });
+  test("a finished, cancelled or other event does not", () => {
+    expect(refusesSession({ type: "response.done", response: { status: "completed" } })).toBe(false);
+    expect(refusesSession({ type: "response.done", response: { status: "cancelled" } })).toBe(false);
+    expect(refusesSession({ type: "error", error: {} })).toBe(false);
+    expect(refusesSession(undefined)).toBe(false);
+  });
+  test("the message says it is OpenAI and the plan, not the phone", () => {
+    const text = voiceFailureMessage("refused");
+    expect(text).toContain("OpenAI");
+    expect(text).toContain("ChatGPT plan");
   });
 });
