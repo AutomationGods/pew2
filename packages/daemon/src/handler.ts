@@ -292,8 +292,14 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
           // Said out loud rather than ignored: a silently rejected token looks
           // exactly like a working one until someone waits for a notification
           // that never comes.
+          console.log(`[push] '${deviceId}' sent something that is not an Expo push token`);
           reply(errorMessage("push_token_invalid", "That is not an Expo push token."));
+          break;
         }
+        // The banner half of what `app.voip` logs for calls. Without it, a phone
+        // that never sends a token (notifications off on the phone) is
+        // indistinguishable in the log from one that did. Never the token.
+        console.log(`[push] '${deviceId}' will get banners (${message.platform})`);
         break;
       }
 
