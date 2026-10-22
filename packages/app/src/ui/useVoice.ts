@@ -38,6 +38,7 @@ import { sounds } from "./sounds";
 import { setAudioModeAsync } from "expo-audio";
 import { useSharedValue } from "react-native-reanimated";
 import { NEW_CLOCK, tickClock, type SpeechClock } from "../speechSync";
+import { TRACED_SERVER_EVENTS, TRACE_BATCH, traceBatches, traceLine } from "../callTrace";
 
 /**
  * The call's audio session, set before the mic opens: expo-audio maps this to
@@ -106,80 +107,107 @@ export function useVoice({ post, online }: Options) {
   const postRef = useRef(post);
   postRef.current = post;
 
+  /**
+   * This call's trace for the daemon's log (`callTrace.ts`): route changes,
+   * the mic opening and closing, Pew's voice starting and stopping. Sent in
+   * batches as it fills and when the call ends; states only, never words.
+   */
+  const trace = useRef<{ startedAt: number; lines: string[] }>({ startedAt: 0, lines: [] });
+  const sendTrace = useCallback(() => {
+    const lines = trace.current.lines;
+    trace.current.lines = [];
+    for (const batch of traceBatches(lines)) postRef.current({ t: "app.diag", lines: batch });
+  }, []);
+  const traceNote = useCallback(
+    (text: string) => {
+      trace.current.lines.push(traceLine(trace.current.startedAt, Date.now(), text));
+      if (trace.current.lines.length >= TRACE_BATCH) sendTrace();
+    },
+    [sendTrace],
+  );
+
   const nextId = useCallback(() => `voice-${Date.now().toString(36)}-${++counter.current}`, []);
 
   const dispatchRef = useRef<(input: CallInput) => void>(() => {});
-  const run = useCallback((effects: CallEffect[]) => {
-    const dispatch = (input: CallInput) => dispatchRef.current(input);
-    for (const effect of effects) {
-      switch (effect.kind) {
-        case "daemon":
-          if (!postRef.current(effect.message) && effect.message.t === "voice.session") {
-            dispatch({ type: "failed", error: CALL_ERRORS.offline });
+  const run = useCallback(
+    (effects: CallEffect[]) => {
+      const dispatch = (input: CallInput) => dispatchRef.current(input);
+      for (const effect of effects) {
+        switch (effect.kind) {
+          case "daemon":
+            if (!postRef.current(effect.message) && effect.message.t === "voice.session") {
+              dispatch({ type: "failed", error: CALL_ERRORS.offline });
+            }
+            break;
+          case "connect":
+            transport.current?.close();
+            transport.current = openTransport(
+              effect.secret,
+              effect.expiresAt,
+              {
+                onOpen: () => dispatch({ type: "open" }),
+                onEvent: (event) => dispatch({ type: "server", event }),
+                onFailed: (error) => dispatch({ type: "failed", error }),
+              },
+              audioReady.current,
+            );
+            break;
+          case "realtime":
+            transport.current?.send(effect.event);
+            break;
+          case "mute":
+            traceNote(`mic ${effect.muted ? "closed" : "open"}`);
+            transport.current?.setMuted(effect.muted);
+            break;
+          case "timer": {
+            const existing = timers.current.get(effect.key);
+            if (existing) clearTimeout(existing);
+            timers.current.set(
+              effect.key,
+              setTimeout(() => {
+                timers.current.delete(effect.key);
+                dispatch(effect.input);
+              }, effect.ms),
+            );
+            break;
           }
-          break;
-        case "connect":
-          transport.current?.close();
-          transport.current = openTransport(
-            effect.secret,
-            effect.expiresAt,
-            {
-              onOpen: () => dispatch({ type: "open" }),
-              onEvent: (event) => dispatch({ type: "server", event }),
-              onFailed: (error) => dispatch({ type: "failed", error }),
-            },
-            audioReady.current,
-          );
-          break;
-        case "realtime":
-          transport.current?.send(effect.event);
-          break;
-        case "mute":
-          transport.current?.setMuted(effect.muted);
-          break;
-        case "timer": {
-          const existing = timers.current.get(effect.key);
-          if (existing) clearTimeout(existing);
-          timers.current.set(
-            effect.key,
-            setTimeout(() => {
-              timers.current.delete(effect.key);
-              dispatch(effect.input);
-            }, effect.ms),
-          );
-          break;
-        }
-        case "cancelTimer": {
-          const existing = timers.current.get(effect.key);
-          if (existing) clearTimeout(existing);
-          timers.current.delete(effect.key);
-          break;
-        }
-        case "close":
-          // The hang-up tone is already playing (see `dispatch`); the call
-          // goes silent now and its audio shuts down once the tone is over.
-          if (transport.current) {
-            transport.current.close(END_TONE_MS);
-            lastReleased.current = transport.current.released;
+          case "cancelTimer": {
+            const existing = timers.current.get(effect.key);
+            if (existing) clearTimeout(existing);
+            timers.current.delete(effect.key);
+            break;
           }
-          transport.current = undefined;
-          // Restore: the next chime re-applies the app's ambient, mixing mode.
-          // Not at once: WebRTC is still shutting its audio down, and an app
-          // sound played now (the end card's swish, a tap) waits on the audio
-          // session synchronously, which froze the screen for seconds. The
-          // call's own end cue plays natively and is unaffected.
-          clearTimeout(settleTimer.current);
-          settleTimer.current = setTimeout(() => {
-            if (!callActive(callRef.current)) sounds.setListening(false);
-          }, AUDIO_SETTLE_MS);
-          break;
+          case "close":
+            // The hang-up tone is already playing (see `dispatch`); the call
+            // goes silent now and its audio shuts down once the tone is over.
+            if (transport.current) {
+              transport.current.close(END_TONE_MS);
+              lastReleased.current = transport.current.released;
+            }
+            transport.current = undefined;
+            // Restore: the next chime re-applies the app's ambient, mixing mode.
+            // Not at once: WebRTC is still shutting its audio down, and an app
+            // sound played now (the end card's swish, a tap) waits on the audio
+            // session synchronously, which froze the screen for seconds. The
+            // call's own end cue plays natively and is unaffected.
+            clearTimeout(settleTimer.current);
+            settleTimer.current = setTimeout(() => {
+              if (!callActive(callRef.current)) sounds.setListening(false);
+            }, AUDIO_SETTLE_MS);
+            break;
+        }
       }
-    }
-  }, []);
+    },
+    [traceNote],
+  );
 
   const dispatch = useCallback(
     (input: CallInput) => {
       const before = callRef.current.phase;
+      if (input.type === "server") {
+        const kind = (input.event as { type?: unknown } | null)?.type;
+        if (typeof kind === "string" && TRACED_SERVER_EVENTS.has(kind)) traceNote(kind);
+      } else if (input.type === "mute") traceNote(`callkit mute=${input.muted}`);
       const step = stepCall(callRef.current, input);
       // The hang-up tone first, while the call's audio is still up: played
       // after the connection closes, it waited seconds for WebRTC to let go.
@@ -193,8 +221,12 @@ export function useVoice({ post, online }: Options) {
       callRef.current = step.state;
       setCall(step.state);
       run(step.effects);
+      if (after !== before) {
+        traceNote(`phase ${before}->${after}`);
+        if (after === "ended" || after === "failed") sendTrace();
+      }
     },
-    [run],
+    [run, traceNote, sendTrace],
   );
   dispatchRef.current = dispatch;
 
@@ -227,10 +259,17 @@ export function useVoice({ post, online }: Options) {
   const inCall = call.phase === "connecting" || call.phase === "live" || call.phase === "ending";
   useEffect(() => {
     if (!inCall) return;
-    const subscription = onRouteChange((speaker) => dispatch({ type: "route", speaker }));
+    const subscription = onRouteChange((speaker, event) => {
+      traceNote(
+        `route ${event.reason ?? "?"} speaker=${speaker} wanted=${event.wanted ?? "?"} ` +
+          `${event.category ?? "?"}/${event.mode ?? "?"} out=${event.outputs ?? "?"}`,
+      );
+      dispatch({ type: "route", speaker });
+    });
     // Where it plays now, not only from the next change: a call answered on
     // the lock screen can already be on the speaker by the time the app joins
     // it, and with no change to report the mic rule would not know.
+    traceNote(`observing routes=${subscription !== undefined} speaker=${isSpeaker()}`);
     if (subscription) dispatch({ type: "route", speaker: isSpeaker() });
     // Screen off at the ear for the whole call, back on when it ends.
     setProximity(true);
@@ -238,7 +277,7 @@ export function useVoice({ post, online }: Options) {
       subscription?.remove();
       setProximity(false);
     };
-  }, [inCall, dispatch]);
+  }, [inCall, dispatch, traceNote]);
 
   // Back online mid-call: resend tool requests the drop may have lost.
   useEffect(() => {
@@ -273,6 +312,8 @@ export function useVoice({ post, online }: Options) {
   const startCall = useCallback(
     (focus?: string, system = false, sessionId?: string, place?: CallPlace) => {
       if (callActive(callRef.current)) return;
+      trace.current = { startedAt: Date.now(), lines: [] };
+      traceNote(`start system=${system} echoGuard=${!cancelsEcho()}`);
       clearTimeout(settleTimer.current);
       sounds.setListening(true);
       const previous = lastReleased.current;
@@ -295,7 +336,7 @@ export function useVoice({ post, online }: Options) {
         echoGuard: !cancelsEcho(),
       });
     },
-    [dispatch, nextId, setBoard],
+    [dispatch, nextId, setBoard, traceNote],
   );
   const hangUp = useCallback(() => dispatch({ type: "hangup" }), [dispatch]);
   // DEV: hang up by itself N ms after going live, to time the end of a call.

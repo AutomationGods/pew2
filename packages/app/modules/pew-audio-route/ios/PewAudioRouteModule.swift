@@ -69,7 +69,28 @@ public class PewAudioRouteModule: Module {
       // `.override` and is only adopted above, so this can't loop.
       try? session.overrideOutputAudioPort(.speaker)
     }
-    sendEvent("onRoute", ["speaker": Self.onSpeaker(session.currentRoute), "wanted": wantSpeaker])
+    sendEvent("onRoute", [
+      "speaker": Self.onSpeaker(session.currentRoute),
+      "wanted": wantSpeaker,
+      // For the call trace (`app.diag`): why it changed, and what the session is now.
+      "reason": Self.name(reason),
+      "category": session.category.rawValue.replacingOccurrences(of: "AVAudioSessionCategory", with: ""),
+      "mode": session.mode.rawValue.replacingOccurrences(of: "AVAudioSessionMode", with: ""),
+      "outputs": session.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: "+"),
+    ])
+  }
+
+  private static func name(_ reason: AVAudioSession.RouteChangeReason?) -> String {
+    switch reason {
+    case .newDeviceAvailable: return "newDevice"
+    case .oldDeviceUnavailable: return "oldDevice"
+    case .categoryChange: return "category"
+    case .override: return "override"
+    case .wakeFromSleep: return "wake"
+    case .noSuitableRouteForCategory: return "noRoute"
+    case .routeConfigurationChange: return "config"
+    default: return "unknown"
+    }
   }
 
   /// A player per sound file, created once (on `cueQueue`) and reused.

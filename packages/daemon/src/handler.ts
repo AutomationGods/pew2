@@ -278,6 +278,15 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
         break;
       }
 
+      case "app.diag": {
+        // A paired phone's own call trace (`AppDiag`): already printable and
+        // capped by the schema, so it can go to the log as it is.
+        const deviceId = ctx.deviceId;
+        if (!deviceId) break;
+        for (const line of message.lines) console.log(`[diag] '${deviceId}' ${line}`);
+        break;
+      }
+
       case "app.push": {
         // `deviceId` comes from the `hello` on this connection, so a phone that
         // reconnects with a rotated token replaces its own entry rather than
