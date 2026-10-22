@@ -222,8 +222,15 @@ export function Pew2({
     consented: voiceConsent === true,
     callActive: callActive(voice.call),
     onAnswer: (focus) => setSystemAnswer({ focus }),
-    onHangUp: voice.hangUp,
+    // A hang-up also withdraws an answer still waiting for the connection:
+    // events queued at a locked launch replay together, and an answer left
+    // behind would start a call after the person had already hung up.
+    onHangUp: () => {
+      setSystemAnswer(undefined);
+      voice.hangUp();
+    },
     onMute: voice.setMuted,
+    reconnect: daemon.resumeNow,
   });
   useEffect(() => {
     if (!systemAnswer || daemon.status !== "online" || !talkable) return;
