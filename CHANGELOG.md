@@ -11,6 +11,19 @@ installs them separately, and what an app and a daemon must agree on is
 
 Dates are the day the tag was cut.
 
+## 0.9.27 — 2026-10-22
+
+### Changed
+
+- **The daemon log says when.** Every `[relay]`, `[push]`, `[voice]` and other
+  tagged line now starts with the local time, so a dropped connection or a
+  missed notification can be placed against what you were doing. The startup
+  banner and pairing QR code are unchanged.
+- **Every notification is logged with its outcome**: accepted, rejected by
+  Expo (with the reason), refused, or not sent at all. A phone signing up for
+  banners is logged too (`[push] '<device>' will get banners`). Tokens are
+  never written to the log.
+
 ## 0.9.26 — 2026-10-21
 
 ### Fixed
