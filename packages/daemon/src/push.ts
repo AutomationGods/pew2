@@ -489,7 +489,34 @@ async function sendVoip(
   }
 }
 
+/**
+ * One line for the log saying what a push attempt came to.
+ *
+ * Every attempt is logged, success included: "I never got the notification"
+ * is otherwise unanswerable, because a push that was sent and one that was
+ * never attempted look identical from the daemon's side. Never the token.
+ */
+export function describePush(
+  count: number,
+  outcome: { status: number } | { tickets: unknown } | { failed: unknown },
+): string {
+  const head = `[push] ${count} banner(s):`;
+  if ("failed" in outcome) {
+    const reason =
+      outcome.failed instanceof Error ? outcome.failed.message : String(outcome.failed);
+    return `${head} not sent (${reason})`;
+  }
+  if ("status" in outcome) return `${head} refused by Expo (HTTP ${outcome.status})`;
+  if (!Array.isArray(outcome.tickets)) return `${head} sent, no receipt`;
+  const errors = (outcome.tickets as ExpoTicket[])
+    .filter((ticket) => ticket?.status === "error")
+    .map((ticket) => ticket.details?.error ?? "error");
+  if (errors.length === 0) return `${head} accepted`;
+  return `${head} ${outcome.tickets.length - errors.length} accepted, ${errors.length} rejected (${[...new Set(errors)].sort().join(", ")})`;
+}
+
 async function sendMessages(registry: PushRegistry, messages: { to: string }[]): Promise<void> {
+  if (messages.length === 0) return;
   try {
     const response = await fetch(PUSH_URL, {
       method: "POST",
@@ -502,11 +529,17 @@ async function sendMessages(registry: PushRegistry, messages: { to: string }[]):
       // race with the user reaching for their phone.
       signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) return;
+    if (!response.ok) {
+      console.log(describePush(messages.length, { status: response.status }));
+      return;
+    }
     const payload = (await response.json()) as { data?: unknown };
+    console.log(describePush(messages.length, { tickets: payload?.data }));
     applyTickets(registry, messages, payload?.data);
-  } catch {
+  } catch (error) {
     // Offline desktop, DNS failure, Expo outage. Nothing here is worth
-    // interrupting the session that just finished successfully.
+    // interrupting the session that just finished successfully, but it is
+    // worth a line: it is the answer to "why did no banner come?".
+    console.log(describePush(messages.length, { failed: error }));
   }
 }
