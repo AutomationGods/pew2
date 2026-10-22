@@ -28,6 +28,7 @@ import { IDLE_BOARD, boardFromInbox, foldBoard, type BoardState } from "../voice
 import { openTransport, type VoiceTransport } from "./voiceTransport";
 import {
   cancelsEcho,
+  isSpeaker,
   onRouteChange,
   setProximity,
   setVoiceChatMode,
@@ -227,6 +228,10 @@ export function useVoice({ post, online }: Options) {
   useEffect(() => {
     if (!inCall) return;
     const subscription = onRouteChange((speaker) => dispatch({ type: "route", speaker }));
+    // Where it plays now, not only from the next change: a call answered on
+    // the lock screen can already be on the speaker by the time the app joins
+    // it, and with no change to report the mic rule would not know.
+    if (subscription) dispatch({ type: "route", speaker: isSpeaker() });
     // Screen off at the ear for the whole call, back on when it ends.
     setProximity(true);
     return () => {
