@@ -11,6 +11,15 @@ installs them separately, and what an app and a daemon must agree on is
 
 Dates are the day the tag was cut.
 
+## 0.9.29 — 2026-10-22
+
+### Added
+
+- **Call traces in the log.** With the matching app build, each voice call
+  writes a short `[diag]` trace to the daemon log: audio route changes, the
+  microphone opening and closing, and Pew starting and stopping speaking. No
+  words from the call are recorded.
+
 ## 0.9.28 — 2026-10-22
 
 ### Fixed
