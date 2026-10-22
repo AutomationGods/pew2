@@ -11,6 +11,15 @@ installs them separately, and what an app and a daemon must agree on is
 
 Dates are the day the tag was cut.
 
+## 0.9.28 — 2026-10-22
+
+### Fixed
+
+- **A callback picks up where you asked for it.** Answered from the lock
+  screen, a "call me back" asked from one project opened by asking what you
+  wanted to do in your home folder. Pew now remembers which chat or project
+  the callback was asked from and starts the callback there.
+
 ## 0.9.27 — 2026-10-22
 
 ### Changed
