@@ -637,13 +637,14 @@ export function createActions(refs: ActionRefs, deps: ActionDeps) {
    * an agent that has never been used: its project list comes from its own
    * past sessions, so a new agent offers nothing to pick.
    */
-  browseWorkspaces: (path?: string, options?: { files?: boolean }) => {
+  browseWorkspaces: (path?: string, options?: { files?: boolean; query?: string }) => {
     // Monotonic, and compared on arrival: two listings can be in flight at
     // once if the user taps quickly, and only the newest may render.
     const requestId = `ws_${++browseCounter.current}`;
     browseRequest.current = requestId;
 
-    const sent = post({ t: "workspaces", requestId, path, ...(options?.files ? { files: true } : {}) });
+    const query = path === undefined ? options?.query?.trim().slice(0, 200) : undefined;
+    const sent = post({ t: "workspaces", requestId, path, ...(options?.files ? { files: true } : {}), ...(query ? { query } : {}) });
     setState((s) => ({
       ...s,
       browse: {

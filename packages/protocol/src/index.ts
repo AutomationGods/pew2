@@ -8,5 +8,7 @@ export { SecureChannel, envelopeHeader, type ChannelRole } from "./channel.js";
 // Shared by the app (local banner) and the daemon (remote push), so one
 // finished turn reads identically however it reached the phone.
 export { summarise, noticeTitle, noticeBody, type NoticeOrigin } from "./notice.js";
+// The daemon searches every project; the app narrows what it already holds.
+export { matchesWorkspaceQuery, searchWorkspaces, workspaceQueryTerms } from "./workspaceSearch.js";
 // Both sides parse payloads from agents they do not control.
 export { asRecord, asString } from "./record.js";

@@ -5,7 +5,8 @@
  */
 import { Dissolve } from "./motion/Dissolve";
 import { memo, useCallback, useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { searchWorkspaces } from "@pew2/protocol";
 import { StageScroll } from "./stage/StageScroll";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import Reanimated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
@@ -24,7 +25,7 @@ interface FolderPickerProps {
   chosen: readonly string[];
   onChange: (folders: string[]) => void;
   browse?: WorkspaceBrowse;
-  onBrowse: (path?: string, options?: { files?: boolean }) => void;
+  onBrowse: (path?: string, options?: { files?: boolean; query?: string }) => void;
   /** Also list files: they can be chosen like folders but never opened. */
   allowFiles?: boolean;
   /** Connected to the computer; a listing that could not be sent is retried when this turns true. */
@@ -39,6 +40,9 @@ interface FolderPickerProps {
   onPickPhoneFiles?: () => void;
 }
 
+/** A pause in typing before the computer is asked to search. */
+const SEARCH_DEBOUNCE_MS = 250;
+
 function lastSegment(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
   return parts[parts.length - 1] ?? path;
@@ -51,17 +55,26 @@ function FolderPickerView({ chosen, onChange, browse, onBrowse: browseTo, online
   // is then folders only.
   const desktopFiles = allowFiles && !onPickPhoneFiles;
   const onBrowse = useCallback(
-    (path?: string) => (desktopFiles ? browseTo(path, { files: true }) : browseTo(path)),
+    (path?: string, query?: string) =>
+      browseTo(path, { ...(desktopFiles ? { files: true } : {}), ...(path === undefined && query?.trim() ? { query } : {}) }),
     [browseTo, desktopFiles],
   );
-  // Open on the suggestions view, and ask again if that first ask could not be
-  // sent (the screen opened before the connection did): `unsent` flips back to
-  // false the moment a request does go out, so this runs once per gap.
-  useEffect(() => onBrowse(undefined), [onBrowse]);
+  // The suggestions view's search: typing narrows what is on screen at once,
+  // and after a pause asks the computer to search every project.
+  const [query, setQuery] = useState("");
+  const [searched, setSearched] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setSearched(query.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [query]);
+  // Open on the suggestions view (or the search), and ask again if that ask
+  // could not be sent (the screen opened before the connection did): `unsent`
+  // flips back to false the moment a request does go out, so this runs once per gap.
+  useEffect(() => onBrowse(undefined, searched), [onBrowse, searched]);
   const unsent = browse?.unsent === true;
   useEffect(() => {
     if (!unsent || !online) return;
-    onBrowse(browse?.path);
+    onBrowse(browse?.path, searched);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- retry on reconnect only
   }, [online]);
   const here = browse?.path;
@@ -84,7 +97,8 @@ function FolderPickerView({ chosen, onChange, browse, onBrowse: browseTo, online
     const w = Math.max(0, (modesWidth.value - pad * 3) / 2);
     return { width: w, transform: [{ translateX: pad + slot.value * (w + pad) }] };
   });
-  const entries = (browse?.entries ?? [])
+  const searching = here === undefined && mode === "folders" && query.trim().length > 0;
+  const entries = (searching ? searchWorkspaces(browse?.entries ?? [], query) : (browse?.entries ?? []))
     .filter((entry) => !allowFiles || mode === "files" || entry.kind !== "file")
     .sort((a, b) => (mode === "files" ? Number(b.kind === "file") - Number(a.kind === "file") : 0));
   const isFile = (path: string) => browse?.entries.some((entry) => entry.path === path && entry.kind === "file") === true;
@@ -174,6 +188,24 @@ function FolderPickerView({ chosen, onChange, browse, onBrowse: browseTo, online
             </Pressable>
           ) : null}
         </View>
+        {here === undefined && mode === "folders" && (
+          <View style={styles.search}>
+            <Ionicons name="search-outline" size={14} color={palette.color.textDim} />
+            <TextInput
+              style={styles.searchInput}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search all projects"
+              placeholderTextColor={palette.composer.placeholder}
+              accessibilityLabel="Search all projects"
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+              maxLength={200}
+            />
+          </View>
+        )}
         <StageScroll rail="inside" style={styles.list} nestedScrollEnabled keyboardShouldPersistTaps="handled">
           {/* Keyed by mode: switching tabs dissolves the old list out and the
               new one in, rather than swapping rows in place. */}
@@ -220,7 +252,9 @@ function FolderPickerView({ chosen, onChange, browse, onBrowse: browseTo, online
                   ? "Waiting for your computer…"
                   : browse?.refused
                     ? "Can't open that folder"
-                    : "Nothing here"}
+                    : searching
+                      ? "No projects match"
+                      : "Nothing here"}
             </Led>
           )}
         </StageScroll>
@@ -250,6 +284,18 @@ const makeStyles = themedStyles((p: Palette) => StyleSheet.create({
     paddingVertical: theme.space(2),
   },
   where: { flex: 1, minWidth: 0 },
+  search: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.space(2),
+    marginHorizontal: theme.space(3),
+    marginBottom: theme.space(2),
+    paddingHorizontal: theme.space(2),
+    borderRadius: theme.radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: p.stage.dash,
+  },
+  searchInput: { flex: 1, minHeight: theme.size.touch, color: p.color.text, fontSize: theme.font.body },
   modes: {
     flexDirection: "row",
     gap: theme.space(1),

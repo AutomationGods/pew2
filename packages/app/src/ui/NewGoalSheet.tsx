@@ -46,11 +46,11 @@ import { LaunchFx, type LaunchFxValues } from "./LaunchFx";
 import { sounds } from "./sounds";
 import { BURST_MIN_S, type FxScene } from "../launchFx";
 import { LaunchPad, COVER_LAG_S, usePlainLaunch } from "./GoalLaunchPad";
-import { CHIP_LAYOUT, CONTEXT_MAX, ContextChips, GOAL_MAX, INSTRUCTIONS_MAX, INSTRUCTIONS_PLACEHOLDER, NAME_MAX, StageInput } from "./goalForm";
+import { CHIP_LAYOUT, ContextChips, GOAL_MAX, INSTRUCTIONS_MAX, INSTRUCTIONS_PLACEHOLDER, NAME_MAX, StageInput } from "./goalForm";
 import { usePalette } from "./appearance";
 import { themedStyles, type Palette } from "../palette";
 // The form pieces moved to `goalForm.tsx`; re-exported so goal settings keeps importing them from here.
-export { CHIP_LAYOUT, CONTEXT_MAX, ContextChips, Field, GOAL_MAX, INSTRUCTIONS_MAX, INSTRUCTIONS_PLACEHOLDER, NAME_MAX, StageInput } from "./goalForm";
+export { CHIP_LAYOUT, ContextChips, Field, GOAL_MAX, INSTRUCTIONS_MAX, INSTRUCTIONS_PLACEHOLDER, NAME_MAX, StageInput } from "./goalForm";
 
 interface NewGoalSheetProps {
   visible: boolean;
@@ -476,7 +476,7 @@ function NewGoalScreen({ visible, onClose, onCreate, results, onCreated, browse,
                 <Reanimated.View layout={reduce ? undefined : CHIP_LAYOUT}>
                   <FolderPicker
                     chosen={context}
-                    onChange={(next) => setContext(next.slice(0, CONTEXT_MAX - files.length))}
+                    onChange={setContext}
                     browse={browse}
                     onBrowse={onBrowse}
                     online={online}

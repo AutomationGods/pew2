@@ -15,7 +15,7 @@ import { GG_GOALS_ID, type Daemon } from "./index.js";
 import { humanError } from "./errors.js";
 import { loadImage } from "./images.js";
 import { resolveWorkspace } from "./workspace.js";
-import { suggestionRoots, discoverRepos, listDirectory } from "./workspaces.js";
+import { suggestionRoots, suggestWorkspaces, listDirectory } from "./workspaces.js";
 import { wire } from "@pew2/protocol";
 import { pushAgentNotice, pushFinishedTurn } from "./push.js";
 import { storeGoalFiles } from "./goalFiles";
@@ -425,9 +425,7 @@ export async function handleMessage(raw: string, ctx: HandlerContext): Promise<v
           // touchscreen is the thing this exists to avoid.
           // Only the folders the user has added (GG Coder's list and pew2's own),
           // so opening this never reaches into folders macOS guards.
-          const suggestions = await discoverRepos({
-            roots: await suggestionRoots(await readKnownProjects()),
-          });
+          const suggestions = await suggestWorkspaces(await suggestionRoots(await readKnownProjects()), message.query);
           // Recorded so that choosing one is recognised. A browsed directory has
           // no sessions yet, so it is not a "known project", and without this the
           // composer would name the agent's previous project while working in
