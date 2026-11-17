@@ -11,7 +11,7 @@ import { haptics } from "./haptics";
 import { StageButton } from "./stage/StageButton";
 import { Sheet } from "./Sheet";
 import { FolderPicker } from "./FolderPicker";
-import { CHIP_LAYOUT, CONTEXT_MAX, ContextChips, Field, INSTRUCTIONS_MAX, INSTRUCTIONS_PLACEHOLDER, StageInput } from "./NewGoalSheet";
+import { CHIP_LAYOUT, ContextChips, Field, INSTRUCTIONS_MAX, INSTRUCTIONS_PLACEHOLDER, StageInput } from "./NewGoalSheet";
 import { KEN_COLOR } from "../pew/palette";
 import { withAlpha } from "../motion";
 import type { GoalResult, GoalState, GoalSummary } from "../ggState";
@@ -131,7 +131,7 @@ function GoalSettingsSheetView({ visible, goal, state, onAction, results, modelO
           <ContextChips chosen={context} onChange={setContext} disabled={working} />
           {visible && !working && (
             <Reanimated.View layout={reduce ? undefined : CHIP_LAYOUT}>
-              <FolderPicker chosen={context} onChange={(next) => setContext(next.slice(0, CONTEXT_MAX))} browse={browse} onBrowse={onBrowse} online={online} allowFiles hideChosen />
+              <FolderPicker chosen={context} onChange={setContext} browse={browse} onBrowse={onBrowse} online={online} allowFiles hideChosen />
             </Reanimated.View>
           )}
         </Field>

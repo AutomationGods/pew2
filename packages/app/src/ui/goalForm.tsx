@@ -27,7 +27,6 @@ import { themedStyles, type Palette } from "../palette";
 
 export const NAME_MAX = GOAL_NAME_MAX;
 export const GOAL_MAX = 2000;
-export const CONTEXT_MAX = 20;
 export const INSTRUCTIONS_MAX = 4000;
 export const INSTRUCTIONS_PLACEHOLDER = "Keep the current design. Ask before adding dependencies.";
 

@@ -18,6 +18,7 @@ import {
   listDirectory,
   resolveBrowsePath,
   suggestionRoots,
+  suggestWorkspaces,
 } from "./workspaces.js";
 
 /**
@@ -315,4 +316,19 @@ test("with no GG Coder list, pew2's own folders are the whole answer", async () 
   const dir = await mkdtemp(join(tmpdir(), "suggest-none-"));
   await mkdir(join(dir, "one"));
   expect(await suggestionRoots([join(dir, "one")], join(dir, "missing.json"))).toEqual([resolve(join(dir, "one"))]);
+});
+
+test("a search reaches every repository, not just the newest 40", async () => {
+  const { home, roots } = await fixture();
+  // 45 newer repos push `api` out of the plain suggestions.
+  for (let i = 0; i < 45; i++) await mkdir(join(home, "many", `repo${i}`, ".git"), { recursive: true });
+  await utimes(join(home, "code/api"), new Date("2020-01-01T00:00:00Z"), new Date("2020-01-01T00:00:00Z"));
+
+  const plain = await suggestWorkspaces(roots);
+  expect(plain).toHaveLength(40);
+  expect(plain.some((entry) => entry.name === "api")).toBe(false);
+
+  const found = await suggestWorkspaces(roots, "API");
+  expect(found.map((entry) => entry.name)).toEqual(["api"]);
+  expect(await suggestWorkspaces(roots, "nothing-like-this")).toEqual([]);
 });

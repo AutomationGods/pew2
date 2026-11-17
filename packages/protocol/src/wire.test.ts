@@ -338,6 +338,8 @@ test("goal rows carry instructions, and workspace browsing can ask for files", a
   expect(GoalSummary.parse({ ...row, instructions: "be brief" }).instructions).toBe("be brief");
   expect(GoalSummary.parse(row).instructions).toBeUndefined();
   expect(WorkspacesRequest.parse({ t: "workspaces", requestId: "r", path: "/a", files: true }).files).toBe(true);
+  expect(WorkspacesRequest.parse({ t: "workspaces", requestId: "r", query: "pew" }).query).toBe("pew");
+  expect(() => WorkspacesRequest.parse({ t: "workspaces", requestId: "r", query: "x".repeat(201) })).toThrow();
   expect(WorkspaceEntry.parse({ path: "/a/b", name: "b", repo: false, kind: "file" }).kind).toBe("file");
   expect(WorkspaceEntry.parse({ path: "/a/b", name: "b", repo: false }).kind).toBeUndefined();
   expect(WorkspaceEntry.safeParse({ path: "/a/b", name: "b", repo: false, kind: "link" }).success).toBe(false);

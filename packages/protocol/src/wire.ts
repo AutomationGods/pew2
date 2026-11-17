@@ -365,6 +365,12 @@ export const WorkspacesRequest = z.object({
   path: z.string().optional(),
   /** Also list the browsed directory's regular files (goal context). Absent = folders only. */
   files: z.boolean().optional(),
+  /**
+   * With no `path`: search every project the suggestions come from, not just
+   * the newest few. Absent or blank = the usual suggestions. An older daemon
+   * drops it and answers with suggestions, which the app then narrows itself.
+   */
+  query: z.string().max(200).optional(),
 });
 
 export const WorkspaceEntry = z.object({

@@ -24,6 +24,7 @@
 import { mkdir, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { searchWorkspaces, workspaceQueryTerms } from "@pew2/protocol";
 
 /** A directory the user could start a conversation in. */
 export interface WorkspaceEntry {
@@ -456,4 +457,20 @@ export async function discoverRepos(
   // scrolling. Undated entries sort last rather than being dropped.
   found.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
   return found.slice(0, options.limit ?? 40);
+}
+
+/** Rows a project search returns: far more than a phone shows, and a small frame. */
+const SEARCH_LIMIT = 200;
+
+/**
+ * The opening view of the picker: the newest repositories, or with a query,
+ * matches from every repository under the roots (not just the newest 40).
+ */
+export async function suggestWorkspaces(
+  roots: string[],
+  query?: string,
+  options: { depth?: number; scanLimit?: number } = {},
+): Promise<WorkspaceEntry[]> {
+  if (workspaceQueryTerms(query).length === 0) return discoverRepos({ ...options, roots });
+  return searchWorkspaces(await discoverRepos({ ...options, roots, limit: Infinity }), query).slice(0, SEARCH_LIMIT);
 }
